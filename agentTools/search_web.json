@@ -1,0 +1,16 @@
+{
+  "name": "search_web",
+  "description": "搜索网络获取信息。当需要查询实时信息、新闻、知识、最新动态时使用。",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "搜索关键词"
+      }
+    },
+    "required": ["query"]
+  },
+  "scriptContent": "import json\nimport sys\n\ndef main():\n    if len(sys.argv) < 2:\n        print(\"缺少输入参数\")\n        return\n    \n    with open(sys.argv[1], 'r') as f:\n        args = json.load(f)\n    \n    query = args.get('query', '')\n    if not query:\n        print(\"请提供搜索关键词\")\n        return\n    \n    try:\n        from duckduckgo_search import DDGS\n        \n        with DDGS() as ddgs:\n            results = list(ddgs.text(query, max_results=5))\n        \n        if not results:\n            print(f\"未找到与 \\\"{query}\\\" 相关的结果\")\n            return\n        \n        output = f\"搜索 \\\"{query}\\\" 的结果：\\n\\n\"\n        for i, r in enumerate(results, 1):\n            output += f\"{i}. {r['title']}\\n\"\n            output += f\"   链接: {r['href']}\\n\"\n            body = r.get('body', '')[:200]\n            output += f\"   摘要: {body}...\\n\\n\"\n        \n        print(output)\n    except ImportError:\n        print(\"错误: 请先安装 duckduckgo-search\\n运行: pip install duckduckgo-search\")\n    except Exception as e:\n        print(f\"搜索出错: {str(e)}\")\n\nif __name__ == '__main__':\n    main()",
+  "readme": "# search_web 工具\n\n## 作者\ndonghao\n\n## 功能\n搜索网络获取信息，支持：\n- 实时新闻\n- 知识查询\n- 最新动态\n\n## 参数说明\n| 参数 | 类型 | 必填 | 说明 |\n|------|------|------|------|\n| query | string | 是 | 搜索关键词 |\n\n## 使用示例\n```json\n{\"query\": \"今天天气\"}\n```\n\n## 输出示例\n```\n搜索 \"今天天气\" 的结果：\n\n1. 今日天气预报_中国天气网\n   链接: https://www.weather.com.cn/\n   摘要: 提供全国天气预报查询服务...\n```\n\n## 依赖\n```bash\npip install duckduckgo-search\n```\n\n## 自定义\n可修改脚本使用其他搜索引擎：\n- Google Custom Search API\n- Bing Search API\n- 百度搜索 API\n\n## 注意事项\n- DuckDuckGo 无需 API key\n- 搜索结果可能因网络原因不稳定\n- 建议配置代理或使用其他 API"
+}

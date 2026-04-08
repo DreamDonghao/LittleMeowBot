@@ -2,6 +2,8 @@
 #include <model/QQMessage.hpp>
 #include <agent/AgentToolManager.hpp>
 #include <spdlog/spdlog.h>
+#include <config/Config.hpp>
+#include <algorithm>
 
 using namespace LittleMeowBot;
 using namespace drogon;
@@ -624,6 +626,7 @@ Task<> AdminController::getCustomTools(
         item["executorType"] = tool.executorType;
         item["executorConfig"] = tool.executorConfig;
         item["scriptContent"] = tool.scriptContent;
+        item["readme"] = tool.readme;
         item["enabled"] = tool.enabled;
         result.append(item);
     }
@@ -661,6 +664,7 @@ Task<> AdminController::addCustomTool(
     tool.executorType = (*json)["executorType"].asString();
     tool.executorConfig = json->get("executorConfig", "").asString();
     tool.scriptContent = json->get("scriptContent", "").asString();
+    tool.readme = json->get("readme", "").asString();
     tool.enabled = json->get("enabled", true).asBool();
 
     int id = Database::instance().addCustomTool(tool);
@@ -697,6 +701,7 @@ Task<> AdminController::updateCustomTool(
     tool.executorType = (*json)["executorType"].asString();
     tool.executorConfig = json->get("executorConfig", "").asString();
     tool.scriptContent = json->get("scriptContent", "").asString();
+    tool.readme = json->get("readme", "").asString();
     tool.enabled = json->get("enabled", true).asBool();
 
     Database::instance().updateCustomTool(tool);
@@ -853,6 +858,137 @@ Task<> AdminController::saveCustomToolConfig(
     Json::Value resp;
     resp["success"] = true;
     resp["message"] = "Python解释器路径已保存";
+    callback(HttpResponse::newHttpJsonResponse(resp));
+    co_return;
+}
+
+// ============== 自定义工具导入导出 ==============
+
+Task<> AdminController::exportCustomTool(
+    HttpRequestPtr req,
+    std::function<void(const HttpResponsePtr&)> callback,
+    const std::string& id) const{
+
+    int toolId = std::stoi(id);
+    auto tools = Database::instance().getCustomTools();
+
+    auto it = std::find_if(tools.begin(), tools.end(),
+        [toolId](const Database::CustomTool& t) { return t.id == toolId; });
+
+    if (it == tools.end()) {
+        Json::Value resp;
+        resp["success"] = false;
+        resp["error"] = "工具不存在";
+        callback(HttpResponse::newHttpJsonResponse(resp));
+        co_return;
+    }
+
+    const auto& tool = *it;
+
+    // 只支持导出 Python 工具
+    if (tool.executorType != "python") {
+        Json::Value resp;
+        resp["success"] = false;
+        resp["error"] = "仅支持导出 Python 类型工具";
+        callback(HttpResponse::newHttpJsonResponse(resp));
+        co_return;
+    }
+
+    // 构建导出 JSON（简化格式，不含 executorType）
+    Json::Value exportJson;
+    exportJson["name"] = tool.name;
+    exportJson["description"] = tool.description;
+
+    // 解析参数 JSON
+    Json::Value params;
+    Json::CharReaderBuilder builder;
+    std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+    std::string errors;
+    reader->parse(tool.parameters.c_str(), tool.parameters.c_str() + tool.parameters.size(), &params, &errors);
+    exportJson["parameters"] = params;
+
+    exportJson["scriptContent"] = tool.scriptContent;
+    if (!tool.readme.empty()) {
+        exportJson["readme"] = tool.readme;
+    }
+    exportJson["version"] = "1.0";
+
+    // 返回 JSON 文件
+    Json::StreamWriterBuilder writer;
+    writer["indentation"] = "  ";
+    std::string content = Json::writeString(writer, exportJson);
+
+    auto resp = HttpResponse::newHttpResponse();
+    resp->setStatusCode(k200OK);
+    resp->setContentTypeCode(CT_APPLICATION_JSON);
+    resp->addHeader("Content-Disposition", "attachment; filename=\"" + tool.name + ".json\"");
+    resp->setBody(content);
+    callback(resp);
+    co_return;
+}
+
+Task<> AdminController::importCustomTool(
+    HttpRequestPtr req,
+    std::function<void(const HttpResponsePtr&)> callback) const{
+
+    auto json = req->getJsonObject();
+    if (!json) {
+        Json::Value resp;
+        resp["success"] = false;
+        resp["error"] = "无效的 JSON 数据";
+        callback(HttpResponse::newHttpJsonResponse(resp));
+        co_return;
+    }
+
+    // 检查必要字段
+    if (!json->isMember("name") || !json->isMember("description") || !json->isMember("scriptContent")) {
+        Json::Value resp;
+        resp["success"] = false;
+        resp["error"] = "缺少必要字段：name, description, scriptContent";
+        callback(HttpResponse::newHttpJsonResponse(resp));
+        co_return;
+    }
+
+    std::string name = (*json)["name"].asString();
+
+    // 检查是否已存在同名工具
+    if (Database::instance().hasCustomTool(name)) {
+        Json::Value resp;
+        resp["success"] = false;
+        resp["error"] = "工具名已存在：" + name;
+        callback(HttpResponse::newHttpJsonResponse(resp));
+        co_return;
+    }
+
+    // 构建工具对象（强制使用 Python 类型）
+    Database::CustomTool tool;
+    tool.name = name;
+    tool.description = (*json)["description"].asString();
+    tool.executorType = "python";
+
+    // 参数处理
+    if (json->isMember("parameters")) {
+        Json::StreamWriterBuilder writer;
+        writer["indentation"] = "";
+        tool.parameters = Json::writeString(writer, (*json)["parameters"]);
+    } else {
+        tool.parameters = "{\"type\":\"object\",\"properties\":{},\"required\":[]}";
+    }
+
+    tool.scriptContent = (*json)["scriptContent"].asString();
+    tool.readme = json->get("readme", "").asString();
+    tool.enabled = true;
+
+    // 添加到数据库
+    int newId = Database::instance().addCustomTool(tool);
+    AgentToolManager::instance().registerCustomTools();
+
+    spdlog::info("导入自定义工具: {} (ID: {})", tool.name, newId);
+
+    Json::Value resp;
+    resp["success"] = true;
+    resp["message"] = "工具已导入";
+    resp["id"] = newId;
     callback(HttpResponse::newHttpJsonResponse(resp));
     co_return;
 }

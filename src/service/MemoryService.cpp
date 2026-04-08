@@ -6,6 +6,7 @@
 #include <service/MemoryService.hpp>
 #include <config/Config.hpp>
 #include <spdlog/spdlog.h>
+#include <service/RAGFlowClient.hpp>
 #include <sstream>
 
 namespace LittleMeowBot {

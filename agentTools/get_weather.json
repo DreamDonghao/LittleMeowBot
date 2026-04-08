@@ -1,0 +1,16 @@
+{
+  "name": "get_weather",
+  "description": "查询指定城市的天气信息。当有人问天气时使用。",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "city": {
+        "type": "string",
+        "description": "城市名称，如：北京、上海、广州"
+      }
+    },
+    "required": ["city"]
+  },
+  "scriptContent": "import json\nimport sys\nimport urllib.request\nimport urllib.parse\n\ndef main():\n    if len(sys.argv) < 2:\n        print(\"缺少输入参数\")\n        return\n    \n    with open(sys.argv[1], 'r') as f:\n        args = json.load(f)\n    \n    city = args.get('city', '北京')\n    \n    try:\n        # 使用 wttr.in 免费天气 API\n        url = f\"https://wttr.in/{urllib.parse.quote(city)}?format=j1&lang=zh\"\n        \n        req = urllib.request.Request(url, headers={'User-Agent': 'curl'})\n        with urllib.request.urlopen(req, timeout=10) as response:\n            data = json.loads(response.read().decode('utf-8'))\n        \n        current = data['current_condition'][0]\n        location = data['nearest_area'][0]\n        \n        result = f\"📍 {location['areaName'][0]['value']} ({location['country'][0]['value']})\\n\"\n        result += f\"🌡️ 温度: {current['temp_C']}°C (体感 {current['FeelsLikeC']}°C)\\n\"\n        result += f\"☁️ 天气: {current['lang_zh'][0]['value']}\\n\"\n        result += f\"💧 湿度: {current['humidity']}%\\n\"\n        result += f\"💨 风速: {current['windspeedKmph']} km/h\\n\"\n        \n        # 未来天气预报\n        forecast = data['weather'][0]\n        result += f\"\\n📅 今日预报: {forecast['mintempC']}°C ~ {forecast['maxtempC']}°C\\n\"\n        \n        print(result)\n    except Exception as e:\n        print(f\"查询天气失败: {str(e)}\\n请检查城市名称是否正确\")\n\nif __name__ == '__main__':\n    main()",
+  "readme": "# get_weather 工具\n\n## 作者\ndonghao\n\n## 功能\n查询城市天气信息，包括：\n- 当前温度、体感温度\n- 天气状况\n- 湿度、风速\n- 今日最高/最低温度\n\n## 参数说明\n| 参数 | 类型 | 必填 | 说明 |\n|------|------|------|------|\n| city | string | 是 | 城市名称，支持中文 |\n\n## 使用示例\n```json\n{\"city\": \"北京\"}\n```\n\n## 输出示例\n```\n📍 北京 (中国)\n🌡️ 温度: 22°C (体感 20°C)\n☁️ 天气: 晴\n💧 湿度: 45%\n💨 风速: 12 km/h\n\n📅 今日预报: 18°C ~ 25°C\n```\n\n## 依赖\n无需额外安装，使用 Python 标准库\n\n## 数据来源\n使用 wttr.in 免费天气 API，无需 API key\n\n## 自定义\n可修改脚本使用其他天气 API：\n- 和风天气 API\n- 心知天气 API\n- OpenWeatherMap"
+}

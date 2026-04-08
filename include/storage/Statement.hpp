@@ -8,7 +8,6 @@
 ///          - 参数绑定：支持整数、浮点、字符串等类型
 
 #pragma once
-
 #include <sqlite3.h>
 #include <spdlog/spdlog.h>
 #include <string>
@@ -56,22 +55,22 @@ namespace LittleMeowBot {
         }
 
         /// @brief 绑定 std::string 参数
-        void bind(int idx, const std::string& v) noexcept{
+        void bind(const int idx, const std::string& v) const noexcept{
             sqlite3_bind_text(m_stmt, idx, v.c_str(), static_cast<int>(v.size()), SQLITE_TRANSIENT);
         }
 
         /// @brief 绑定 std::string_view 参数
-        void bind(int idx, std::string_view v) noexcept{
+        void bind(const int idx, const std::string_view v) const noexcept{
             sqlite3_bind_text(m_stmt, idx, v.data(), static_cast<int>(v.size()), SQLITE_TRANSIENT);
         }
 
         /// @brief 绑定 C-string 参数
-        void bind(int idx, const char* v) noexcept{
+        void bind(const int idx, const char* v) const noexcept{
             sqlite3_bind_text(m_stmt, idx, v, -1, SQLITE_TRANSIENT);
         }
 
         /// @brief 绑定 NULL 值
-        void bindNull(int idx) noexcept{
+        void bindNull(const int idx) const noexcept{
             sqlite3_bind_null(m_stmt, idx);
         }
 

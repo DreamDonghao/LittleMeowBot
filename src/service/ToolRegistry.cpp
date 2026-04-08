@@ -147,9 +147,16 @@ namespace LittleMeowBot {
         spdlog::info("工具已注销: {}", name);
     }
 
-    void ToolRegistry::clearCustomTools(const std::vector<std::string>& customToolNames){
-        for (const auto& name : customToolNames) {
+    void ToolRegistry::clearAllCustomTools(){
+        for (const auto& name : m_customToolNames) {
             unregisterTool(name);
+        }
+        m_customToolNames.clear();
+    }
+
+    void ToolRegistry::recordCustomTool(const std::string& name){
+        if (!std::ranges::contains(m_customToolNames, name)) {
+            m_customToolNames.push_back(name);
         }
     }
 

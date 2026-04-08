@@ -6,6 +6,8 @@
 #include <fmt/core.h>
 #include <regex>
 #include <algorithm>
+#include <config/Config.hpp>
+#include <service/WebSocketManager.hpp>
 
 namespace LittleMeowBot {
     MessageService& MessageService::instance(){

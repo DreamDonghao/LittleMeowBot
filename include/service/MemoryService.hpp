@@ -8,13 +8,8 @@
 ///          - 迁移到长期记忆库（RAGFlow）
 
 #pragma once
-
 #include <api/ApiClient.hpp>
-#include <storage/Database.hpp>
-#include <service/RAGFlowClient.hpp>
-#include <json/value.h>
 #include <string>
-#include <vector>
 
 namespace LittleMeowBot {
     /// @brief 记忆服务类

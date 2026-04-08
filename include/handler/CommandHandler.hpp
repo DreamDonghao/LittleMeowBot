@@ -1,8 +1,6 @@
 /// @file CommandHandler.hpp
 /// @brief 命令处理器 - QQ 群命令解析与执行
 #pragma once
-#include <storage/Database.hpp>
-
 #include <model/ChatRecordManager.hpp>
 #include <model/QQMessage.hpp>
 #include <drogon/utils/coroutine.h>

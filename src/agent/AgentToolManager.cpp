@@ -44,78 +44,6 @@ namespace LittleMeowBot {
         );
 
         // ========== 信息工具 ==========
-
-        // get_weather
-        Json::Value weatherParams;
-        weatherParams["type"] = "object";
-        weatherParams["properties"]["city"]["type"] = "string";
-        weatherParams["properties"]["city"]["description"] = "城市名称，如：北京、上海、广州";
-        weatherParams["required"].append("city");
-        registry.registerTool(
-            {
-                .name = "get_weather",
-                .description = "查询指定城市的天气信息。当有人问天气时使用。",
-                .parameters = weatherParams,
-                .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
-                    const std::string city = args.isMember("city") ? args["city"].asString() : "北京";
-                    co_return co_await ApiClient::fetchWeather(city);
-                }
-            }, ToolCategory::INFORMATION
-        );
-
-        // search_web
-        Json::Value searchParams;
-        searchParams["type"] = "object";
-        searchParams["properties"]["query"]["type"] = "string";
-        searchParams["properties"]["query"]["description"] = "搜索关键词";
-        searchParams["required"].append("query");
-        registry.registerTool(
-            {
-                .name = "search_web",
-                .description = "搜索网络获取信息。当需要查询实时信息、新闻、知识、最新动态时使用。",
-                .parameters = searchParams,
-                .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
-                    std::string query = args.isMember("query") ? args["query"].asString() : "";
-                    co_return co_await ApiClient::searchWeb(query);
-                }
-            }, ToolCategory::INFORMATION
-        );
-
-        // get_time
-        Json::Value timeParams;
-        timeParams["type"] = "object";
-        timeParams["properties"]["timezone"]["type"] = "string";
-        timeParams["properties"]["timezone"]["description"] = "时区，默认使用系统时区";
-        registry.registerTool(
-            {
-                .name = "get_time",
-                .description = "获取当前日期和时间。当有人问现在几点、今天星期几、什么日期时使用。",
-                .parameters = timeParams,
-                .handler = [](const Json::Value&) -> drogon::Task<std::string> {
-                    const auto now = std::chrono::system_clock::now();
-                    const auto time = std::chrono::system_clock::to_time_t(now);
-
-                    std::ostringstream oss;
-                    oss << std::put_time(std::localtime(&time), "%Y年%m月%d日 %A %H:%M:%S");
-
-                    std::string result = oss.str();
-                    static const std::unordered_map<std::string, std::string> weekdayMap = {
-                        {"Monday", "星期一"}, {"Tuesday", "星期二"}, {"Wednesday", "星期三"},
-                        {"Thursday", "星期四"}, {"Friday", "星期五"}, {"Saturday", "星期六"},
-                        {"Sunday", "星期日"}
-                    };
-                    for (const auto& [en, zh] : weekdayMap) {
-                        size_t pos = result.find(en);
-                        if (pos != std::string::npos) {
-                            result.replace(pos, en.length(), zh);
-                            break;
-                        }
-                    }
-                    co_return "现在时间：" + result;
-                }
-            }, ToolCategory::INFORMATION
-        );
-
         // list_emojis
         registry.registerTool(
             {
@@ -189,60 +117,19 @@ namespace LittleMeowBot {
                 .description = "获取当前群聊的名称。当需要知道群名或确认当前群时使用。",
                 .parameters = Json::Value(),
                 .handler = [](const Json::Value&) -> drogon::Task<std::string> {
-                    const auto& ctx = currentToolContext();
-                    if (ctx.groupId == 0) {
+                    const auto& [groupId, groupName] = currentToolContext();
+                    if (groupId == 0) {
                         co_return "无法获取群信息";
                     }
-                    if (!ctx.groupName.empty()) {
-                        co_return fmt::format("当前群：{}（群号：{}）", ctx.groupName, ctx.groupId);
+                    if (!groupName.empty()) {
+                        co_return fmt::format("当前群：{}（群号：{}）", groupName, groupId);
                     }
-                    co_return fmt::format("当前群号：{}", ctx.groupId);
+                    co_return fmt::format("当前群号：{}", groupId);
                 }
             }, ToolCategory::INFORMATION
         );
 
         // ========== 动作工具 ==========
-
-        // random
-        Json::Value randomParams;
-        randomParams["type"] = "object";
-        randomParams["properties"]["min"]["type"] = "integer";
-        randomParams["properties"]["min"]["description"] = "最小值，默认1";
-        randomParams["properties"]["max"]["type"] = "integer";
-        randomParams["properties"]["max"]["description"] = "最大值，默认100";
-        randomParams["properties"]["count"]["type"] = "integer";
-        randomParams["properties"]["count"]["description"] = "生成数量，默认1";
-        randomParams["properties"]["description"]["type"] = "string";
-        randomParams["properties"]["description"]["description"] = "描述这次随机的用途";
-        registry.registerTool(
-            {
-                .name = "random",
-                .description = "生成随机数。用于掷骰子、抽签、随机选择、碰运气等场景。",
-                .parameters = randomParams,
-                .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
-                    int min = args.isMember("min") ? args["min"].asInt() : 1;
-                    int max = args.isMember("max") ? args["max"].asInt() : 100;
-                    int count = args.isMember("count") ? args["count"].asInt() : 1;
-                    const std::string desc = args.isMember("description")
-                                                 ? args["description"].asString()
-                                                 : "随机";
-
-                    if (min > max) std::swap(min, max);
-                    if (count < 1) count = 1;
-                    if (count > MAX_RANDOM_COUNT) count = MAX_RANDOM_COUNT;
-
-                    std::string result = desc + "结果：";
-                    thread_local std::mt19937 generator(std::random_device{}());
-                    std::uniform_int_distribution<int> distribution(min, max);
-                    for (int i = 0; i < count; i++) {
-                        if (count > 1) result += "\n第" + std::to_string(i + 1) + "次: ";
-                        result += std::to_string(distribution(generator));
-                    }
-                    co_return result;
-                }
-            }, ToolCategory::ACTION
-        );
-
         // send_face
         Json::Value faceParams;
         faceParams["type"] = "object";
@@ -356,15 +243,8 @@ namespace LittleMeowBot {
         auto& registry = ToolRegistry::instance();
         const auto& db = Database::instance();
 
-        // 获取数据库中所有自定义工具名称（包括禁用的）
-        const auto allTools = db.getCustomTools();
-        std::vector<std::string> allToolNames;
-        for (const auto& t : allTools) {
-            allToolNames.push_back(t.name);
-        }
-
-        // 先清除旧的自定义工具
-        registry.clearCustomTools(allToolNames);
+        // 先清除所有已注册的自定义工具
+        registry.clearAllCustomTools();
 
         // 只注册启用的工具
         const auto tools = db.getEnabledCustomTools();
@@ -408,6 +288,7 @@ namespace LittleMeowBot {
                 );
             }
 
+            registry.recordCustomTool(tool.name);
             count++;
             spdlog::info("ToolManager: 注册自定义工具 '{}' ({})", tool.name, tool.executorType);
         }
@@ -436,8 +317,8 @@ namespace LittleMeowBot {
         // 写入脚本 - 去除开头可能的多余空白，保留内部缩进
         std::string cleanScript = scriptContent;
         // 去除开头的空白行
-        size_t firstNonSpace = cleanScript.find_first_not_of(" \t\n\r");
-        if (firstNonSpace != std::string::npos && firstNonSpace > 0) {
+        if (size_t firstNonSpace = cleanScript.find_first_not_of(" \t\n\r");
+            firstNonSpace != std::string::npos && firstNonSpace > 0) {
             cleanScript = cleanScript.substr(firstNonSpace);
         }
 

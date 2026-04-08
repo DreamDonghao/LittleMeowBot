@@ -13,6 +13,7 @@
 #include <drogon/drogon.h>
 #include <random>
 #include <ranges>
+
 /// @brief 根据概率获取布尔值
 inline bool randomBoolWithProbability(const double probability){
     if (probability <= 0.0)
@@ -27,7 +28,7 @@ inline bool randomBoolWithProbability(const double probability){
     return dis(gen) < probability;
 }
 
-inline Json::Value parseJson(const std::string &jsonStr){
+inline Json::Value parseJson(const std::string& jsonStr){
     Json::CharReaderBuilder builder;
     builder["collectComments"] = false;
 
@@ -35,9 +36,9 @@ inline Json::Value parseJson(const std::string &jsonStr){
     Json::Value root;
     std::string errs;
 
-    const char *begin = jsonStr.data();
+    const char* begin = jsonStr.data();
 
-    if (const char *end = begin + jsonStr.size(); !reader->parse(begin, end, &root, &errs)) {
+    if (const char* end = begin + jsonStr.size(); !reader->parse(begin, end, &root, &errs)) {
         // 出错时打印并返回空对象
         std::cerr << "JSON解析失败: " << errs << "\n";
         return Json::Value{};
@@ -46,7 +47,7 @@ inline Json::Value parseJson(const std::string &jsonStr){
 }
 
 
-inline std::string fillEmptyImages(std::string s, const std::string &images){
+inline std::string fillEmptyImages(std::string s, const std::string& images){
     constexpr std::string_view kTag = "[图片：";
     size_t pos = 0;
 
@@ -67,7 +68,7 @@ inline std::string fillEmptyImages(std::string s, const std::string &images){
     return s;
 }
 
-inline Json::Value buildModelReq(const Json::Value &messages, const std::string &model, const float temperature,
+inline Json::Value buildModelReq(const Json::Value& messages, const std::string& model, const float temperature,
                                  const float top_p, const int max_tokens){
     Json::Value body;
     body["model"] = model;
@@ -93,7 +94,7 @@ inline std::string currentDateTime(){
 }
 
 
-inline std::vector<std::string> split(const std::string &str, const std::string &delim){
+inline std::vector<std::string> split(const std::string& str, const std::string& delim){
     std::vector<std::string> result;
     if (delim.empty()) {
         result.push_back(str);
@@ -113,10 +114,10 @@ inline std::vector<std::string> split(const std::string &str, const std::string 
     return result;
 }
 
-inline drogon::Task<std::optional<std::string> > requestStr(
-    const Json::Value &messages,
-    const std::string &base_url, const std::string &path,
-    const std::string &api_key, const std::string &model,
+inline drogon::Task<std::optional<std::string>> requestStr(
+    const Json::Value& messages,
+    const std::string& base_url, const std::string& path,
+    const std::string& api_key, const std::string& model,
     const float temperature, const float top_p, const int max_tokens){
     const auto client = drogon::HttpClient::newHttpClient(base_url);
     const Json::Value body = buildModelReq(messages, model, temperature, top_p, max_tokens);
@@ -132,7 +133,7 @@ inline drogon::Task<std::optional<std::string> > requestStr(
         LOG_ERROR << "Api 请求出错: status=" << resp->getStatusCode();
         co_return std::nullopt;
     }
-    const Json::Value &choices = (*json)["choices"];
+    const Json::Value& choices = (*json)["choices"];
     if (!choices.isArray() || choices.empty()) {
         LOG_ERROR << "Api 返回格式错误";
         co_return std::nullopt;
@@ -141,26 +142,26 @@ inline drogon::Task<std::optional<std::string> > requestStr(
     co_return content;
 }
 
-inline drogon::Task<std::optional<std::string> > requestGemini(
-    const Json::Value &messages,
-    const std::string &base_url, // https://generativelanguage.googleapis.com
-    const std::string &model,    // gemini-pro / gemini-1.5-pro 等
-    const std::string &api_key,
+inline drogon::Task<std::optional<std::string>> requestGemini(
+    const Json::Value& messages,
+    const std::string& base_url, // https://generativelanguage.googleapis.com
+    const std::string& model, // gemini-pro / gemini-1.5-pro 等
+    const std::string& api_key,
     const float temperature,
     const float top_p,
     const int max_tokens){
     // 1. 构造 URL（Gemini 把 key 放 query）
     const std::string path =
-            "/v1beta/models/" + model + ":generateContent?key=" + api_key;
+        "/v1beta/models/" + model + ":generateContent?key=" + api_key;
 
     const auto client = drogon::HttpClient::newHttpClient(base_url);
 
     // 2. 将 OpenAI messages 转为 Gemini contents
     Json::Value body;
-    auto &contents = body["contents"];
+    auto& contents = body["contents"];
 
     for (Json::ArrayIndex i = 0; i < messages.size(); ++i) {
-        const auto &msg = messages[i];
+        const auto& msg = messages[i];
         const std::string role = msg.get("role", "").asString();
         const std::string text = msg.get("content", "").asString();
 
@@ -200,14 +201,14 @@ inline drogon::Task<std::optional<std::string> > requestGemini(
     }
 
     // 5. 解析返回
-    const Json::Value &candidates = (*json)["candidates"];
+    const Json::Value& candidates = (*json)["candidates"];
     if (!candidates.isArray() || candidates.empty()) {
         LOG_ERROR << "Gemini 返回结构异常";
         co_return std::nullopt;
     }
 
-    const auto &parts =
-            candidates[0]["content"]["parts"];
+    const auto& parts =
+        candidates[0]["content"]["parts"];
 
     if (!parts.isArray() || parts.empty()) {
         LOG_ERROR << "Gemini 无有效文本";
@@ -217,4 +218,3 @@ inline drogon::Task<std::optional<std::string> > requestGemini(
     const std::string content = parts[0]["text"].asString();
     co_return content;
 }
-

@@ -11,7 +11,6 @@
 
 #include <json/value.h>
 #include <drogon/utils/coroutine.h>
-
 #include <unordered_map>
 #include <string>
 #include <functional>
@@ -80,8 +79,11 @@ namespace LittleMeowBot {
         /// @brief 注销工具
         void unregisterTool(const std::string& name);
 
-        /// @brief 清除所有自定义工具（用于重新加载前清理）
-        void clearCustomTools(const std::vector<std::string>& customToolNames);
+        /// @brief 清除所有已注册的自定义工具
+        void clearAllCustomTools();
+
+        /// @brief 记录自定义工具名称（注册时调用）
+        void recordCustomTool(const std::string& name);
 
         /// @brief 获取工具分类
         ToolCategory getCategory(const std::string& name) const;
@@ -98,6 +100,7 @@ namespace LittleMeowBot {
         std::unordered_map<std::string, Tool> m_terminalTools;
         std::unordered_map<std::string, Tool> m_infoTools;
         std::unordered_map<std::string, Tool> m_actionTools;
+        std::vector<std::string> m_customToolNames; // 记录已注册的自定义工具名称
 
         const std::unordered_map<std::string, Tool>& getToolMap(ToolCategory category) const;
         static std::string categoryToString(ToolCategory category);

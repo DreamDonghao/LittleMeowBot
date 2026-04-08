@@ -4,6 +4,7 @@
  * @brief 自定义工具管理组件
  */
 import {computed, inject, nextTick, onMounted, reactive, ref, type Ref} from 'vue'
+import {marked} from 'marked'
 import type {ApiResponse} from '../vite-env.d'
 
 const showToast = inject<(msg: string, isError?: boolean) => void>('showToast')
@@ -16,6 +17,7 @@ interface CustomTool {
   executorType: 'python' | 'http'
   executorConfig: string
   scriptContent: string
+  readme: string
   enabled: boolean
 }
 
@@ -26,6 +28,16 @@ const showDialog: Ref<boolean> = ref(false)
 const isEdit: Ref<boolean> = ref(false)
 const testing: Ref<boolean> = ref(false)
 const testResult: Ref<string> = ref('')
+
+// 导入对话框
+const showImportDialog: Ref<boolean> = ref(false)
+const importJson: Ref<string> = ref('')
+const importing: Ref<boolean> = ref(false)
+
+// README 详情对话框
+const showReadmeDialog: Ref<boolean> = ref(false)
+const currentReadme: Ref<string> = ref('')
+const currentToolName: Ref<string> = ref('')
 
 // Python 配置
 const showConfig: Ref<boolean> = ref(false)
@@ -52,6 +64,7 @@ const editTool = reactive<CustomTool>({
   executorType: 'python',
   executorConfig: '',
   scriptContent: defaultPythonScript,
+  readme: '',
   enabled: true
 })
 
@@ -130,6 +143,7 @@ const openAddDialog = (): void => {
     executorType: 'python',
     executorConfig: '',
     scriptContent: defaultPythonScript,
+    readme: '',
     enabled: true
   })
   testResult.value = ''
@@ -237,6 +251,80 @@ const reloadTools = async (): Promise<void> => {
   }
 }
 
+const exportTool = async (id: number, name: string): Promise<void> => {
+  const resp = await fetch(`/admin/api/custom-tool/${id}/export`)
+  const data = await resp.json()
+  if (data.success === false) {
+    showToast!(data.error || '导出失败', true)
+    return
+  }
+  // 创建下载文件
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'})
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${name}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+const openImportDialog = (): void => {
+  importJson.value = ''
+  showImportDialog.value = true
+}
+
+const handleFileUpload = (event: Event): void => {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file) return
+
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    importJson.value = e.target?.result as string || ''
+  }
+  reader.readAsText(file)
+  target.value = '' // 清空，允许重复选择同一文件
+}
+
+const importTool = async (): Promise<void> => {
+  if (!importJson.value.trim()) {
+    showToast!('请输入或上传工具 JSON', true)
+    return
+  }
+
+  try {
+    const toolData = JSON.parse(importJson.value)
+    importing.value = true
+    const resp = await fetch('/admin/api/custom-tool/import', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(toolData)
+    })
+    const data: ApiResponse = await resp.json()
+    if (data.success) {
+      showToast!('工具已导入')
+      showImportDialog.value = false
+      loadTools()
+    } else {
+      showToast!(data.error || '导入失败', true)
+    }
+  } catch {
+    showToast!('JSON 格式错误', true)
+  } finally {
+    importing.value = false
+  }
+}
+
+const showReadme = (tool: CustomTool): void => {
+  currentToolName.value = tool.name
+  if (tool.readme) {
+    currentReadme.value = marked(tool.readme) as string
+  } else {
+    currentReadme.value = '<p style="color: #9ca3af;">暂无说明文档</p>'
+  }
+  showReadmeDialog.value = true
+}
+
 const testCurrentTool = async (): Promise<void> => {
   testing.value = true
   testResult.value = ''
@@ -290,6 +378,7 @@ onMounted(() => {
         <h3 class="card-title">工具管理</h3>
         <div style="display: flex; gap: 8px;">
           <button class="btn btn-secondary btn-sm" @click="showConfig = true">⚙️ Python配置</button>
+          <button class="btn btn-secondary btn-sm" @click="openImportDialog">📥 导入</button>
           <button class="btn btn-primary btn-sm" @click="reloadTools">重新加载</button>
           <button class="btn btn-success btn-sm" @click="openAddDialog">添加工具</button>
         </div>
@@ -307,7 +396,7 @@ onMounted(() => {
           </tr>
           </thead>
           <tbody>
-          <tr v-for="tool in tools" :key="tool.id">
+          <tr v-for="tool in tools" :key="tool.id" class="tool-row" @click="showReadme(tool)">
             <td>
                 <span :class="{ 'status-enabled': tool.enabled, 'status-disabled': !tool.enabled }">
                   {{ tool.enabled ? '启用' : '禁用' }}
@@ -318,10 +407,13 @@ onMounted(() => {
             <td>
               <span :class="'tag-' + tool.executorType" class="tag">{{ tool.executorType }}</span>
             </td>
-            <td style="white-space: nowrap;">
+            <td style="white-space: nowrap;" @click.stop>
               <button :class="tool.enabled ? 'btn-warning' : 'btn-success'" class="btn btn-sm"
                       @click="toggleTool(tool.id)">
                 {{ tool.enabled ? '禁用' : '启用' }}
+              </button>
+              <button v-if="tool.executorType === 'python'" class="btn btn-secondary btn-sm" style="margin-left: 4px;"
+                      @click="exportTool(tool.id, tool.name)">导出
               </button>
               <button class="btn btn-primary btn-sm" style="margin-left: 4px;" @click="openEditDialog(tool)">编辑
               </button>
@@ -375,6 +467,42 @@ pip install requests numpy  # 安装需要的包</pre>
       </div>
     </div>
 
+    <!-- 导入对话框 -->
+    <div v-if="showImportDialog" class="dialog-overlay">
+      <div class="dialog" style="width: 600px;">
+        <div class="dialog-header">
+          <h3>导入工具</h3>
+          <button class="dialog-close" @click="showImportDialog = false">×</button>
+        </div>
+        <div class="dialog-body">
+          <div class="form-group">
+            <label class="form-label">上传 JSON 文件</label>
+            <input type="file" accept=".json" class="form-input" @change="handleFileUpload">
+          </div>
+          <div class="form-group">
+            <label class="form-label">或粘贴 JSON 内容</label>
+            <textarea v-model="importJson" class="form-input code-input" style="min-height: 200px;"
+                      placeholder="粘贴工具 JSON 内容..." spellcheck="false"></textarea>
+          </div>
+          <div class="import-example">
+            <strong>JSON 格式示例：</strong>
+            <pre>{
+  "name": "random",
+  "description": "生成随机数",
+  "parameters": {"type": "object", "properties": {...}},
+  "scriptContent": "import json\n..."
+}</pre>
+          </div>
+        </div>
+        <div class="dialog-footer">
+          <button class="btn btn-secondary" @click="showImportDialog = false">取消</button>
+          <button :disabled="importing" class="btn btn-success" @click="importTool">
+            {{ importing ? '导入中...' : '导入' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- 添加/编辑对话框 -->
     <div v-if="showDialog" class="dialog-overlay">
       <div :style="{ width: dialogWidth }" class="dialog">
@@ -419,8 +547,16 @@ pip install requests numpy  # 安装需要的包</pre>
             <small class="form-hint">参数通过 sys.argv[1] 传入 JSON 文件路径</small>
           </div>
 
+          <!-- README 文档 -->
+          <div class="form-group">
+            <label class="form-label">说明文档 (Markdown)</label>
+            <textarea v-model="editTool.readme" class="form-input auto-height" style="min-height: 80px;"
+                      placeholder="作者、用法、联系方式等信息..." @input="autoResize"></textarea>
+            <small class="form-hint">可选填写作者、使用示例、联系方式等，便于分享和查阅</small>
+          </div>
+
           <!-- HTTP 配置 -->
-          <div v-else class="form-group">
+          <div v-if="editTool.executorType === 'http'" class="form-group">
             <label class="form-label">HTTP 配置 (JSON)</label>
             <textarea v-model="editTool.executorConfig" class="form-input code-input auto-height"
                       @input="autoResize"></textarea>
@@ -459,6 +595,20 @@ pip install requests numpy  # 安装需要的包</pre>
           <button :disabled="saving" class="btn btn-success" @click="saveTool">
             {{ saving ? '保存中...' : '保存' }}
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- README 详情对话框 -->
+    <div v-if="showReadmeDialog" class="dialog-overlay">
+      <div class="dialog" style="width: 700px; max-height: 80vh;">
+        <div class="dialog-header">
+          <h3>{{ currentToolName }}</h3>
+          <button class="dialog-close" @click="showReadmeDialog = false">×</button>
+        </div>
+        <div class="dialog-body readme-content" v-html="currentReadme"></div>
+        <div class="dialog-footer">
+          <button class="btn btn-secondary" @click="showReadmeDialog = false">关闭</button>
         </div>
       </div>
     </div>
@@ -563,6 +713,79 @@ pip install requests numpy  # 安装需要的包</pre>
   padding: 16px 20px;
 }
 
+.tool-row {
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.tool-row:hover {
+  background-color: #f3f4f6;
+}
+
+.readme-content {
+  max-height: 60vh;
+  overflow-y: auto;
+  line-height: 1.7;
+}
+
+.readme-content h1, .readme-content h2, .readme-content h3 {
+  margin-top: 0;
+  margin-bottom: 12px;
+  color: #1f2937;
+}
+
+.readme-content h1 { font-size: 20px; }
+.readme-content h2 { font-size: 18px; }
+.readme-content h3 { font-size: 16px; }
+
+.readme-content p {
+  margin: 0 0 12px 0;
+}
+
+.readme-content ul, .readme-content ol {
+  margin: 0 0 12px 0;
+  padding-left: 24px;
+}
+
+.readme-content code {
+  background: #f3f4f6;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+}
+
+.readme-content pre {
+  background: #1f2937;
+  color: #e5e7eb;
+  padding: 12px 16px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 0 0 12px 0;
+}
+
+.readme-content pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+
+.readme-content a {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.readme-content a:hover {
+  text-decoration: underline;
+}
+
+.readme-content blockquote {
+  border-left: 4px solid #d1d5db;
+  margin: 0 0 12px 0;
+  padding-left: 16px;
+  color: #6b7280;
+}
+
 .form-row {
   display: flex;
   gap: 16px;
@@ -628,6 +851,24 @@ pip install requests numpy  # 安装需要的包</pre>
 .config-example p {
   margin: 8px 0 0 0;
   color: #6b7280;
+}
+
+.import-example {
+  margin-top: 12px;
+  padding: 12px;
+  background: #f3f4f6;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.import-example pre {
+  background: #1f2937;
+  color: #e5e7eb;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 11px;
+  margin: 8px 0;
+  overflow-x: auto;
 }
 
 .test-section {

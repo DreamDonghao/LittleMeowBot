@@ -1,0 +1,27 @@
+{
+  "name": "random",
+  "description": "生成随机数。用于掷骰子、抽签、随机选择、碰运气等场景。",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "min": {
+        "type": "integer",
+        "description": "最小值，默认1"
+      },
+      "max": {
+        "type": "integer",
+        "description": "最大值，默认100"
+      },
+      "count": {
+        "type": "integer",
+        "description": "生成数量，默认1，最多10"
+      },
+      "description": {
+        "type": "string",
+        "description": "描述这次随机的用途"
+      }
+    }
+  },
+  "scriptContent": "import json\nimport sys\nimport random\n\ndef main():\n    if len(sys.argv) < 2:\n        print(\"缺少输入参数\")\n        return\n    \n    with open(sys.argv[1], 'r') as f:\n        args = json.load(f)\n    \n    min_val = args.get('min', 1)\n    max_val = args.get('max', 100)\n    count = args.get('count', 1)\n    desc = args.get('description', '随机')\n    \n    if min_val > max_val:\n        min_val, max_val = max_val, min_val\n    if count < 1:\n        count = 1\n    if count > 10:\n        count = 10\n    \n    result = f\"{desc}结果：\"\n    for i in range(count):\n        if count > 1:\n            result += f\"\\n第{i + 1}次: \"\n        result += str(random.randint(min_val, max_val))\n    \n    print(result)\n\nif __name__ == '__main__':\n    main()",
+  "readme": "# random 工具\n\n## 作者\ndonghao\n\n## 功能\n生成随机数，支持：\n- 掷骰子\n- 抽签\n- 随机选择\n- 碰运气等场景\n\n## 参数说明\n| 参数 | 类型 | 默认值 | 说明 |\n|------|------|--------|------|\n| min | integer | 1 | 最小值 |\n| max | integer | 100 | 最大值 |\n| count | integer | 1 | 生成数量（最多10个） |\n| description | string | \"随机\" | 描述用途 |\n\n## 使用示例\n```json\n{\"min\": 1, \"max\": 6, \"description\": \"掷骰子\"}\n```\n\n## 输出示例\n```\n掷骰子结果：4\n```"
+}

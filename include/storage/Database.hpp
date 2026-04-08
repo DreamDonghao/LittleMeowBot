@@ -20,7 +20,6 @@
 #include <optional>
 #include <filesystem>
 
-
 namespace LittleMeowBot {
     /// @brief 群组配置结构
     struct GroupConfig{
@@ -176,6 +175,7 @@ namespace LittleMeowBot {
             std::string executorType; // "python" | "http"
             std::string executorConfig; // JSON 配置 (http用)
             std::string scriptContent; // Python脚本内容 (python用)
+            std::string readme; // Markdown 说明文档（作者、用法、联系方式等）
             bool enabled = true;
         };
 

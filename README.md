@@ -13,7 +13,7 @@
 - **智能对话** - Agent 架构，理解上下文，智能回复
 - **自定义角色** - 可设置 Bot 名称和人设
 - **长期记忆** - 记住群友的喜好、习惯、重要事件
-- **多工具支持** - 天气查询、网络搜索、掷骰子、抽奖、禁言等
+- **自定义工具** - 支持 Python 脚本，可视化配置，一键导入导出
 - **图片识别** - 自动识别群聊图片内容
 - **Web 管理后台** - 可视化配置，实时查看聊天记录
 - **知识库对接** - 支持 RAGFlow，可接入自定义知识库
@@ -137,6 +137,36 @@
 
 ## 🔧 高级功能
 
+### 自定义工具
+
+支持通过 Python 脚本扩展机器人能力：
+
+1. 进入管理后台 → 自定义工具
+2. 点击"添加工具"或"导入"
+3. 填写工具名称、描述、参数定义和 Python 脚本
+4. 保存并启用
+
+工具支持：
+- **参数定义** - JSON Schema 格式，LLM 自动理解
+- **Python 脚本** - 通过 `sys.argv[1]` 接收参数 JSON 文件路径
+- **说明文档** - Markdown 格式，记录作者、用法、联系方式
+- **导入导出** - JSON 文件格式，方便分享
+
+#### 内置工具配置文件
+
+项目提供了一些常用工具配置，位于 `agentTools/` 目录：
+
+| 文件 | 功能 | 依赖 |
+|------|------|------|
+| `random.json` | 随机数生成 | 无 |
+| `get_time.json` | 获取时间 | 无 |
+| `get_weather.json` | 天气查询 | 无 |
+| `search_web.json` | 网络搜索 | `duckduckgo-search` |
+
+导入方法：
+1. 管理后台 → 自定义工具 → 导入
+2. 上传 JSON 文件
+
 ### 对接知识库
 
 1. 部署 RAGFlow 服务
@@ -154,6 +184,7 @@
 - 群配置
 - 管理员列表
 - LLM 配置
+- 自定义工具
 - 提示词
 
 ---
@@ -201,6 +232,11 @@ LittleMeowBot/
 │   ├── ProcessQQMessages.cc # 消息处理
 │   ├── AdminController.cc   # 管理 API
 │   └── AdminWebSocket.cc    # WebSocket
+├── agentTools/              # 工具配置文件
+│   ├── random.json
+│   ├── get_time.json
+│   ├── get_weather.json
+│   └── search_web.json
 └── include/
     ├── agent/               # Agent 系统
     ├── config/              # 配置管理
@@ -211,7 +247,13 @@ LittleMeowBot/
 
 ### 添加自定义工具
 
-编辑 `include/agent/AgentToolManager.hpp`：
+#### 方式一：Web 管理后台（推荐）
+
+在管理后台可视化配置，支持 Python 脚本。
+
+#### 方式二：C++ 内置工具
+
+编辑 `src/agent/AgentToolManager.cpp`：
 
 ```cpp
 registry.registerTool(
@@ -223,6 +265,27 @@ registry.registerTool(
             co_return "结果";
         }
     }, ToolCategory::ACTION);
+```
+
+### 工具 JSON 格式
+
+```json
+{
+  "name": "tool_name",
+  "description": "工具描述，LLM 会根据此判断何时调用",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "param1": {
+        "type": "string",
+        "description": "参数说明"
+      }
+    },
+    "required": ["param1"]
+  },
+  "scriptContent": "import json\nimport sys\n\n# 参数从 sys.argv[1] 传入的 JSON 文件读取\nwith open(sys.argv[1]) as f:\n    args = json.load(f)\n\nprint(args['param1'])",
+  "readme": "# 工具说明\n\n作者、用法、联系方式等"
+}
 ```
 
 ### 添加新 API
@@ -239,4 +302,4 @@ AGPL-3.0 with Additional Terms
 
 ---
 
-Made with by [DreamDonghao](https://github.com/DreamDonghao)
+Made with ❤️ by [DreamDonghao](https://github.com/DreamDonghao)

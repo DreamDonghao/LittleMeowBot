@@ -73,6 +73,9 @@ namespace LittleMeowBot {
         ADD_METHOD_TO(AdminController::toggleCustomTool, "/admin/api/custom-tool/{id}/toggle", drogon::Post);
         ADD_METHOD_TO(AdminController::reloadCustomTools, "/admin/api/custom-tools/reload", drogon::Post);
         ADD_METHOD_TO(AdminController::testCustomTool, "/admin/api/custom-tool/test", drogon::Post);
+        // 自定义工具导入导出
+        ADD_METHOD_TO(AdminController::exportCustomTool, "/admin/api/custom-tool/{id}/export", drogon::Get);
+        ADD_METHOD_TO(AdminController::importCustomTool, "/admin/api/custom-tool/import", drogon::Post);
         // 自定义工具配置
         ADD_METHOD_TO(AdminController::getCustomToolConfig, "/admin/api/custom-tool-config", drogon::Get);
         ADD_METHOD_TO(AdminController::saveCustomToolConfig, "/admin/api/custom-tool-config", drogon::Post);
@@ -393,6 +396,24 @@ namespace LittleMeowBot {
         /// @param req HTTP 请求，body 包含 pythonPath
         /// @param callback HTTP 响应回调
         drogon::Task<> saveCustomToolConfig(
+            drogon::HttpRequestPtr req,
+            std::function<void(const drogon::HttpResponsePtr &)> callback) const;
+
+        // ============== 自定义工具导入导出 ==============
+
+        /// @brief 导出工具为 JSON 文件
+        /// @param req HTTP 请求
+        /// @param callback HTTP 响应回调
+        /// @param id 工具ID
+        drogon::Task<> exportCustomTool(
+            drogon::HttpRequestPtr req,
+            std::function<void(const drogon::HttpResponsePtr &)> callback,
+            const std::string& id) const;
+
+        /// @brief 导入工具 JSON 文件
+        /// @param req HTTP 请求，body 包含工具 JSON
+        /// @param callback HTTP 响应回调
+        drogon::Task<> importCustomTool(
             drogon::HttpRequestPtr req,
             std::function<void(const drogon::HttpResponsePtr &)> callback) const;
     };

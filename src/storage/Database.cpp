@@ -648,7 +648,7 @@ namespace LittleMeowBot {
         std::shared_lock lock(m_mutex);
         std::vector<CustomTool> tools;
         Statement stmt(m_db,
-                       "SELECT id, name, description, parameters, executor_type, executor_config, script_content, enabled "
+                       "SELECT id, name, description, parameters, executor_type, executor_config, script_content, readme, enabled "
                        "FROM custom_tools ORDER BY id");
         while (stmt.step()) {
             CustomTool tool;
@@ -659,7 +659,8 @@ namespace LittleMeowBot {
             tool.executorType = stmt.getText(4);
             tool.executorConfig = stmt.getText(5);
             tool.scriptContent = stmt.getText(6);
-            tool.enabled = stmt.getInt(7) == 1;
+            tool.readme = stmt.getText(7);
+            tool.enabled = stmt.getInt(8) == 1;
             tools.push_back(tool);
         }
         return tools;
@@ -669,7 +670,7 @@ namespace LittleMeowBot {
         std::shared_lock lock(m_mutex);
         std::vector<CustomTool> tools;
         Statement stmt(m_db,
-                       "SELECT id, name, description, parameters, executor_type, executor_config, script_content "
+                       "SELECT id, name, description, parameters, executor_type, executor_config, script_content, readme "
                        "FROM custom_tools WHERE enabled = 1 ORDER BY id");
         while (stmt.step()) {
             CustomTool tool;
@@ -680,6 +681,7 @@ namespace LittleMeowBot {
             tool.executorType = stmt.getText(4);
             tool.executorConfig = stmt.getText(5);
             tool.scriptContent = stmt.getText(6);
+            tool.readme = stmt.getText(7);
             tool.enabled = true;
             tools.push_back(tool);
         }
@@ -689,15 +691,16 @@ namespace LittleMeowBot {
     int Database::addCustomTool(const CustomTool& tool) const{
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db,
-                       "INSERT INTO custom_tools (name, description, parameters, executor_type, executor_config, script_content, enabled) "
-                       "VALUES (?, ?, ?, ?, ?, ?, ?)");
+                       "INSERT INTO custom_tools (name, description, parameters, executor_type, executor_config, script_content, readme, enabled) "
+                       "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
         stmt.bind(1, tool.name);
         stmt.bind(2, tool.description);
         stmt.bind(3, tool.parameters);
         stmt.bind(4, tool.executorType);
         stmt.bind(5, tool.executorConfig);
         stmt.bind(6, tool.scriptContent);
-        stmt.bind(7, tool.enabled ? 1 : 0);
+        stmt.bind(7, tool.readme);
+        stmt.bind(8, tool.enabled ? 1 : 0);
         stmt.exec();
         spdlog::info("已添加自定义工具: {}", tool.name);
         return sqlite3_last_insert_rowid(m_db);
@@ -706,7 +709,7 @@ namespace LittleMeowBot {
     void Database::updateCustomTool(const CustomTool& tool) const{
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db,
-                       "UPDATE custom_tools SET name=?, description=?, parameters=?, executor_type=?, executor_config=?, script_content=?, enabled=? "
+                       "UPDATE custom_tools SET name=?, description=?, parameters=?, executor_type=?, executor_config=?, script_content=?, readme=?, enabled=? "
                        "WHERE id=?");
         stmt.bind(1, tool.name);
         stmt.bind(2, tool.description);
@@ -714,8 +717,9 @@ namespace LittleMeowBot {
         stmt.bind(4, tool.executorType);
         stmt.bind(5, tool.executorConfig);
         stmt.bind(6, tool.scriptContent);
-        stmt.bind(7, tool.enabled ? 1 : 0);
-        stmt.bind(8, tool.id);
+        stmt.bind(7, tool.readme);
+        stmt.bind(8, tool.enabled ? 1 : 0);
+        stmt.bind(9, tool.id);
         stmt.exec();
         spdlog::info("已更新自定义工具: {}", tool.name);
     }
@@ -893,6 +897,7 @@ namespace LittleMeowBot {
     void Database::migrateDatabase() const{
         // 检查 custom_tools 表是否有 script_content 列
         bool hasScriptContent = false;
+        bool hasReadme = false;
         auto callback = [](void* data, int argc, char** argv, char** colNames) -> int {
             for (int i = 0; i < argc; i++) {
                 if (argv[i] && std::string(argv[i]) == "script_content") {
@@ -902,11 +907,25 @@ namespace LittleMeowBot {
             }
             return 0;
         };
+        auto callbackReadme = [](void* data, int argc, char** argv, char** colNames) -> int {
+            for (int i = 0; i < argc; i++) {
+                if (argv[i] && std::string(argv[i]) == "readme") {
+                    *static_cast<bool*>(data) = true;
+                    break;
+                }
+            }
+            return 0;
+        };
         sqlite3_exec(m_db, "PRAGMA table_info(custom_tools)", callback, &hasScriptContent, nullptr);
+        sqlite3_exec(m_db, "PRAGMA table_info(custom_tools)", callbackReadme, &hasReadme, nullptr);
 
         if (!hasScriptContent) {
             spdlog::info("数据库迁移: 添加 script_content 列");
             sqlite3_exec(m_db, "ALTER TABLE custom_tools ADD COLUMN script_content TEXT", nullptr, nullptr, nullptr);
+        }
+        if (!hasReadme) {
+            spdlog::info("数据库迁移: 添加 readme 列");
+            sqlite3_exec(m_db, "ALTER TABLE custom_tools ADD COLUMN readme TEXT", nullptr, nullptr, nullptr);
         }
     }
 

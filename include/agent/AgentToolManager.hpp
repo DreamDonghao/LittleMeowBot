@@ -27,9 +27,6 @@
 #include <iomanip>
 #include <array>
 
-
-
-
 namespace LittleMeowBot {
     // 工具限制常量
     static constexpr int MAX_RANDOM_COUNT = 10;

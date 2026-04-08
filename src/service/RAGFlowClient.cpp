@@ -4,6 +4,7 @@
 #include <service/RAGFlowClient.hpp>
 #include <spdlog/spdlog.h>
 #include <fmt/core.h>
+#include <config/Config.hpp>
 
 namespace LittleMeowBot {
     RAGFlowClient& RAGFlowClient::instance(){
