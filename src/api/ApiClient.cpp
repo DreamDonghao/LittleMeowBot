@@ -109,9 +109,9 @@ namespace LittleMeowBot {
 
     drogon::Task<std::optional<std::string>> ApiClient::requestLLM(
         const Json::Value& messages,
-        float temperature,
-        float top_p,
-        int max_tokens) const{
+        const float temperature,
+        const float top_p,
+        const int max_tokens) const{
         const auto& config = Config::instance();
         co_return co_await requestStr(
             messages,

@@ -4,7 +4,7 @@
 /// @date 2026-04-02
 
 #include <agent/ExecutorAgent.hpp>
-#include <spdlog/spdlog.h>
+#include <util/Log.hpp>
 #include <fmt/core.h>
 #include <chrono>
 #include <service/MessageService.hpp>
@@ -21,34 +21,97 @@ namespace LittleMeowBot {
         const ChatRecordManager& chatRecords,
         const MemoryManager& memory,
         const PlanResult& plan,
-        bool isPriority) const{
-        spdlog::info("Executor: 开始执行...");
+        const bool isPriority) const{
+        Log::info("[Executor] 开始执行，enableThinking={}", plan.strategy.enableThinking);
 
         const auto& config = Config::instance();
 
         // 构建 Executor Prompt
-        const Json::Value messages = buildExecutorPrompt(chatRecords, memory, plan, isPriority);
+        Json::Value messages = buildExecutorPrompt(chatRecords, memory, plan, isPriority);
 
-        // 调用 LLM 生成回复（使用 Agent 模式）
-        auto decision =
-            co_await executeWithAgent(messages, config.executor, config.executorParams, chatRecords.getGroupId());
+        if (plan.strategy.enableThinking) {
+            // 方案1：思考模式两阶段执行
+            // Step 1: 思考模型（不传 tools）输出纯文本分析
+            Log::info("[Executor] Step 1 - 思考模型分析");
 
-        if (!decision) {
-            spdlog::error("Executor Agent 执行失败");
-            co_return std::nullopt;
+            // 替换 system prompt 为思考模型的提示词
+            Json::Value thinkingSystemMsg;
+            thinkingSystemMsg["role"] = "system";
+            thinkingSystemMsg["content"] = getThinkingSystemPrompt();
+
+            Json::Value thinkingMessages;
+            thinkingMessages.append(thinkingSystemMsg);
+
+            // 复制其他消息（记忆、聊天记录、规划信息）
+            for (unsigned int i = 1; i < messages.size(); ++i) {
+                thinkingMessages.append(messages[i]);
+            }
+
+            auto thinkingResult = co_await executeThinkingOnly(
+                thinkingMessages,
+                config.executorThinking,
+                config.executorThinkingParams);
+
+            if (!thinkingResult || thinkingResult->empty()) {
+                Log::error("[Executor] 思考模型返回空，fallback到普通模式");
+                // Fallback: 直接用普通模型
+                auto decision = co_await executeWithAgent(
+                    messages, config.executor, config.executorParams, chatRecords.getGroupId());
+                co_return decision;
+            }
+
+            Log::debug("[Executor] 思考结果: {}", thinkingResult->substr(0, 100) + (thinkingResult->length() > 100 ? "..." : ""));
+
+            // Step 2: 普通模型（注入思考结果 + 传 tools）
+            Log::info("[Executor] Step 2 - 执行工具调用");
+
+            // 在消息末尾注入思考结果
+            Json::Value thinkingMsg;
+            thinkingMsg["role"] = "assistant";
+            thinkingMsg["content"] = "【思考分析】\n" + *thinkingResult;
+            messages.append(thinkingMsg);
+
+            // 添加执行指令
+            Json::Value execMsg;
+            execMsg["role"] = "user";
+            execMsg["content"] = "根据以上思考分析，调用工具发送回复。";
+            messages.append(execMsg);
+
+            auto decision = co_await executeWithAgent(
+                messages, config.executor, config.executorParams, chatRecords.getGroupId());
+
+            if (!decision) {
+                Log::error("[Executor] 执行失败");
+                co_return std::nullopt;
+            }
+
+            Log::debug("[Executor] 完成: shouldReply={}, content={}",
+                         decision->shouldReply,
+                         decision->content.substr(0, 50) + (decision->content.length() > 50 ? "..." : ""));
+
+            co_return decision;
+        } else {
+            // 正常流程：普通模型 + function calling
+            auto decision = co_await executeWithAgent(
+                messages, config.executor, config.executorParams, chatRecords.getGroupId());
+
+            if (!decision) {
+                Log::error("[Executor] 执行失败");
+                co_return std::nullopt;
+            }
+
+            Log::debug("[Executor] 完成: shouldReply={}, content={}",
+                         decision->shouldReply,
+                         decision->content.substr(0, 50) + (decision->content.length() > 50 ? "..." : ""));
+
+            co_return decision;
         }
-
-        spdlog::info("Executor: 执行完成 - shouldReply={}, content={}",
-                     decision->shouldReply,
-                     decision->content.substr(0, 50) + (decision->content.length() > 50 ? "..." : ""));
-
-        co_return decision;
     }
 
     drogon::Task<std::optional<ReplyDecision>> ExecutorAgent::directReply(
         const ChatRecordManager& chatRecords,
         const MemoryManager& memory) const{
-        spdlog::info("Executor: 直接回复模式（@提及）");
+        Log::info("[Executor] @提及直接回复模式");
 
         const auto& config = Config::instance();
 
@@ -151,11 +214,11 @@ namespace LittleMeowBot {
         Json::Value tools = registry.getAllTools();
 
         if (tools.empty()) {
-            spdlog::error("Executor: 未注册任何工具");
+            Log::error("[Executor] 未注册任何工具");
             co_return std::nullopt;
         }
 
-        spdlog::debug("Executor请求配置: baseUrl={}, model={}", apiConfig.baseUrl, apiConfig.model);
+        Log::debug("[Executor] LLM请求: model={}", apiConfig.model);
         auto client = drogon::HttpClient::newHttpClient(apiConfig.baseUrl);
 
         for (int iter = 0; iter < 8; ++iter) {
@@ -179,11 +242,11 @@ namespace LittleMeowBot {
 
             if (resp->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
                 int status = resp->getStatusCode();
-                spdlog::error("Executor LLM请求失败: status={}, body={}", status, resp->getBody());
+                Log::error("[Executor] LLM请求失败: status={}", status);
 
                 // 503/429/500 服务暂时不可用，重试
                 if ((status == 503 || status == 429 || status == 500) && iter < 4) {
-                    spdlog::info("服务暂时不可用，等待后重试...");
+                    Log::warn("[Executor] 服务暂时不可用，等待重试");
                     using namespace std::chrono_literals;
                     co_await drogon::sleepCoro(drogon::app().getLoop(), 1s);
                     --iter; // 重试当前轮次
@@ -226,7 +289,7 @@ namespace LittleMeowBot {
                     std::string toolId = tc["id"].asString();
                     std::string argsStr = tc["function"]["arguments"].asString();
 
-                    spdlog::info("Executor调用工具: {}", toolName);
+                    Log::info("[Executor] 调用工具: {}", toolName);
 
                     // 终端工具处理
                     if (toolName == "no_reply") {
@@ -239,37 +302,15 @@ namespace LittleMeowBot {
                             decision.content = args["content"].asString();
                             hasFinalDecision = true;
                         }
-                    } else if (toolName == "ban_user") {
-                        // 特殊工具：禁言
-                        Json::Value args;
+                    } else if (toolName == "reply_with_quote") {
                         Json::Reader reader;
-                        reader.parse(argsStr, args);
-
-                        std::string result;
-                        if (groupId == 0) {
-                            result = "禁言失败: 无法获取群号";
-                        } else {
-                            uint64_t userId = args.isMember("qq") ? std::stoull(args["qq"].asString()) : 0;
-                            uint64_t duration = args.isMember("duration") ? args["duration"].asUInt64() : 600;
-
-                            if (userId == 0) {
-                                result = "禁言失败: 请提供有效的QQ号";
-                            } else {
-                                bool success = co_await MessageService::instance().setGroupBan(
-                                    groupId, userId, duration);
-                                result = success
-                                             ? fmt::format("已禁言用户 {} {}秒", userId, duration)
-                                             : "禁言失败: 可能权限不足或用户不存在";
-                            }
+                        if (Json::Value args; reader.parse(argsStr, args) && args.isMember("content") && args.isMember("message_id")) {
+                            decision.shouldReply = true;
+                            std::string messageId = args["message_id"].asString();
+                            std::string content = args["content"].asString();
+                            decision.content = "[CQ:reply,id=" + messageId + "]" + content;
+                            hasFinalDecision = true;
                         }
-
-                        spdlog::info("Executor工具 {} 返回: {}", toolName, result);
-
-                        Json::Value toolMsg;
-                        toolMsg["role"] = "tool";
-                        toolMsg["tool_call_id"] = toolId;
-                        toolMsg["content"] = result;
-                        messages.append(toolMsg);
                     } else {
                         // 其他工具通过 ToolRegistry 执行
                         Json::Value args;
@@ -278,7 +319,7 @@ namespace LittleMeowBot {
 
                         std::string result = co_await registry.executeTool(toolName, args, groupId);
 
-                        spdlog::info("Executor工具 {} 返回: {}", toolName, result);
+                        Log::debug("[Executor] 工具 {} 返回: {}", toolName, result);
 
                         Json::Value toolMsg;
                         toolMsg["role"] = "tool";
@@ -294,10 +335,11 @@ namespace LittleMeowBot {
                 continue;
             }
 
-            // 没有工具调用，直接用文本内容
+            // 没有工具调用，直接返回文本作为回复
             if (message.isMember("content") && !message["content"].isNull()) {
+                std::string contentStr = message["content"].asString();
                 decision.shouldReply = true;
-                decision.content = message["content"].asString();
+                decision.content = contentStr;
                 co_return decision;
             }
 
@@ -305,7 +347,7 @@ namespace LittleMeowBot {
             co_return decision;
         }
 
-        spdlog::error("Executor达到最大迭代次数");
+        Log::error("[Executor] 达到最大迭代次数(8次)");
         co_return std::nullopt;
     }
 
@@ -323,7 +365,9 @@ namespace LittleMeowBot {
             "- 轻度违规（偶尔骂人、刷几条屏）：禁言60-300秒\n"
             "- 中度违规（持续骂人、刷屏、发广告）：禁言600-1800秒\n"
             "- 重度违规（恶意骚扰、严重辱骂、屡教不改）：禁言3600秒以上\n"
-            "- 别人说别人违规要核实，看实际聊天记录再决定";
+            "- 别人说别人违规要核实，看实际聊天记录再决定\n"
+            "- 【重要】如果禁言失败（权限不足等），必须如实告诉用户失败原因，不要假装成功\n"
+            "【拍一拍指南】用于打招呼、引起注意、开玩笑等轻松互动。";
 
         if (isPriority) {
             basePrompt += "\n\n【重要】这是@提及或紧急问题，必须回复！";
@@ -346,7 +390,9 @@ namespace LittleMeowBot {
             "- 轻度违规（偶尔骂人、刷几条屏）：禁言60-300秒\n"
             "- 中度违规（持续骂人、刷屏、发广告）：禁言600-1800秒\n"
             "- 重度违规（恶意骚扰、严重辱骂、屡教不改）：禁言3600秒以上\n"
-            "- 别人说别人违规要核实，看实际聊天记录再决定\n\n"
+            "- 别人说别人违规要核实，看实际聊天记录再决定\n"
+            "- 【重要】如果禁言失败（权限不足等），必须如实告诉用户失败原因，不要假装成功\n"
+            "【拍一拍指南】用于打招呼、引起注意、开玩笑等轻松互动。\n\n"
             "【重要】必须调用reply工具回复。";
 
         return prompt;
@@ -354,5 +400,76 @@ namespace LittleMeowBot {
 
     std::string ExecutorAgent::intentToString(PlanResult::Intent intent) const{
         return std::string(PlanResult::intentToString(intent));
+    }
+
+    drogon::Task<std::optional<std::string>> ExecutorAgent::executeThinkingOnly(
+        Json::Value messages,
+        const LLMApiConfig& apiConfig,
+        const LLMModelParams& params) const{
+        Log::debug("[Executor] 思考模型请求: model={}", apiConfig.model);
+        auto client = drogon::HttpClient::newHttpClient(apiConfig.baseUrl);
+
+        // 构建请求（不传 tools）
+        Json::Value body;
+        body["model"] = apiConfig.model;
+        body["messages"] = messages;
+        body["temperature"] = params.temperature;
+        body["max_tokens"] = params.maxTokens;
+        body["top_p"] = 0.9f;
+
+        auto req = drogon::HttpRequest::newHttpJsonRequest(body);
+        req->setMethod(drogon::Post);
+        req->setPath(apiConfig.path);
+        req->addHeader("Authorization", "Bearer " + apiConfig.apiKey);
+        req->addHeader("Content-Type", "application/json");
+
+        auto resp = co_await client->sendRequestCoro(req);
+        auto json = resp->getJsonObject();
+
+        if (resp->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
+            Log::error("[Executor] 思考模型请求失败: status={}", static_cast<int>(resp->getStatusCode()));
+            co_return std::nullopt;
+        }
+
+        const auto& message = (*json)["choices"][0]["message"];
+
+        // 提取思考内容
+        std::string thinkingContent;
+
+        // DeepSeek Reasoner 等模型可能在 reasoning_content 字段
+        if (message.isMember("reasoning_content") && !message["reasoning_content"].isNull()) {
+            thinkingContent = message["reasoning_content"].asString();
+            Log::debug("[Executor] 思考内容来源: {}", message.isMember("reasoning_content") ? "reasoning_content" : "content");
+        } else if (message.isMember("content") && !message["content"].isNull()) {
+            thinkingContent = message["content"].asString();
+            Log::info("[Executor] 从 content 提取思考结果");
+        }
+
+        if (thinkingContent.empty()) {
+            Log::error("[Executor] 思考模型返回空内容");
+            co_return std::nullopt;
+        }
+
+        co_return thinkingContent;
+    }
+
+    std::string ExecutorAgent::getThinkingSystemPrompt() const{
+        std::string prompt = PromptService::instance().getExecutorSystemPrompt();
+
+        // 思考模型不需要工具，只需要分析
+        prompt += "\n\n【思考任务】\n"
+                  "你需要深入分析用户的请求，给出解决方案或回复思路。\n"
+                  "输出纯文本分析，不要调用任何工具，不要输出特殊格式。\n\n"
+                  "【分析要点】\n"
+                  "- 理解用户想要什么\n"
+                  "- 给出解决方案或回答思路\n"
+                  "- 考虑回复的语气和长度（闲聊≤25字，正经≤100字）\n"
+                  "- 如果需要引用回复特定消息，记下 message_id\n\n"
+                  "【输出要求】\n"
+                  "- 直接输出你的分析和建议的回复内容\n"
+                  "- 不要输出工具调用格式\n"
+                  "- 不要使用 markdown 代码块包裹回复内容";
+
+        return prompt;
     }
 }

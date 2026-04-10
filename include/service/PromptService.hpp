@@ -34,11 +34,11 @@ namespace LittleMeowBot {
 
         /// @brief 获取 Executor 系统提示词
         /// @return Executor 角色系统提示词
-        std::string getExecutorSystemPrompt() const;
+        [[nodiscard]] std::string getExecutorSystemPrompt() const;
 
         /// @brief 获取 Executor 提醒提示词
         /// @return Executor 提醒提示词（添加在 assistant 消息后）
-        std::string getExecutorRemindPrompt() const;
+        [[nodiscard]] std::string getExecutorRemindPrompt() const;
 
     private:
         PromptService() = default;

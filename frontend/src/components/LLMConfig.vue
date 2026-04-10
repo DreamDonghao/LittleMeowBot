@@ -8,7 +8,15 @@ import type {ApiResponse, LLMConfig} from '../vite-env.d'
 
 const showToast = inject<(msg: string, isError?: boolean) => void>('showToast')
 
-const llmNames: Ref<string[]> = ref(['router', 'planner', 'executor', 'memory', 'image'])
+const llmNames: Ref<string[]> = ref(['router', 'planner', 'executor', 'executorThinking', 'memory', 'image'])
+const llmLabels: Record<string, string> = {
+  router: 'Router',
+  planner: 'Planner',
+  executor: 'Executor',
+  executorThinking: 'Executor思考',
+  memory: 'Memory',
+  image: 'Image'
+}
 const selectedLLM: Ref<string> = ref('router')
 const llmConfigs = reactive<Record<string, LLMConfig>>({})
 const llmConfig = reactive<LLMConfig>({
@@ -65,7 +73,7 @@ const saveLLMConfig = async (): Promise<void> => {
           :class="{ active: selectedLLM === name }"
           class="tab"
           @click="selectedLLM = name"
-      >{{ name }}
+      >{{ llmLabels[name] || name }}
       </button>
     </div>
 

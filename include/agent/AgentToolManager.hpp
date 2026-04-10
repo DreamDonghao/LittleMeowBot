@@ -4,13 +4,14 @@
 /// @date 2026-04-02
 /// @details 负责注册和管理 Agent 可使用的工具：
 ///          - 终端工具：no_reply, reply
-///          - 信息工具：get_weather, search_web, get_time, search_knowledge, recall_memory
-///          - 动作工具：random, send_face, send_image, send_emoji, at_user, ban_user
-///          - 自定义工具：从数据库加载用户定义的工具
+///          - 信息工具：list_emojis, search_knowledge, recall_memory, get_group_name
+///          - 动作工具：send_face, send_image, send_emoji, at_user, ban_user, send_poke, recall_message
+///          - 自定义工具：从数据库加载用户定义的工具（支持Python/HTTP）
 
 #pragma once
 #include <service/ToolRegistry.hpp>
 #include <service/RAGFlowClient.hpp>
+#include <service/MessageService.hpp>
 #include <api/ApiClient.hpp>
 #include <storage/Database.hpp>
 #include <drogon/utils/coroutine.h>

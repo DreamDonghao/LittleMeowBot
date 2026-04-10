@@ -15,6 +15,7 @@ namespace LittleMeowBot {
         loadLLMConfig("router", router, &routerParams);
         loadLLMConfig("planner", planner, &plannerParams);
         loadLLMConfig("executor", executor, &executorParams);
+        loadLLMConfig("executorThinking", executorThinking, &executorThinkingParams);
         loadLLMConfig("memory", memory, &memoryParams);
         loadLLMConfig("image", image);
 

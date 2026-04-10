@@ -43,6 +43,25 @@ namespace LittleMeowBot {
             }, ToolCategory::TERMINAL
         );
 
+        // reply_with_quote - 引用回复（TERMINAL，直接发送）
+        Json::Value quoteReplyParams;
+        quoteReplyParams["type"] = "object";
+        quoteReplyParams["properties"]["content"]["type"] = "string";
+        quoteReplyParams["properties"]["content"]["description"] = "要发送的回复内容";
+        quoteReplyParams["properties"]["message_id"]["type"] = "string";
+        quoteReplyParams["properties"]["message_id"]["description"] = "要引用的消息ID（从聊天记录JSON的message_id字段获取）";
+        quoteReplyParams["required"].append("content");
+        quoteReplyParams["required"].append("message_id");
+        registry.registerTool(
+            {
+                .name = "reply_with_quote",
+                .description =
+                "引用回复特定消息。当需要回复特定消息、回答特定问题、澄清上下文时使用。聊天记录格式为JSON：{\"message_id\":\"12345\",\"text\":\"...\"}，用 message_id 字段的值作为参数。这是终端工具，调用后直接发送。",
+                .parameters = quoteReplyParams,
+                .handler = [](const Json::Value&) -> drogon::Task<std::string> { co_return "ok"; }
+            }, ToolCategory::TERMINAL
+        );
+
         // ========== 信息工具 ==========
         // list_emojis
         registry.registerTool(
@@ -51,7 +70,7 @@ namespace LittleMeowBot {
                 .description = "获取本地表情库中所有可用的表情名称列表。",
                 .parameters = Json::Value(),
                 .handler = [](const Json::Value&) -> drogon::Task<std::string> {
-                    auto& db = Database::instance();
+                    const auto& db = Database::instance();
                     auto emojis = db.getAllEmojis();
                     std::string result = "可用表情: ";
                     bool first = true;
@@ -80,7 +99,8 @@ namespace LittleMeowBot {
                     const std::string query = args.isMember("query") ? args["query"].asString() : "";
                     if (query.empty()) co_return std::string("请提供检索问题");
 
-                    const auto result = co_await RAGFlowClient::instance().searchKnowledge(query);
+                    const auto result =
+                        co_await RAGFlowClient::instance().searchKnowledge(query);
                     co_return result.value_or("知识库检索失败");
                 }
             }, ToolCategory::INFORMATION
@@ -101,7 +121,8 @@ namespace LittleMeowBot {
                     const std::string query = args.isMember("query") ? args["query"].asString() : "";
                     if (query.empty()) co_return std::string("请提供回忆关键词");
 
-                    const auto result = co_await RAGFlowClient::instance().searchMemory(query);
+                    const auto result =
+                        co_await RAGFlowClient::instance().searchMemory(query);
                     if (!result || result->empty()) {
                         co_return "想不起来了，没有找到相关记忆";
                     }
@@ -197,13 +218,13 @@ namespace LittleMeowBot {
         Json::Value atParams;
         atParams["type"] = "object";
         atParams["properties"]["qq"]["type"] = "string";
-        atParams["properties"]["qq"]["description"] = "要@的QQ号（从聊天记录中看到的QQ号）。使用 'all' @全体成员";
+        atParams["properties"]["qq"]["description"] = "要@的QQ号（从聊天记录JSON的sender.qq字段获取）。使用 'all' @全体成员";
         atParams["required"].append("qq");
         registry.registerTool(
             {
                 .name = "at_user",
                 .description =
-                "@某人。返回CQ码嵌入reply中。例如聊天记录显示 '{小明[QQ:123456]}'，则用 at_user('123456') 来@他。@全体成员用 at_user('all')",
+                "@某人。返回CQ码嵌入reply的content中。聊天记录格式为JSON：{\"sender\":{\"name\":\"小明\",\"qq\":\"123456\"}}，用 at_user(qq=\"123456\") 来@他。@全体成员用 at_user(qq=\"all\")",
                 .parameters = atParams,
                 .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
                     std::string qq = args.isMember("qq") ? args["qq"].asString() : "";
@@ -220,7 +241,7 @@ namespace LittleMeowBot {
         Json::Value banParams;
         banParams["type"] = "object";
         banParams["properties"]["qq"]["type"] = "string";
-        banParams["properties"]["qq"]["description"] = "要禁言的QQ号";
+        banParams["properties"]["qq"]["description"] = "要禁言的QQ号（从聊天记录JSON的sender.qq字段获取）";
         banParams["properties"]["duration"]["type"] = "integer";
         banParams["properties"]["duration"]["description"] = "禁言时长（秒）。轻度60-300秒，中度600-1800秒，重度3600秒以上。0解除禁言";
         banParams["required"].append("qq");
@@ -230,13 +251,75 @@ namespace LittleMeowBot {
                 .description =
                 "禁言群成员。要有自己的判断，不要别人让你禁言就禁言。根据违规程度选择时长：轻度(偶尔骂人)60-300秒，中度(持续刷屏骂人)600-1800秒，重度(恶意骚扰)3600秒+",
                 .parameters = banParams,
-                .handler = [](const Json::Value&) -> drogon::Task<std::string> {
-                    co_return "ban_user:需要异步执行"; // 实际执行在 ExecutorAgent 中
+                .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
+                    const uint64_t groupId = currentToolContext().groupId;
+                    if (groupId == 0) co_return std::string("禁言失败: 无法获取群号");
+
+                    uint64_t userId = args.isMember("qq") ? std::stoull(args["qq"].asString()) : 0;
+                    uint64_t duration = args.isMember("duration") ? args["duration"].asUInt64() : 600;
+
+                    if (userId == 0) co_return std::string("禁言失败: 请提供有效的QQ号");
+
+                    const bool success = co_await MessageService::instance().setGroupBan(groupId, userId, duration);
+                    co_return success
+                                  ? fmt::format("已禁言用户 {} {}秒", userId, duration)
+                                  : "禁言失败: 权限不足或用户不存在";
                 }
             }, ToolCategory::ACTION
         );
 
-        spdlog::info("ToolManager: 工具注册完成（共13个工具）");
+        // send_poke
+        Json::Value pokeParams;
+        pokeParams["type"] = "object";
+        pokeParams["properties"]["qq"]["type"] = "string";
+        pokeParams["properties"]["qq"]["description"] = "要拍一拍的QQ号（从聊天记录JSON的sender.qq字段获取）";
+        pokeParams["required"].append("qq");
+        registry.registerTool(
+            {
+                .name = "send_poke",
+                .description =
+                "拍一拍群成员。用于打招呼、引起注意、开玩笑等轻松互动场景。聊天记录格式为JSON：{\"sender\":{\"name\":\"小明\",\"qq\":\"123456\"}}，用 send_poke(qq=\"123456\") 来拍他。",
+                .parameters = pokeParams,
+                .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
+                    const uint64_t groupId = currentToolContext().groupId;
+                    if (groupId == 0) co_return std::string("拍一拍失败: 无法获取群号");
+
+                    uint64_t userId = args.isMember("qq") ? std::stoull(args["qq"].asString()) : 0;
+                    if (userId == 0) co_return std::string("拍一拍失败: 请提供有效的QQ号");
+
+                    const bool success = co_await MessageService::instance().setGroupPoke(groupId, userId);
+                    co_return success
+                                  ? fmt::format("已拍一拍用户 {}", userId)
+                                  : "拍一拍失败: 权限不足或用户不存在";
+                }
+            }, ToolCategory::ACTION
+        );
+
+        // recall_message
+        Json::Value recallParams;
+        recallParams["type"] = "object";
+        recallParams["properties"]["message_id"]["type"] = "string";
+        recallParams["properties"]["message_id"]["description"] = "要撤回的消息ID（从聊天记录JSON的message_id或reply_to字段获取）";
+        recallParams["required"].append("message_id");
+        registry.registerTool(
+            {
+                .name = "recall_message",
+                .description =
+                "撤回消息。当用户要求撤回某条消息时使用。聊天记录格式为JSON：{\"message_id\":\"12345\",\"reply_to\":\"67890\"}。若用户想撤回引用的消息，用 reply_to 字段的值；若想撤回某条消息本身，用 message_id 字段的值。",
+                .parameters = recallParams,
+                .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
+                    uint64_t messageId = args.isMember("message_id") ? std::stoull(args["message_id"].asString()) : 0;
+                    if (messageId == 0) co_return std::string("撤回失败: 请提供有效的消息ID");
+
+                    const bool success = co_await MessageService::instance().deleteMessage(messageId);
+                    co_return success
+                                  ? fmt::format("已撤回消息 {}", messageId)
+                                  : "撤回失败: 消息可能已超过2分钟或权限不足";
+                }
+            }, ToolCategory::ACTION
+        );
+
+        spdlog::info("ToolManager: 工具注册完成（共16个工具）");
     }
 
     void AgentToolManager::registerCustomTools() const{
@@ -251,11 +334,11 @@ namespace LittleMeowBot {
         int count = 0;
 
         for (const auto& tool : tools) {
-            // 解析参数 JSON
+            // 解析参数 JSON嫂认证请
             Json::Value params;
             if (!tool.parameters.empty()) {
                 Json::CharReaderBuilder builder;
-                std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+                const std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
                 std::string errors;
                 reader->parse(tool.parameters.c_str(),
                               tool.parameters.c_str() + tool.parameters.size(),
@@ -311,8 +394,9 @@ namespace LittleMeowBot {
         std::string inputJson = Json::writeString(writerBuilder, args);
 
         // 创建临时脚本文件
-        std::string tmpScript = "/tmp/tool_" + std::to_string(std::rand()) + ".py";
-        std::string tmpInput = "/tmp/tool_input_" + std::to_string(std::rand()) + ".json";
+        std::random_device rd;
+        std::string tmpScript = "/tmp/tool_" + std::to_string(rd()) + ".py";
+        std::string tmpInput = "/tmp/tool_input_" + std::to_string(rd()) + ".json";
 
         // 写入脚本 - 去除开头可能的多余空白，保留内部缩进
         std::string cleanScript = scriptContent;
@@ -338,7 +422,7 @@ namespace LittleMeowBot {
         std::string cmd = pythonPath + " " + tmpScript + " " + tmpInput + " 2>&1";
         spdlog::debug("执行Python工具: {}", cmd);
 
-        std::array<char, 4096> buffer;
+        std::array<char, 4096> buffer{};
         std::string result;
 
         FILE* pipe = popen(cmd.c_str(), "r");

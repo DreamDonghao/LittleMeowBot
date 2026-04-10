@@ -24,14 +24,26 @@ namespace LittleMeowBot {
         // 解析 strategy
         if (root.isMember("strategy")) {
             const auto& strat = root["strategy"];
+            // 支持 should_reply 和 shouldReply 两种命名
             if (strat.isMember("should_reply")) {
                 result.strategy.shouldReply = strat["should_reply"].asBool();
+            } else if (strat.isMember("shouldReply")) {
+                result.strategy.shouldReply = strat["shouldReply"].asBool();
+            }
+            // 支持 enable_thinking 和 enableThinking 两种命名
+            if (strat.isMember("enable_thinking")) {
+                result.strategy.enableThinking = strat["enable_thinking"].asBool();
+            } else if (strat.isMember("enableThinking")) {
+                result.strategy.enableThinking = strat["enableThinking"].asBool();
             }
             if (strat.isMember("tone")) {
                 result.strategy.tone = strat["tone"].asString();
             }
+            // 支持 max_length 和 maxLength 两种命名
             if (strat.isMember("max_length")) {
                 result.strategy.maxLength = strat["max_length"].asInt();
+            } else if (strat.isMember("maxLength")) {
+                result.strategy.maxLength = strat["maxLength"].asInt();
             }
             if (strat.isMember("reason")) {
                 result.strategy.reason = strat["reason"].asString();
@@ -53,6 +65,7 @@ namespace LittleMeowBot {
 
         Json::Value strategyJson;
         strategyJson["should_reply"] = strategy.shouldReply;
+        strategyJson["enable_thinking"] = strategy.enableThinking;
         strategyJson["tone"] = strategy.tone;
         strategyJson["max_length"] = strategy.maxLength;
         strategyJson["reason"] = strategy.reason;

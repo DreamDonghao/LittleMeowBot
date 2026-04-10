@@ -17,7 +17,13 @@
 
 namespace LittleMeowBot {
     /// @brief 消息服务类（单例模式）
-    /// @details 封装 QQ 消息发送逻辑，对接 OneBot API
+    /// @details 封装 QQ 消息发送逻辑，对接 OneBot API：
+///          - 群消息发送：sendGroupMsg()
+///          - @格式转换：convertAtToCQCode()
+///          - 禁言管理：setGroupBan()
+///          - 拍一拍：setGroupPoke()
+///          - 撤回消息：deleteMessage()
+///          - 群信息获取：getGroupInfo()
     class MessageService{
     public:
         /// @brief 获取单例实例
@@ -57,6 +63,17 @@ namespace LittleMeowBot {
         /// @param groupId 群号
         /// @return 群名称
         drogon::Task<std::string> fetchAndUpdateGroupName(Json::UInt64 groupId) const;
+
+        /// @brief 拍一拍群成员
+        /// @param groupId 群号
+        /// @param userId 用户QQ号
+        /// @return 是否成功
+        drogon::Task<bool> setGroupPoke(Json::UInt64 groupId, Json::UInt64 userId) const;
+
+        /// @brief 撤回消息
+        /// @param messageId 消息ID
+        /// @return 是否成功
+        drogon::Task<bool> deleteMessage(Json::UInt64 messageId) const;
 
     private:
         MessageService() = default;

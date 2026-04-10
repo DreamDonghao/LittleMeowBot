@@ -1,14 +1,7 @@
 /// @file Log.cpp
-/// @brief 日志工具 - 实现
+/// @brief 日志工具 - 实现（全部 inline，此文件仅用于兼容）
 
 #include <util/Log.hpp>
 
-namespace LittleMeowBot {
-    void Log::openStyleOutPut(){
-        m_styleOutPut = true;
-    }
-
-    void Log::closeStyleOutPut(){
-        m_styleOutPut = false;
-    }
-}
+// 所有实现已在 Log.hpp 中定义为 inline，此文件可删除
+// 保留仅为兼容旧的编译配置

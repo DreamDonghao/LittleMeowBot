@@ -149,12 +149,17 @@ namespace LittleMeowBot {
 
     std::string Database::getChatRecordsText(uint64_t groupId, int limit, const std::string& botName) const{
         const auto records = getChatRecords(groupId, limit);
-        std::string text;
+        std::string text = "[";
+        bool first = true;
         for (const auto& record : records) {
-            text += record["role"].asString() == "user"
-                        ? record["content"].asString() + "\n"
-                        : "{" + botName + "(我)[QQ:self]}:" + record["content"].asString() + "\n";
+            if (!first) {
+                text += ",";
+            }
+            first = false;
+            // 消息内容已经是JSON格式
+            text += record["content"].asString();
         }
+        text += "]";
         return text;
     }
 
@@ -187,7 +192,7 @@ namespace LittleMeowBot {
         return stmt.step() ? stmt.getText(0) : "";
     }
 
-    void Database::updateLongTermMemory(uint64_t groupId, const std::string& memory){
+    void Database::updateLongTermMemory(uint64_t groupId, const std::string& memory) const{
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db, "INSERT OR REPLACE INTO long_term_memory (group_id, memory_content) VALUES (?, ?)");
         stmt.bind(1, groupId);
@@ -930,9 +935,6 @@ namespace LittleMeowBot {
     }
 
     void Database::initDefaultLLMConfigs() const{
-        Statement checkStmt(m_db, "SELECT COUNT(*) FROM llm_config");
-        if (checkStmt.step() && checkStmt.getInt(0) > 0) return;
-
         struct DefaultConfig{
             const char *name, *apiKey, *baseUrl, *path, *model;
             int maxTokens;
@@ -943,6 +945,7 @@ namespace LittleMeowBot {
             {"router", "", "http://127.0.0.1:3001", "/v1/chat/completions", "deepseek-chat", 100, 0.3f, 0.9f},
             {"planner", "", "http://127.0.0.1:3001", "/v1/chat/completions", "deepseek-chat", 300, 0.5f, 0.9f},
             {"executor", "", "http://127.0.0.1:3001", "/v1/chat/completions", "deepseek-chat", 150, 0.7f, 0.9f},
+            {"executorThinking", "", "http://127.0.0.1:3001", "/v1/chat/completions", "deepseek-reasoner", 512, 0.7f, 0.9f},
             {"memory", "", "https://api.edgefn.net", "/v1/chat/completions", "DeepSeek-V3", 2048, 0.7f, 0.9f},
             {
                 "image", "", "https://dashscope.aliyuncs.com", "/compatible-mode/v1/chat/completions",
@@ -951,6 +954,13 @@ namespace LittleMeowBot {
         };
 
         for (const auto& [name, apiKey, baseUrl, path, model, maxTokens, temperature, topP] : defaults) {
+            // 检查该配置是否已存在
+            Statement checkStmt(m_db, "SELECT COUNT(*) FROM llm_config WHERE name = ?");
+            checkStmt.bind(1, name);
+            if (checkStmt.step() && checkStmt.getInt(0) > 0) {
+                continue; // 已存在，跳过
+            }
+
             Statement stmt(
                 m_db,
                 "INSERT INTO llm_config (name, api_key, base_url, path, model, max_tokens, temperature, top_p) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
@@ -963,8 +973,8 @@ namespace LittleMeowBot {
             stmt.bind(7, temperature);
             stmt.bind(8, topP);
             stmt.exec();
+            spdlog::info("已初始化默认 LLM 配置: {}", name);
         }
-        spdlog::info("已初始化默认 LLM 配置");
     }
 
     void Database::initDefaultKBConfig() const{

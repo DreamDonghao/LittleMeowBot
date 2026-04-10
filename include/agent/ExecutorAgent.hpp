@@ -62,12 +62,21 @@ namespace LittleMeowBot {
             const ChatRecordManager& chatRecords,
             const MemoryManager& memory) const;
 
-        /// @brief 使用 Agent 模式执行
+        /// @brief 使用 Agent 模式执行（带 tools）
         drogon::Task<std::optional<ReplyDecision>> executeWithAgent(
             Json::Value messages,
             const LLMApiConfig& apiConfig,
             const LLMModelParams& params,
             uint64_t groupId = 0) const;
+
+        /// @brief 执行思考模型（不带 tools，返回纯文本分析）
+        drogon::Task<std::optional<std::string>> executeThinkingOnly(
+            Json::Value messages,
+            const LLMApiConfig& apiConfig,
+            const LLMModelParams& params) const;
+
+        /// @brief 构建思考模型的系统提示词
+        [[nodiscard]] std::string getThinkingSystemPrompt() const;
 
         /// @brief 获取 Executor 系统提示
         [[nodiscard]] std::string getExecutorSystemPrompt(bool isPriority) const;

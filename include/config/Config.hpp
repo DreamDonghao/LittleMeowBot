@@ -36,6 +36,8 @@ namespace LittleMeowBot {
         LLMModelParams plannerParams;
         LLMApiConfig executor;
         LLMModelParams executorParams;
+        LLMApiConfig executorThinking;  // Executor 思考模型配置
+        LLMModelParams executorThinkingParams;
         LLMApiConfig memory;
         LLMModelParams memoryParams;
         LLMApiConfig image;

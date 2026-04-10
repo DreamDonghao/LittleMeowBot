@@ -7,7 +7,7 @@
 #include <agent/ExecutorAgent.hpp>
 #include <agent/PlannerAgent.hpp>
 #include <agent/RouterAgent.hpp>
-#include <spdlog/spdlog.h>
+#include <util/Log.hpp>
 #include <service/PromptService.hpp>
 
 namespace LittleMeowBot {
@@ -34,14 +34,14 @@ namespace LittleMeowBot {
         const MemoryManager& memory,
         const QQMessage& message){
         if (!m_initialized) {
-            spdlog::error("AgentSystem: 未初始化，请先调用 initialize()");
+            Log::error("AgentSystem 未初始化，请先调用 initialize()");
             co_return std::nullopt;
         }
 
         // 检查是否正在处理该群的消息
         uint64_t groupId = message.getGroupId();
         if (isProcessing(groupId)) {
-            spdlog::info("AgentSystem: 群 {} 正在处理中，跳过本次回复（消息已记录）", groupId);
+            Log::debug("群 {} 正在处理中，跳过本次回复", groupId);
             co_return std::nullopt;
         }
 
@@ -59,73 +59,61 @@ namespace LittleMeowBot {
         const auto& planner = PlannerAgent::instance();
         const auto& executor = ExecutorAgent::instance();
 
-        spdlog::info("AgentSystem: ========== 开始三层代理流程 ==========");
+        Log::info("======== 开始处理消息 ========");
 
         // ========== Layer 1: Router Agent ==========
-        spdlog::info("AgentSystem: [Layer 1] Router Agent 决策...");
+        Log::info("[Router] 分析消息意图...");
         auto routerDecision = co_await router.route(chatRecords, message);
 
-        spdlog::info("AgentSystem: Router 决策结果 - action={}, reason={}",
-                     routerDecision.action, routerDecision.reason);
+        Log::info("[Router] 决策: {} ({})", routerDecision.action, routerDecision.reason);
 
         // Router SKIP → 直接结束
         if (routerDecision.action == RouterDecision::Action::SKIP) {
-            spdlog::info("AgentSystem: Router 决定跳过，结束处理");
+            Log::info("[Router] 决定跳过回复");
             co_return std::nullopt;
         }
 
         // ========== Layer 2: Planner Agent ==========
         PlanResult plan;
 
-        if (routerDecision.action == RouterDecision::Action::PRIORITY_REPLY) {
-            spdlog::info("AgentSystem: [Layer 2] 跳过 Planner（高优先级）");
+        Log::info("[Planner] 规划回复策略...");
 
-            // 创建默认计划
-            plan.intent = PlanResult::Intent::QUESTION;
+        if (const auto planResult =
+            co_await planner.plan(chatRecords, memory, routerDecision); !planResult) {
+            Log::error("[Planner] 规划失败，使用默认策略");
+            // 使用默认计划
+            plan.intent = routerDecision.action == RouterDecision::Action::PRIORITY_REPLY
+                          ? PlanResult::Intent::QUESTION : PlanResult::Intent::CHAT;
             plan.strategy.shouldReply = true;
+            plan.strategy.maxLength = routerDecision.action == RouterDecision::Action::PRIORITY_REPLY ? 100 : 25;
             plan.strategy.tone = "friendly";
-            plan.strategy.maxLength = 100;
-            plan.strategy.reason = "高优先级回复（@提及或紧急问题）";
-            plan.contextSummary = "需要立即回复";
+            plan.strategy.reason = "Planner失败，使用默认策略";
         } else {
-            spdlog::info("AgentSystem: [Layer 2] Planner Agent 规划...");
+            plan = planResult.value();
+        }
 
-            if (const auto planResult =
-                co_await planner.plan(chatRecords, memory, routerDecision); !planResult) {
-                spdlog::error("AgentSystem: Planner 规划失败");
-                // 使用默认计划
-                plan.intent = PlanResult::Intent::CHAT;
-                plan.strategy.shouldReply = true;
-                plan.strategy.maxLength = 25;
-                plan.strategy.tone = "friendly";
-                plan.strategy.reason = "Planner失败，使用默认策略";
-            } else {
-                plan = planResult.value();
-            }
+        Log::info("[Planner] 规划完成: intent={}, shouldReply={}, enableThinking={}",
+                 plan.intent, plan.strategy.shouldReply, plan.strategy.enableThinking);
 
-            spdlog::info("AgentSystem: Planner 规划结果 - intent={}, shouldReply={}",
-                         plan.intent, plan.strategy.shouldReply);
-
-            // Planner 决定不回复 → 结束
-            if (!plan.strategy.shouldReply) {
-                spdlog::info("AgentSystem: Planner 决定不回复，结束处理");
-                co_return std::nullopt;
-            }
+        // Planner 决定不回复 → 结束
+        if (!plan.strategy.shouldReply) {
+            Log::info("[Planner] 决定不回复");
+            co_return std::nullopt;
         }
 
         // ========== Layer 3: Executor Agent ==========
-        spdlog::info("AgentSystem: [Layer 3] Executor Agent 执行...");
+        Log::info("[Executor] 执行回复...");
 
         const bool isPriority = routerDecision.action == RouterDecision::Action::PRIORITY_REPLY;
         auto replyDecision
             = co_await executor.execute(chatRecords, memory, plan, isPriority);
 
         if (!replyDecision) {
-            spdlog::error("AgentSystem: Executor 执行失败");
+            Log::error("[Executor] 执行失败");
             co_return std::nullopt;
         }
 
-        spdlog::info("AgentSystem: ========== 三层代理流程完成 ==========");
+        Log::info("======== 处理完成 ========");
 
         if (replyDecision->shouldReply && !replyDecision->content.empty()) {
             co_return replyDecision->content;
@@ -139,7 +127,7 @@ namespace LittleMeowBot {
         const MemoryManager& memory) const{
         auto& executor = ExecutorAgent::instance();
 
-        spdlog::info("AgentSystem: @提及直接回复模式");
+        Log::info("[@提及] 直接回复模式");
 
         if (auto replyDecision =
                 co_await executor.directReply(chatRecords, memory);

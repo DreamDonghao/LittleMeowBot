@@ -59,12 +59,16 @@ namespace LittleMeowBot {
         [[nodiscard]] Json::UInt64 getMessageId() const;
 
         /// @brief 格式化消息（异步，可能需要识别图片）
-        /// @details 将消息转换为标准格式，包含日期、用户名、@提及等
+        /// @details 将消息转换为JSON格式，包含发送者、消息ID、内容等
         drogon::Task<> formatMessage();
 
-        /// @brief 获取格式化后的消息
-        /// @return 格式化后的消息文本
+        /// @brief 获取格式化后的消息（JSON格式）
+        /// @return 格式化后的JSON字符串
         [[nodiscard]] Json::String getFormatMessage() const;
+
+        /// @brief 获取引用的消息ID
+        /// @return 引用的消息ID，无引用返回0
+        [[nodiscard]] uint64_t getReplyTo() const;
 
         /// @brief 获取原始消息文本（不含 CQ 码）
         /// @return 原始消息文本
@@ -90,13 +94,15 @@ namespace LittleMeowBot {
         static void addMessageCache(Json::UInt64 messageId, Json::String message);
 
     private:
-        const Json::Value* m_qqMessageJson;       ///< OneBot 消息 JSON 指针
-        Json::String m_formatMessage;             ///< 格式化后的消息
-        bool m_isAtMe{false};                     ///< 是否 @ 了机器人
-        bool m_isExistImage{false};               ///< 是否包含图片
+        const Json::Value* m_qqMessageJson{}; ///< OneBot 消息 JSON 指针
+        Json::String m_formatMessage;         ///< 格式化后的消息（JSON格式）
+        uint64_t m_replyTo{0};                ///< 引用的消息ID
+        bool m_isAtMe{false};                 ///< 是否 @ 了机器人
+        bool m_isExistImage{false};           ///< 是否包含图片
 
-        inline static std::unordered_map<Json::UInt64, Json::String> m_QQNameMap;         ///< QQ 号到昵称映射
-        inline static std::unordered_map<Json::UInt64, Json::String> m_customQQNameMap;   ///< 自定义昵称映射
-        inline static std::unordered_map<uint64_t, Json::String> m_messageCache;          ///< 消息缓存
+
+        inline static std::unordered_map<Json::UInt64, Json::String> m_QQNameMap;       ///< QQ 号到昵称映射
+        inline static std::unordered_map<Json::UInt64, Json::String> m_customQQNameMap; ///< 自定义昵称映射
+        inline static std::unordered_map<uint64_t, Json::String> m_messageCache;        ///< 消息缓存
     };
 }

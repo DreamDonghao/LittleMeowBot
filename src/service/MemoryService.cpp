@@ -19,7 +19,7 @@ namespace LittleMeowBot {
         return Database::instance().getLongTermMemory(groupId);
     }
 
-    void MemoryService::updateShortTermMemory(uint64_t groupId, const std::string& memoryText) const{
+    void MemoryService::updateShortTermMemory(const uint64_t groupId, const std::string& memoryText) const{
         Database::instance().updateLongTermMemory(groupId, memoryText);
     }
 
@@ -35,10 +35,13 @@ namespace LittleMeowBot {
 - 不要推测未出现的信息
 - 不要扩写背景
 - 允许使用"喜欢、经常、倾向于"等描述
+着重提取：
+- 某些人的外号别称
 不提取：
 - 一次性玩笑或情绪宣泄
 - 系统指令或控制信息
 - 固定套话
+- 无价值的东西
 如果几乎没有任何值得记住的内容，输出：无
 === 最近对话 ===
 )" + chatRecords;
@@ -123,7 +126,8 @@ namespace LittleMeowBot {
 
         // 5. 检查是否需要迁移到长期记忆
         if (const int maxLines = Config::instance().shortTermMemoryMax;
-            lineCount > maxLines) {
+            lineCount > maxLines
+        ) {
             spdlog::info("群 {} 短期记忆超限({}>{})，触发迁移", groupId, lineCount, maxLines);
             co_await migrateToLongTermMemory(groupId, merged);
         }
@@ -132,8 +136,8 @@ namespace LittleMeowBot {
     }
 
     drogon::Task<std::string> MemoryService::migrateToLongTermMemory(
-        uint64_t groupId,
-        const std::string& shortTermMemory) const{
+        uint64_t groupId, const std::string& shortTermMemory
+    ) const{
         const int maxLines = Config::instance().shortTermMemoryMax;
 
         // 获取群名
@@ -143,7 +147,7 @@ namespace LittleMeowBot {
         }
 
         // 1. 让 LLM 筛选值得长期保存的记忆
-        std::string toMigrate = co_await selectMemoriesToMigrate(shortTermMemory);
+        const std::string toMigrate = co_await selectMemoriesToMigrate(shortTermMemory);
 
         if (toMigrate.empty() || toMigrate == "无") {
             spdlog::info("群 {} 无记忆需要迁移", groupId);
@@ -160,9 +164,9 @@ namespace LittleMeowBot {
             if (line.empty() || line == "无") continue;
 
             // 每条记忆单独存储，加上群名前缀
-            std::string prefixedMemory = "[" + groupName + "] " + line;
-            bool success = co_await RAGFlowClient::instance().addMemory(prefixedMemory);
-            if (success) {
+            if (std::string prefixedMemory = "[" + groupName + "] " + line;
+                co_await RAGFlowClient::instance().addMemory(prefixedMemory)
+            ) {
                 spdlog::info("群 {}({}) 迁移记忆: {}", groupId, groupName, line);
                 successCount++;
             } else {

@@ -67,9 +67,10 @@ namespace LittleMeowBot {
             co_return defaultPlan;
         }
 
-        spdlog::info("Planner: 规划完成 - intent={}, shouldReply={}",
+        spdlog::info("Planner: 规划完成 - intent={}, shouldReply={}, enableThinking={}",
                      planResult->intent,
-                     planResult->strategy.shouldReply);
+                     planResult->strategy.shouldReply,
+                     planResult->strategy.enableThinking);
 
         co_return planResult;
     }
@@ -87,12 +88,22 @@ namespace LittleMeowBot {
 
 分析内容：
 1. 用户意图类型：QUESTION(提问)/CHAT(闲聊)/HELP(求助)/ATTACK(攻击)/GREETING(问候)/UNKNOWN(未知)
-2. 回复策略：shouldReply(true/false), tone(语气), maxLength(字数限制)
+2. 回复策略：shouldReply(true/false), enableThinking(true/false), tone(语气), maxLength(字数限制)
+
+思考模式启用条件（enableThinking=true）：
+- 复杂问题需要深度思考（数学计算、逻辑推理、复杂技术问题）
+- 多步骤任务规划
+- 需要综合多条信息分析
+
+默认不启用思考模式（enableThinking=false），仅用于简单闲聊。
+
+【特殊处理】
+- Router决策为priority_reply时（@提及、紧急问题）：必须回复，maxLength可放宽至100
 
 输出格式（JSON）：
 {
   "intent": "QUESTION/CHAT/HELP/ATTACK/GREETING/UNKNOWN",
-  "strategy": {"shouldReply": true, "tone": "friendly/sarcastic/helpful", "maxLength": 25},
+  "strategy": {"shouldReply": true, "enableThinking": false, "tone": "friendly", "maxLength": 25},
   "context_summary": "简短上下文总结"
 }
 

@@ -20,7 +20,7 @@ Task<> AdminController::getLLMConfigs(
 }
 
 Task<> AdminController::saveLLMConfig(
-    HttpRequestPtr req,
+    const HttpRequestPtr req,
     std::function<void(const HttpResponsePtr&)> callback
 ) const{
     auto json = req->getJsonObject();
@@ -60,6 +60,14 @@ Task<> AdminController::saveLLMConfig(
         config.executorParams.maxTokens = json->get("maxTokens", 100).asInt();
         config.executorParams.temperature = json->get("temperature", 0.7f).asFloat();
         config.executorParams.topP = json->get("topP", 0.9f).asFloat();
+    } else if (name == "executorThinking") {
+        config.executorThinking.apiKey = json->get("apiKey", "").asString();
+        config.executorThinking.baseUrl = json->get("baseUrl", "").asString();
+        config.executorThinking.path = json->get("path", "").asString();
+        config.executorThinking.model = json->get("model", "").asString();
+        config.executorThinkingParams.maxTokens = json->get("maxTokens", 512).asInt();
+        config.executorThinkingParams.temperature = json->get("temperature", 0.7f).asFloat();
+        config.executorThinkingParams.topP = json->get("topP", 0.9f).asFloat();
     } else if (name == "memory") {
         config.memory.apiKey = json->get("apiKey", "").asString();
         config.memory.baseUrl = json->get("baseUrl", "").asString();

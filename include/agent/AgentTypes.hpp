@@ -6,7 +6,7 @@
 ///          - RouterDecision: Router Agent 的路由决策结果
 ///          - PlanResult: Planner Agent 的规划结果
 ///          - ReplyDecision: Executor Agent 的回复决策
-///          同时提供 fmt::formatter 特化以支持 spdlog 格式化
+///          同时提供 fmt::formatter 和 std::formatter 特化以支持格式化
 
 #pragma once
 #include <json/value.h>
@@ -15,6 +15,7 @@
 #include <array>
 #include <string_view>
 #include <fmt/core.h>
+#include <format>
 
 namespace LittleMeowBot {
     /// @brief Router Agent 决策结果
@@ -51,6 +52,7 @@ namespace LittleMeowBot {
         /// @brief 回复策略
         struct ResponseStrategy{
             bool shouldReply = true;
+            bool enableThinking = false;  // 是否启用思考模型
             std::string tone; // friendly, sarcastic, serious, casual
             int maxLength = 25; // 字数限制：25 或 100
             std::string reason; // 回复或不回复的原因
@@ -66,13 +68,14 @@ namespace LittleMeowBot {
             return names[static_cast<size_t>(i)];
         }
 
-        /// @brief 字符串转 Intent
+        /// @brief 字符串转 Intent（支持大小写不敏感）
         [[nodiscard]] static constexpr Intent intentFromString(std::string_view s){
-            if (s == "question") return Intent::QUESTION;
-            if (s == "chat") return Intent::CHAT;
-            if (s == "help") return Intent::HELP;
-            if (s == "attack") return Intent::ATTACK;
-            if (s == "greeting") return Intent::GREETING;
+            // 支持大写和小写
+            if (s == "QUESTION" || s == "question") return Intent::QUESTION;
+            if (s == "CHAT" || s == "chat") return Intent::CHAT;
+            if (s == "HELP" || s == "help") return Intent::HELP;
+            if (s == "ATTACK" || s == "attack") return Intent::ATTACK;
+            if (s == "GREETING" || s == "greeting") return Intent::GREETING;
             return Intent::UNKNOWN;
         }
 
@@ -104,5 +107,22 @@ struct fmt::formatter<LittleMeowBot::PlanResult::Intent> : formatter<string_view
     template <typename FormatContext>
     auto format(LittleMeowBot::PlanResult::Intent i, FormatContext& ctx) const{
         return fmt::formatter<string_view>::format(LittleMeowBot::PlanResult::intentToString(i), ctx);
+    }
+};
+
+// std::formatter 特化，用于 std::format 格式化
+template <>
+struct std::formatter<LittleMeowBot::RouterDecision::Action> : std::formatter<std::string_view>{
+    template <typename FormatContext>
+    auto format(LittleMeowBot::RouterDecision::Action a, FormatContext& ctx) const{
+        return std::formatter<std::string_view>::format(LittleMeowBot::RouterDecision::actionToString(a), ctx);
+    }
+};
+
+template <>
+struct std::formatter<LittleMeowBot::PlanResult::Intent> : std::formatter<std::string_view>{
+    template <typename FormatContext>
+    auto format(LittleMeowBot::PlanResult::Intent i, FormatContext& ctx) const{
+        return std::formatter<std::string_view>::format(LittleMeowBot::PlanResult::intentToString(i), ctx);
     }
 };

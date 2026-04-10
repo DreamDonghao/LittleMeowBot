@@ -63,7 +63,7 @@ namespace LittleMeowBot {
         // ============================================================
 
         std::string getLongTermMemory(uint64_t groupId);
-        void updateLongTermMemory(uint64_t groupId, const std::string& memory);
+        void updateLongTermMemory(uint64_t groupId, const std::string& memory) const;
 
         // ============================================================
         //                      消息缓存操作

@@ -69,6 +69,8 @@ namespace LittleMeowBot {
                 }
             } else if (item["type"] == "image") {
                 m_isExistImage = true;
+            } else if (item["type"] == "reply") {
+                m_replyTo = std::stoull(item["data"]["id"].asString());
             }
         }
     }
@@ -81,47 +83,52 @@ namespace LittleMeowBot {
     Json::String QQMessage::getSenderQQName() const{ return (*m_qqMessageJson)["sender"]["nickname"].asString(); }
     Json::String QQMessage::getSenderGroupName() const{ return (*m_qqMessageJson)["sender"]["card"].asString(); }
     Json::UInt64 QQMessage::getMessageId() const{ return (*m_qqMessageJson)["message_id"].asUInt64(); }
+    uint64_t QQMessage::getReplyTo() const{ return m_replyTo; }
 
     drogon::Task<> QQMessage::formatMessage(){
-        m_formatMessage.append("[当前日期:" + currentDateTime() + "]");
         const uint64_t senderQQ = getSenderQQNumber();
-        m_formatMessage.append("{" + getQQName(senderQQ) + "[QQ:" + std::to_string(senderQQ) + "]}:");
+        const uint64_t msgId = getMessageId();
+        const std::string senderName = std::string(getQQName(senderQQ));
+        const std::string timeStr = currentDateTime();
+
+        // 构建消息内容
+        std::string textContent;
         for (const auto& item : (*m_qqMessageJson)["message"]) {
             if (item["type"] == "text") {
-                m_formatMessage.append(item["data"]["text"].asString());
+                textContent += item["data"]["text"].asString();
             } else if (item["type"] == "at") {
-                const uint64_t atQQ = std::stoul(item["data"]["qq"].asString());
-                m_formatMessage.append("@[" + getQQName(atQQ) + ":" + std::to_string(atQQ) + "]");
+                const uint64_t atQQ = std::stoull(item["data"]["qq"].asString());
+                textContent += "@[" + std::string(getQQName(atQQ)) + ":" + std::to_string(atQQ) + "]";
             } else if (item["type"] == "face") {
-                m_formatMessage.append(item["data"]["raw"]["faceText"].asString());
+                textContent += item["data"]["raw"]["faceText"].asString();
             } else if (item["type"] == "image") {
-                m_formatMessage.append("[图片：" + co_await getImageDescribe(item["data"]["url"].asString()) + "]");
-            } else if (item["type"] == "reply") {
-                uint64_t replyId = std::stoull(item["data"]["id"].asString());
-
-                std::string cachedText;
-                if (auto it = m_messageCache.find(replyId); it != m_messageCache.end()) {
-                    cachedText = it->second;
-                } else {
-                    if (auto dbCached = Database::instance().getCachedMessage(replyId)) {
-                        cachedText = *dbCached;
-                        m_messageCache[replyId] = cachedText;
-                    }
-                }
-
-                if (!cachedText.empty()) {
-                    m_formatMessage.append("[回复 ");
-                    m_formatMessage.append(cachedText);
-                    m_formatMessage.append("]");
-                } else {
-                    m_formatMessage.append("[回复消息 ");
-                    m_formatMessage.append(item["data"]["id"].asString());
-                    m_formatMessage.append("]");
-                }
+                textContent += "[图片：" + co_await getImageDescribe(item["data"]["url"].asString()) + "]";
             }
+            // reply类型不在这里处理，通过reply_to字段传递
         }
-        m_messageCache[getMessageId()] = m_formatMessage;
-        Database::instance().cacheMessage(getMessageId(), m_formatMessage);
+
+        // 构建JSON格式消息
+        Json::Value msgJson;
+        msgJson["time"] = timeStr;
+        msgJson["sender"]["name"] = senderName;
+        msgJson["sender"]["qq"] = std::to_string(senderQQ);
+        msgJson["message_id"] = std::to_string(msgId);
+        msgJson["text"] = textContent;
+        if (m_replyTo > 0) {
+            msgJson["reply_to"] = std::to_string(m_replyTo);
+        } else {
+            msgJson["reply_to"] = Json::nullValue;
+        }
+
+        // 紧凑JSON输出（不转义Unicode）
+        Json::StreamWriterBuilder writerBuilder;
+        writerBuilder["indentation"] = "";
+        writerBuilder["emitUTF8"] = true;
+        m_formatMessage = Json::writeString(writerBuilder, msgJson);
+
+        // 缓存消息
+        m_messageCache[msgId] = m_formatMessage;
+        Database::instance().cacheMessage(msgId, m_formatMessage);
         co_return;
     }
 

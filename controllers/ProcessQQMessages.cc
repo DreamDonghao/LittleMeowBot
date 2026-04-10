@@ -12,6 +12,8 @@
 #include <storage/Database.hpp>
 #include <spdlog/spdlog.h>
 
+#include "util/Log.hpp"
+
 using namespace LittleMeowBot;
 using namespace drogon;
 
@@ -104,7 +106,8 @@ Task<> ProcessQQMessages::receiveMessages(
     // 使用三层代理处理消息
 
     if (auto result = co_await agentSystem.process(chatRecords, memory, qqMessage);
-        result && !result->empty()) {
+        result && !result->empty()
+    ) {
         spdlog::info("多层代理决定回复");
         co_await messageService.sendGroupMsg(groupId, result.value(), chatRecords);
     } else {
@@ -114,15 +117,13 @@ Task<> ProcessQQMessages::receiveMessages(
     // 更新统计
     groupConfigMgr.incrementMessageCount(groupId, qqMessage.getFormatMessage().size());
     auto [allMesCount, allCharCount] = groupConfigMgr.getConfig(groupId);
-    spdlog::info("群聊统计数据 {} :接收总消息数{}条,接收总字符(字节)数{}个", groupId, allMesCount, allCharCount);
+    Log::info("群聊统计数据 {} :接收总消息数{}条,接收总字符(字节)数{}个", groupId, allMesCount, allCharCount);
 
-    // 记忆生成
-    if (++g_newQQMesCounts[groupId] > config.memoryTriggerCount) {
+    // 记忆生成 - 取模触发
+    if (++g_newQQMesCounts[groupId] % config.memoryTriggerCount == 0) {
         spdlog::info("记忆生成开始 {}({})", groupId, chatRecords.getRecordCount());
 
         // 使用新的短期记忆流程
         co_await memoryService.appendAndMergeMemory(groupId, chatRecords.getRecordsText());
-
-        g_newQQMesCounts[groupId] = 0;
     }
 }
