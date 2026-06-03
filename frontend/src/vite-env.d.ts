@@ -22,9 +22,11 @@ export interface LLMConfig {
     maxTokens: number
     temperature: number
     topP: number
+    reasoningEffort: string
 }
 
 export interface KBConfig {
+    enabled: boolean
     apiKey: string
     baseUrl: string
     knowledgeDatasetId: string
@@ -33,16 +35,25 @@ export interface KBConfig {
 }
 
 export interface MemoryConfig {
-    memoryTriggerCount: number
-    memoryChatRecordLimit: number
+    windowTriggerCount: number
+    windowKeepCount: number
+    memoryExtractMaxTokens: number
+    routerWindowTriggerCount: number
+    routerWindowKeepCount: number
     shortTermMemoryMax: number
-    shortTermMemoryLimit: number
     memoryMigrateCount: number
 }
 
 export interface Emoji {
     name: string
-    path: string
+    summary: string
+    emoji_id: string
+    emoji_package_id: string
+    key: string
+    url: string
+    md5: string
+    res_id: string
+    is_mark_face: boolean
 }
 
 export interface Admin {

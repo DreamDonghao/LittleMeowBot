@@ -1,4 +1,5 @@
 #include "ProcessQQMessages.h"
+#include <regex>
 #include <agent/AgentSystem.hpp>
 #include <config/Config.hpp>
 #include <handler/CommandHandler.hpp>
@@ -11,19 +12,15 @@
 #include <service/WebSocketManager.hpp>
 #include <storage/Database.hpp>
 #include <spdlog/spdlog.h>
-
-#include "util/Log.hpp"
+#include <util/Log.hpp>
 
 using namespace LittleMeowBot;
 using namespace drogon;
 
-// 全局状态：每个群的新消息计数（用于触发记忆生成）
-std::unordered_map<uint64_t, int> g_newQQMesCounts;
-
 Task<> ProcessQQMessages::receiveMessages(
     const HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     const auto json = req->getJsonObject();
     if (!json || !json->isObject()) {
         auto resp = HttpResponse::newHttpResponse();
@@ -46,16 +43,14 @@ Task<> ProcessQQMessages::receiveMessages(
     respJson["status"] = "ok";
     callback(HttpResponse::newHttpJsonResponse(respJson));
 
-    auto& config = Config::instance();
-    auto& groupConfigMgr = GroupConfigManager::instance();
-    auto& memoryService = MemoryService::instance();
-    auto& messageService = MessageService::instance();
+    auto &config = Config::instance();
+    auto &groupConfigMgr = GroupConfigManager::instance();
 
     QQMessage qqMessage(*json);
     uint64_t groupId = qqMessage.getGroupId(); ///< 当前消息的群号
 
     // 检查是否是命令消息（@ 且以 / 开头）- 不受群启用状态影响
-    if (auto& commandHandler = CommandHandler::instance();
+    if (auto &commandHandler = CommandHandler::instance();
         commandHandler.isCommand(qqMessage)
     ) {
         spdlog::info("收到命令消息: {}", qqMessage.getRawMessage());
@@ -69,12 +64,12 @@ Task<> ProcessQQMessages::receiveMessages(
         co_await qqMessage.formatMessage();
 
         std::string cmdResponse = co_await commandHandler.handleCommand(qqMessage, chatRecords);
-        co_await messageService.sendGroupMsg(groupId, cmdResponse, chatRecords);
+        co_await MessageService::sendGroupMsg(groupId, cmdResponse, chatRecords);
         co_return;
     }
 
     // 只处理启用的群（从数据库读取）
-    if (auto& database = Database::instance();
+    if (auto &database = Database::instance();
         !database.isGroupEnabled(groupId)
     ) {
         co_return;
@@ -101,17 +96,42 @@ Task<> ProcessQQMessages::receiveMessages(
     }
 
     // 处理消息回复 - 使用多层代理架构
-    auto& agentSystem = AgentSystem::instance();
+    auto &agentSystem = AgentSystem::instance();
 
-    // 使用三层代理处理消息
+    // 使用二层代理处理消息（顶层兜底，任何异常不让其逃逸到框架层）
+    try {
+        if (auto result = co_await agentSystem.process(chatRecords, memory, qqMessage);
+            result && !result->empty()) {
+            spdlog::info("多层代理决定回复");
 
-    if (auto result = co_await agentSystem.process(chatRecords, memory, qqMessage);
-        result && !result->empty()
-    ) {
-        spdlog::info("多层代理决定回复");
-        co_await messageService.sendGroupMsg(groupId, result.value(), chatRecords);
-    } else {
-        spdlog::info("多层代理决定不回复");
+            // 拆分表情包和文字，分开发送（表情包先，文字后）
+            const std::string &content = result.value();
+            static thread_local const std::regex cqPattern(
+                R"(\[CQ:mface,[^\]]*\]|\[CQ:image,[^\]]*sub_type=1[^\]]*\])");
+
+            std::string cqPart;
+            for (auto it = std::sregex_iterator(content.begin(), content.end(), cqPattern);
+                 it != std::sregex_iterator(); ++it) {
+                cqPart += it->str();
+            }
+            std::string textPart = std::regex_replace(content, cqPattern, "");
+            if (const size_t b = textPart.find_first_not_of(" \t\n\r"); b != std::string::npos) {
+                textPart = textPart.substr(b, textPart.find_last_not_of(" \t\n\r") - b + 1);
+            } else {
+                textPart.clear();
+            }
+
+            if (!cqPart.empty()) {
+                co_await MessageService::sendGroupMsg(groupId, cqPart, chatRecords);
+            }
+            if (!textPart.empty()) {
+                co_await MessageService::sendGroupMsg(groupId, textPart, chatRecords);
+            }
+        } else {
+            spdlog::info("多层代理决定不回复");
+        }
+    } catch (const std::exception& e) {
+        spdlog::error("消息处理异常: {}", e.what());
     }
 
     // 更新统计
@@ -119,11 +139,10 @@ Task<> ProcessQQMessages::receiveMessages(
     auto [allMesCount, allCharCount] = groupConfigMgr.getConfig(groupId);
     Log::info("群聊统计数据 {} :接收总消息数{}条,接收总字符(字节)数{}个", groupId, allMesCount, allCharCount);
 
-    // 记忆生成 - 取模触发
-    if (++g_newQQMesCounts[groupId] % config.memoryTriggerCount == 0) {
-        spdlog::info("记忆生成开始 {}({})", groupId, chatRecords.getRecordCount());
-
-        // 使用新的短期记忆流程
-        co_await memoryService.appendAndMergeMemory(groupId, chatRecords.getRecordsText());
+    // 记忆提取与窗口滑动 - 窗口超限时触发（失败自愈：下条消息重试）
+    try {
+        co_await MemoryService::appendAndMergeMemory(groupId);
+    } catch (const std::exception& e) {
+        spdlog::error("群 {} 记忆提取异常: {}", groupId, e.what());
     }
 }

@@ -52,19 +52,19 @@ namespace LittleMeowBot {
         void registerTool(const Tool& tool, ToolCategory category);
 
         /// @brief 获取指定分类的工具定义（用于 API 请求）
-        Json::Value getToolsByCategory(ToolCategory category) const;
+        [[nodiscard]] Json::Value getToolsByCategory(ToolCategory category) const;
 
         /// @brief 获取所有工具定义
-        Json::Value getAllTools() const;
+        [[nodiscard]] Json::Value getAllTools() const;
 
         /// @brief 获取 Executor 使用的工具（终端 + 信息 + 动作）
-        Json::Value getExecutorTools() const;
+        [[nodiscard]] Json::Value getExecutorTools() const;
 
         /// @brief 获取 Planner 可用的工具（仅信息工具，用于规划）
-        Json::Value getPlannerInfoTools() const;
+        [[nodiscard]] Json::Value getPlannerInfoTools() const;
 
         /// @brief 执行工具（异步）
-        drogon::Task<std::string> executeTool(const std::string& name, const Json::Value& args,
+        [[nodiscard]] drogon::Task<std::string> executeTool(const std::string& name, const Json::Value& args,
                                               uint64_t groupId = 0) const;
 
         /// @brief 检查工具是否存在
@@ -86,13 +86,13 @@ namespace LittleMeowBot {
         void recordCustomTool(const std::string& name);
 
         /// @brief 获取工具分类
-        ToolCategory getCategory(const std::string& name) const;
+        [[nodiscard]] ToolCategory getCategory(const std::string& name) const;
 
         /// @brief 获取所有工具名称列表
-        std::vector<std::string> getToolNames() const;
+        [[nodiscard]] std::vector<std::string> getToolNames() const;
 
         /// @brief 生成工具说明文本（用于 Executor Prompt）
-        std::string getToolsDescription() const;
+        [[nodiscard]] std::string getToolsDescription() const;
 
     private:
         ToolRegistry() = default;

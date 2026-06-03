@@ -2,11 +2,14 @@
 /// @brief 命令处理器 - 实现
 
 #include <handler/CommandHandler.hpp>
+#include <agent/AgentToolManager.hpp>
+#include <config/Config.hpp>
 #include <model/QQMessage.hpp>
 #include <spdlog/spdlog.h>
 #include <fmt/core.h>
 #include <sstream>
 #include <vector>
+#include <drogon/HttpClient.h>
 #include <model/GroupConfigManager.hpp>
 namespace LittleMeowBot {
     CommandHandler& CommandHandler::instance(){
@@ -84,9 +87,8 @@ namespace LittleMeowBot {
                 "/addadmin <QQ号> - 添加管理员\n"
                 "/deladmin <QQ号> - 移除管理员\n"
                 "【表情管理】\n"
-                "/addemoji <名称> <路径> - 添加表情\n"
-                "/delemoji <名称> - 删除表情\n"
-                "/listemoji - 查看表情列表\n"
+                "/delemoji <名称> - 删除表情包\n"
+                "/listemoji - 查看表情包列表\n"
                 "【其他】\n"
                 "/help - 显示帮助\n"
                 "/about - 关于本项目\n\n"
@@ -176,28 +178,48 @@ namespace LittleMeowBot {
             } catch (...) {
                 response = "无效的QQ号格式";
             }
-        } else if (cmd == "/addemoji" || cmd == "/添加表情") {
-            std::string name, path;
-            if (!(iss >> name >> path)) {
-                co_return "用法: /addemoji <名称> <路径>\n例如: /addemoji happy /home/emojis/happy.gif";
-            }
-            database.addEmoji(name, path);
-            response = fmt::format("已添加表情: {} -> {}", name, path);
         } else if (cmd == "/delemoji" || cmd == "/删除表情") {
             std::string name;
             if (!(iss >> name)) {
-                co_return "用法: /delemoji <名称>";
+                co_return "用法: /delemoji <名称或序号>";
             }
-            database.removeEmoji(name);
-            response = fmt::format("已删除表情: {}", name);
-        } else if (cmd == "/listemoji" || cmd == "/表情列表") {
-            auto emojis = database.getAllEmojis();
-            if (emojis.empty()) {
-                response = "表情库为空\n添加表情: /addemoji <名称> <路径>";
+            Json::Value emoji = co_await AgentToolManager::findFavoriteEmoji(name);
+            if (emoji.isNull()) {
+                co_return fmt::format("收藏表情中找不到'{}'", name);
+            }
+
+            const auto& config = Config::instance();
+            const auto client = drogon::HttpClient::newHttpClient(config.qqHttpHost);
+            Json::Value body;
+            body["res_id"] = emoji["res_id"].asString();
+            const auto req = drogon::HttpRequest::newHttpJsonRequest(body);
+            req->setMethod(drogon::Post);
+            req->setPath("/delete_custom_face");
+            req->addHeader("Authorization", "Bearer " + config.accessToken);
+
+            drogon::HttpResponsePtr resp;
+            try {
+                resp = co_await client->sendRequestCoro(req, 30.0);
+            } catch (const std::exception& e) {
+                response = "删除失败: QQ 客户端连接异常";
+                co_return response;
+            }
+            const auto json = resp->getJsonObject();
+            if (resp->getStatusCode() == drogon::k200OK && json
+                && json->get("status", "failed").asString() == "ok") {
+                AgentToolManager::invalidateFavoriteEmojiCache();
+                response = fmt::format("已从收藏表情中删除: {}", emoji["name"].asString());
             } else {
-                response = "表情库列表:\n";
-                for (const auto& [name, path] : emojis) {
-                    response += fmt::format("- {} : {}\n", name, path);
+                response = fmt::format("删除失败: {}（请确认名称或序号正确）", name);
+            }
+        } else if (cmd == "/listemoji" || cmd == "/表情列表") {
+            const Json::Value emojis = co_await AgentToolManager::fetchFavoriteEmojis();
+            if (emojis.empty()) {
+                response = "QQ收藏表情为空或获取失败";
+            } else {
+                response = "收藏表情列表:\n";
+                for (const auto& emoji : emojis) {
+                    response += fmt::format("- {}\n", emoji["name"].asString());
                 }
                 response += fmt::format("\n共 {} 个表情", emojis.size());
             }

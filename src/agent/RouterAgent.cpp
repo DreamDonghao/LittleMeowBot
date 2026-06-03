@@ -1,99 +1,175 @@
 /// @file RouterAgent.cpp
-/// @brief Router Agent - 实现
-/// @author donghao
-/// @date 2026-04-02
+/// @brief Router Agent - 实现（合并路由判断与规划）
 
 #include <agent/RouterAgent.hpp>
+#include <api/ApiClient.hpp>
+#include <config/Config.hpp>
+#include <service/PromptService.hpp>
 #include <spdlog/spdlog.h>
+#include <util/Log.hpp>
+#include <fmt/core.h>
 #include <regex>
 #include <ranges>
-#include <config/Config.hpp>
+#include <algorithm>
+
 namespace LittleMeowBot {
-    RouterAgent& RouterAgent::instance(){
-        static RouterAgent router;
-        return router;
-    }
+    namespace {
+        /// @brief 刷屏检测
+        [[nodiscard]] bool checkSpam(const QQMessage& message){
+            std::string rawMsg = message.getRawMessage();
+            std::erase_if(rawMsg, [](char c) { return std::isspace(c); });
 
-    drogon::Task<RouterDecision> RouterAgent::route(
-        const ChatRecordManager& chatRecords,
-        const QQMessage& message) const{
-        // Step 1: 硬规则检查（无需 LLM）
-        // 1.1 @提及检测
-        if (message.atMe()) {
-            spdlog::info("Router: @提及检测 → PRIORITY_REPLY");
-            RouterDecision decision;
-            decision.action = RouterDecision::Action::PRIORITY_REPLY;
-            decision.reason = "用户@提及" + Config::instance().botName;
-            co_return decision;
-        }
+            if (rawMsg.empty()) return true;
+            if (rawMsg.length() <= 2) return true;
 
-        // 1.2 刷屏检测
-        if (checkSpam(message)) {
-            spdlog::info("Router: 刷屏消息 → SKIP");
-            RouterDecision decision;
-            decision.action = RouterDecision::Action::SKIP;
-            decision.reason = "刷屏/纯表情消息";
-            co_return decision;
-        }
-
-        // 1.4 自身消息检测
-        if (message.getSelfQQNumber() == message.getSenderQQNumber()) {
-            spdlog::info("Router: 自身消息 → SKIP");
-            RouterDecision decision;
-            decision.action = RouterDecision::Action::SKIP;
-            decision.reason = "自身消息";
-            co_return decision;
-        }
-
-        // Step 2: LLM 辅助判断（使用轻量模型）
-        auto llmDecision = co_await llmRoute(chatRecords);
-
-        if (!llmDecision) {
-            // LLM 失败时默认正常处理
-            RouterDecision decision;
-            decision.action = RouterDecision::Action::NORMAL_PROCESS;
-            decision.reason = "LLM路由失败，默认正常处理";
-            co_return decision;
-        }
-
-        co_return llmDecision.value();
-    }
-
-    bool RouterAgent::checkSpam(const QQMessage& message) const{
-        std::string rawMsg = message.getRawMessage();
-        // 去除空白字符
-        std::erase_if(rawMsg, [](const char c) { return std::isspace(c); });
-        // 空消息
-        if (rawMsg.empty()) return true;
-        // 纯表情（QQ表情通常很短或包含特殊标记）
-        if (rawMsg.length() <= 2) return true;
-        // 纯表情包标记
-        if (rawMsg == "[表情]" || rawMsg.find("[CQ:face") != std::string::npos) {
-            // 检查是否全是表情
-            if (const std::regex facePattern("^\\[CQ:face.*\\]$");
-                std::regex_match(rawMsg, facePattern)) {
+            // 纯表情包
+            static const std::regex facePattern("^\\[CQ:face.*\\]$");
+            if (rawMsg.find("[CQ:face") != std::string::npos
+                && std::regex_match(rawMsg, facePattern)) {
                 return true;
             }
+
+            return false;
+        }
+        /// @brief 构建聊天上下文文本
+        /// @details Router 子窗口（触发/保留可配置，默认 20/10）：窗口大小由记录数派生
+        ///          （keep + count % slide），批量滑动而非逐条滑动，使 prompt 前缀在批次内稳定，
+        ///          最大化 LLM 上下文缓存命中。被滑出的记录仍在水位线之后，由 Executor 的 eviction 统一提取。
+        ///          末尾附带【发言间隔】：精确统计窗口内机器人距上次发言隔了多少条消息
+        ///          （LLM 不会数数，由代码计算后作为事实告知，策略由提示词决定）。
+    std::string buildChatContext(const ChatRecordManager &chatRecords) {
+        const auto &config = Config::instance();
+        const auto keep = static_cast<size_t>(config.routerWindowKeepCount);
+        const auto slide = std::max<size_t>(1, static_cast<size_t>(config.routerWindowTriggerCount) - keep);
+
+        const auto &records = chatRecords.getRecords();
+        const size_t windowSize = keep + (records.size() % slide);
+        const size_t startIdx = records.size() > windowSize ? records.size() - windowSize : 0;
+
+        std::string context = "【聊天记录】（最后一条是当前消息）\n";
+        bool spokeInWindow = false;
+        size_t silentCount = 0;
+        for (size_t i = startIdx; i < records.size(); ++i) {
+            const auto &record = records[i];
+            if (record["role"].asString() == "assistant") {
+                spokeInWindow = true;
+                silentCount = 0;
+            } else {
+                ++silentCount;
+            }
+            std::string role = record["role"].asString() == "assistant"
+                                   ? "[" + Config::instance().botName + "]"
+                                   : "[用户]";
+            context += role + ": " + record["content"].asString() + "\n";
         }
 
-        return false;
+        // 发言间隔作为事实注入末尾（置于末尾以保持前缀稳定，缓存不受影响）
+        const std::string& botName = Config::instance().botName;
+        if (spokeInWindow) {
+            context += fmt::format("\n【发言间隔】{} 距上次发言已隔 {} 条消息。\n", botName, silentCount);
+            spdlog::info("[Router] 发言间隔: 距上次发言 {} 条消息", silentCount);
+        } else {
+            const size_t windowLen = records.size() - startIdx;
+            context += fmt::format("\n【发言间隔】聊天记录中看不到 {} 的发言，已沉默至少 {} 条消息。\n", botName, windowLen);
+            spdlog::info("[Router] 发言间隔: 窗口内无发言记录(至少已沉默 {} 条)", windowLen);
+        }
+        return context;
     }
 
-    drogon::Task<std::optional<RouterDecision>> RouterAgent::llmRoute(const ChatRecordManager& chatRecords) const{
-        const auto& config = Config::instance();
+    /// @brief 解析 LLM 响应
+    [[nodiscard]] std::optional<RouterDecision> parseResponse(const std::string& content){
+        // 提取 JSON
+        size_t start = content.find('{');
+        size_t end = content.rfind('}');
+        if (start == std::string::npos || end == std::string::npos) {
+            Log::error("[Router] 未找到JSON: {}", content);
+            return std::nullopt;
+        }
 
-        // 构建 Router Prompt
-        const Json::Value messages = buildRouterPrompt(chatRecords);
+        std::string jsonStr = content.substr(start, end - start + 1);
 
-        // 使用 Router 专用配置（轻量模型）
-        spdlog::debug("Router请求配置: baseUrl={}, model={}", config.router.baseUrl, config.router.model);
+        Json::Value root;
+        Json::Reader reader;
+        if (!reader.parse(jsonStr, root)) {
+            Log::error("[Router] JSON解析失败: {}", jsonStr);
+            return std::nullopt;
+        }
+
+        RouterDecision decision;
+
+        // 解析 action
+        std::string actionStr = root.get("action", "reply").asString();
+        std::ranges::transform(actionStr, actionStr.begin(), ::tolower);
+        decision.action = (actionStr == "skip")
+                              ? RouterDecision::Action::SKIP
+                              : RouterDecision::Action::REPLY;
+
+        // 解析 reason
+        decision.reason = root.get("reason", "").asString();
+
+        // 解析 strategy
+        if (root.isMember("strategy") && root["strategy"].isObject()) {
+            const auto &strategy = root["strategy"];
+            decision.enableThinking = strategy.get("enableThinking", false).asBool();
+            decision.tone = strategy.get("tone", "friendly").asString();
+            int maxLen = strategy.get("maxLength", 25).asInt();
+            decision.maxLength = std::clamp(maxLen, 10, 500);
+        }
+
+        decision.shouldReply = (decision.action == RouterDecision::Action::REPLY);
+
+        return decision;
+    }
+
+    /// @brief 构建 LLM Prompt
+    Json::Value buildPrompt(
+        const ChatRecordManager &chatRecords,
+        const MemoryManager &memory) {
+        Json::Value messages;
+
+        // System Prompt（数据库存储，管理后台可编辑）
+        Json::Value systemMsg;
+        systemMsg["role"] = "system";
+        systemMsg["content"] = PromptService::getRouterSystemPrompt();
+        messages.append(systemMsg);
+
+        // 短期记忆
+        if (std::string shortMemory = memory.getMemory(); !shortMemory.empty()) {
+            Json::Value memoryMsg;
+            memoryMsg["role"] = "user";
+            memoryMsg["content"] = "【短期记忆】\n" + shortMemory;
+            messages.append(memoryMsg);
+        }
+
+        // 聊天记录（Router 子窗口）
+        Json::Value chatMsg;
+        chatMsg["role"] = "user";
+        chatMsg["content"] = buildChatContext(chatRecords);
+        messages.append(chatMsg);
+
+        return messages;
+    }
+
+    /// @brief LLM 路由与规划（合并判断 + 策略）
+    [[nodiscard]] drogon::Task<std::optional<RouterDecision>> llmRouteAndPlan(
+        const ChatRecordManager& chatRecords,
+        const MemoryManager& memory){
+        const auto &config = Config::instance();
+
+        const Json::Value messages = buildPrompt(chatRecords, memory);
+
+        Log::debug("[Router] LLM请求: model={}", config.router.model);
+
         const auto client = drogon::HttpClient::newHttpClient(config.router.baseUrl);
         Json::Value body;
         body["model"] = config.router.model;
         body["messages"] = messages;
         body["temperature"] = config.routerParams.temperature;
         body["max_tokens"] = config.routerParams.maxTokens;
-        body["top_p"] = 0.9f;
+        body["top_p"] = config.routerParams.topP;
+        if (!config.router.reasoningEffort.empty()) {
+            body["reasoning_effort"] = config.router.reasoningEffort;
+        }
 
         const auto req = drogon::HttpRequest::newHttpJsonRequest(body);
         req->setMethod(drogon::Post);
@@ -101,104 +177,82 @@ namespace LittleMeowBot {
         req->addHeader("Authorization", "Bearer " + config.router.apiKey);
         req->addHeader("Content-Type", "application/json");
 
-        const auto resp = co_await client->sendRequestCoro(req);
-        const auto json = resp->getJsonObject();
+        try {
+            const auto resp = co_await client->sendRequestCoro(req, 90.0);
+            const auto json = resp->getJsonObject();
 
-        if (resp->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
-            spdlog::error("Router LLM请求失败: status={}, body={}", resp->getStatusCode(), resp->getBody());
+            if (resp->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
+                Log::error("[Router] LLM请求失败: status={}",
+                           static_cast<int>(resp->getStatusCode()));
+                co_return std::nullopt;
+            }
+
+            ApiClient::logUsage(*json, config.router.model);
+
+            const std::string content = (*json)["choices"][0]["message"]["content"].asString();
+            Log::info("[Router] LLM响应: {}", content);
+
+            co_return parseResponse(content);
+        } catch (const std::exception& e) {
+            Log::error("[Router] LLM请求异常: {}", e.what());
             co_return std::nullopt;
         }
+    }
+}
 
-        std::string content = (*json)["choices"][0]["message"]["content"].asString();
-        spdlog::info("Router LLM响应: {}", content);
-
-        // 解析 JSON 结果
-        auto decision = parseRouterResponse(content);
-        co_return decision;
+    namespace {
+        /// @brief 构造硬规则决策结果
+        RouterDecision makeDecision(RouterDecision::Action action, std::string reason,
+                                    const int maxLength = 25, const bool priority = false){
+            RouterDecision decision;
+            decision.action = action;
+            decision.shouldReply = action == RouterDecision::Action::REPLY;
+            decision.reason = std::move(reason);
+            decision.maxLength = maxLength;
+            decision.isPriority = priority;
+            return decision;
+        }
     }
 
-    Json::Value RouterAgent::buildRouterPrompt(const ChatRecordManager& chatRecords) const{
-        Json::Value messages;
+    drogon::Task<RouterDecision>
 
-        // System Prompt
-        Json::Value systemMsg;
-        systemMsg["role"] = "system";
-        systemMsg["content"] = R"(你是一个消息路由器，判断消息是否需要机器人回复。
+    route(
+        const ChatRecordManager &chatRecords,
+        const MemoryManager &memory,
+        const QQMessage &message)  {
+        // ========== Step 1: 硬规则检查（无需 LLM）==========
 
-判断规则(只判断最后一条消息，上文消息用于理解)：
-1. SKIP（跳过）：机器人自己的消息、纯表情、无意义重复
-2. PRIORITY_REPLY（优先回复）：@机器人、紧急求助、直接提问
-3. NORMAL_PROCESS（正常处理）：普通群聊、闲聊内容
-
-输出格式（JSON）：
-{"action": "SKIP/PRIORITY_REPLY/NORMAL_PROCESS", "reason": "简短原因"}
-
-重要：只输出JSON，不要其他内容。)";
-        messages.append(systemMsg);
-
-        // User Prompt - 最近聊天记录
-        Json::Value userMsg;
-        userMsg["role"] = "user";
-
-        // 获取最近5条聊天记录
-        std::string recentChat;
-        const auto& records = chatRecords.getRecords();
-        const int startIdx = std::max(0, static_cast<int>(records.size()) - 5);
-        for (int i = startIdx; i < records.size(); ++i) {
-            if (const auto& record = records[i];
-                record["role"].asString() == "assistant") {
-                recentChat += "{机器人(自己)}:" + record["content"].asString() + "\n";
-            } else {
-                recentChat += record["content"].asString() + "\n";
-            }
+        // 1.1 @提及检测 → 高优先级回复
+        if (message.atMe()) {
+            Log::info("[Router] @提及 → 高优先级回复");
+            co_return makeDecision(RouterDecision::Action::REPLY, "用户@提及", 100, true);
         }
 
-        userMsg["content"] = "最近聊天记录：\n" + recentChat + "\n请判断是否需要回复。";
-        messages.append(userMsg);
+        // 1.2 刷屏检测 → 跳过
+        if (checkSpam(message)) {
+            Log::info("[Router] 刷屏消息 → 跳过");
+            co_return makeDecision(RouterDecision::Action::SKIP, "刷屏/纯表情");
+        }
 
-        return messages;
+        // 1.3 自身消息检测 → 跳过
+        if (message.getSelfQQNumber() == message.getSenderQQNumber()) {
+            Log::info("[Router] 自身消息 → 跳过");
+            co_return makeDecision(RouterDecision::Action::SKIP, "机器人自己发送的消息");
+        }
+
+        // ========== Step 2: LLM 路由与规划 ==========
+        auto llmDecision = co_await llmRouteAndPlan(chatRecords, memory);
+
+        if (!llmDecision) {
+            // LLM 失败时默认回复（保守策略）
+            Log::warn("[Router] LLM 失败，默认回复");
+            co_return makeDecision(RouterDecision::Action::REPLY, "LLM调用失败，保守回复");
+        }
+
+        Log::info("[Router] 决策: {} ({})",
+                  llmDecision->action, llmDecision->reason);
+
+        co_return llmDecision.value();
     }
 
-    std::optional<RouterDecision> RouterAgent::parseRouterResponse(const std::string& content) const{
-        // 提取 JSON
-        std::string jsonStr = content;
-
-        // 尝试找到 JSON 部分
-        size_t start = jsonStr.find('{');
-        if (size_t end = jsonStr.rfind('}');
-            start != std::string::npos && end != std::string::npos) {
-            jsonStr = jsonStr.substr(start, end - start + 1);
-        }
-
-        Json::Value root;
-        if (Json::Reader reader;
-            !reader.parse(jsonStr, root)) {
-            spdlog::error("Router JSON解析失败: {}", jsonStr);
-            return std::nullopt;
-        }
-
-        RouterDecision decision;
-
-        // 解析 action
-        if (root.isMember("action")) {
-            std::string actionStr = root["action"].asString();
-            std::ranges::transform(actionStr, actionStr.begin(), ::tolower);
-            if (actionStr == "skip") {
-                decision.action = RouterDecision::Action::SKIP;
-            } else if (actionStr == "priority_reply") {
-                decision.action = RouterDecision::Action::PRIORITY_REPLY;
-            } else if (actionStr == "normal_process") {
-                decision.action = RouterDecision::Action::NORMAL_PROCESS;
-            } else {
-                decision.action = RouterDecision::Action::NORMAL_PROCESS;
-            }
-        }
-
-        // 解析 reason
-        if (root.isMember("reason")) {
-            decision.reason = root["reason"].asString();
-        }
-
-        return decision;
-    }
 }

@@ -22,9 +22,9 @@ int main(){
     using namespace LittleMeowBot;
     try {
         // 系统初始化
-        Log::init(true, "../logs/bot.log", true);
+        Log::init(true, "logs/bot.log", true);
         auto& database = Database::instance();
-        database.initialize("../data/little_meow_bot.db");
+        database.initialize("data/little_meow_bot.db");
 
         auto& config = LittleMeowBot::Config::instance();
         config.loadFromDatabase();
@@ -50,13 +50,12 @@ int main(){
         });
 
         drogon::app().addListener("0.0.0.0", 7778);
-        drogon::app().setDocumentRoot("../public");
+        drogon::app().setDocumentRoot("public");
         Log::info("HTTP服务启动，端口: 7778");
         Log::info("管理后台: http://localhost:7778/index.html");
 
         drogon::app().run();
 
-        // 清理
         database.close();
         Log::info("系统正常退出");
     } catch (const std::exception& e) {

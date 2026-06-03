@@ -9,6 +9,7 @@ import type {ApiResponse, KBConfig} from '../vite-env.d'
 const showToast = inject<(msg: string, isError?: boolean) => void>('showToast')
 
 const kbConfig = reactive<KBConfig>({
+  enabled: true,
   apiKey: '',
   baseUrl: '',
   knowledgeDatasetId: '',
@@ -55,6 +56,16 @@ const saveKBConfig = async (): Promise<void> => {
     <div class="card">
       <div class="card-header">
         <h3 class="card-title">RAGFlow API 配置</h3>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">启用 RAGFlow</label>
+          <div class="toggle-switch">
+            <input v-model="kbConfig.enabled" type="checkbox">
+            <span class="toggle-label">{{ kbConfig.enabled ? '已启用' : '已禁用' }}</span>
+          </div>
+          <p class="form-hint">禁用后将跳过知识库和记忆库的检索与存储功能</p>
+        </div>
       </div>
       <div class="form-row">
         <div class="form-group">

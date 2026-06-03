@@ -7,7 +7,6 @@
 
 #include <drogon/WebSocketController.h>
 #include <service/WebSocketManager.hpp>
-#include <json/json.h>
 
 namespace LittleMeowBot {
     /// @brief 管理后台 WebSocket 控制器

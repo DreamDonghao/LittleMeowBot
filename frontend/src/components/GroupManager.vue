@@ -26,7 +26,20 @@ const loadGroups = async (): Promise<void> => {
   loading.value = true
   try {
     const resp = await fetch('/admin/api/groups')
-    groups.value = await resp.json()
+    if (!resp.ok) {
+      showToast!('加载失败: ' + resp.status, true)
+      groups.value = []
+      return
+    }
+    const data = await resp.json()
+    if (Array.isArray(data)) {
+      groups.value = data
+    } else {
+      groups.value = []
+    }
+  } catch (e) {
+    showToast!('网络错误，请检查后端服务', true)
+    groups.value = []
   } finally {
     loading.value = false
   }
@@ -172,19 +185,31 @@ onMounted(loadGroups)
         </div>
       </div>
       <div class="table-container">
-        <table v-if="!loading">
-          <thead>
-          <tr>
-            <th style="width: 60px;">状态</th>
-            <th>群名称</th>
-            <th style="width: 120px;">群号</th>
-            <th style="width: 70px;">消息</th>
-            <th style="width: 140px;">操作</th>
-          </tr>
-          </thead>
-          <tbody>
-          <tr v-for="group in groups" :key="group.groupId" :class="{ 'row-disabled': !group.enabled }">
-            <td>
+        <template v-if="loading">
+          <div class="empty-state">
+            <p>加载中...</p>
+          </div>
+        </template>
+        <template v-else-if="groups.length === 0">
+          <div class="empty-state">
+            <div class="empty-icon">👥</div>
+            <p>暂无群，请添加群号</p>
+          </div>
+        </template>
+        <template v-else>
+          <table>
+            <thead>
+            <tr>
+              <th style="width: 60px;">状态</th>
+              <th>群名称</th>
+              <th style="width: 120px;">群号</th>
+              <th style="width: 70px;">消息</th>
+              <th style="width: 140px;">操作</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr v-for="group in groups" :key="group.groupId" :class="{ 'row-disabled': !group.enabled }">
+              <td>
                 <span
                     :class="group.enabled ? 'status-enabled' : 'status-disabled'"
                     :title="group.enabled ? '点击禁用' : '点击启用'"
@@ -193,28 +218,22 @@ onMounted(loadGroups)
                 >
                   {{ group.enabled ? '启用' : '禁用' }}
                 </span>
-            </td>
-            <td>
-              <strong v-if="group.groupName">{{ group.groupName }}</strong>
-              <span v-else style="color: var(--text-light)">-</span>
-            </td>
-            <td><code>{{ group.groupId }}</code></td>
-            <td>{{ group.messageCount || 0 }}</td>
-            <td>
-              <button class="btn btn-primary btn-sm" @click="viewMemory(group.groupId, group.groupName || '')">记忆
-              </button>
-              <button class="btn btn-danger btn-sm" @click="removeGroup(group.groupId)">删除</button>
-            </td>
-          </tr>
-          </tbody>
-        </table>
-        <div v-if="loading" class="empty-state">
-          <p>加载中...</p>
-        </div>
-        <div v-else-if="groups.length === 0" class="empty-state">
-          <div class="empty-icon">👥</div>
-          <p>暂无群，请添加群号</p>
-        </div>
+              </td>
+              <td>
+                <strong v-if="group.groupName">{{ group.groupName }}</strong>
+                <span v-else style="color: var(--text-light)">-</span>
+              </td>
+              <td><code>{{ group.groupId }}</code></td>
+              <td>{{ group.messageCount || 0 }}</td>
+              <td>
+                <button class="btn btn-primary btn-sm" @click="viewMemory(group.groupId, group.groupName || '')">记忆
+                </button>
+                <button class="btn btn-danger btn-sm" @click="removeGroup(group.groupId)">删除</button>
+              </td>
+            </tr>
+            </tbody>
+          </table>
+        </template>
       </div>
     </div>
 
@@ -290,7 +309,7 @@ onMounted(loadGroups)
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 1001;
 }
 
 .modal-content {

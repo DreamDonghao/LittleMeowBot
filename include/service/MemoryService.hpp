@@ -1,68 +1,23 @@
 /// @file MemoryService.hpp
-/// @brief 记忆服务 - 短期记忆生成、合并与迁移
+/// @brief 记忆服务 - 短期记忆提取、窗口滑动与迁移
 /// @author donghao
 /// @date 2026-04-02
 /// @details 提供记忆系统的核心功能：
-///          - 从聊天记录提取短期记忆
-///          - 合并新旧记忆（去重、归纳）
-///          - 迁移到长期记忆库（RAGFlow）
+///          - 上下文窗口超限时从将被滑出的记录提取短期记忆（提取+合并一次LLM调用完成）
+///          - 逐批推进水位线（失败自愈、崩溃安全）
+///          - 超限时迁移到长期记忆库（RAGFlow）
 
 #pragma once
 #include <api/ApiClient.hpp>
 #include <string>
 
 namespace LittleMeowBot {
-    /// @brief 记忆服务类
-    /// @details 封装短期记忆生成、合并与迁移逻辑，单例模式
-    class MemoryService{
-    public:
-        static MemoryService& instance();
-
-        // ============================================================
-        //                      短期记忆操作
-        // ============================================================
-
-        /// @brief 获取群的短期记忆文本
-        [[nodiscard]] std::string getShortTermMemory(uint64_t groupId) const;
-
-        /// @brief 更新群的短期记忆
-        void updateShortTermMemory(uint64_t groupId, const std::string& memoryText) const;
-
-        /// @brief 从聊天记录生成新的记忆条目
-        drogon::Task<std::string> generateMemoryItems(const std::string& chatRecords) const;
-
-        /// @brief 合并新旧记忆（去重、归纳）
-        drogon::Task<std::string> mergeMemories(
-            const std::string& existingMemory,
-            const std::string& newMemory) const;
-
-        /// @brief 追加新记忆并合并（完整流程）
-        drogon::Task<void> appendAndMergeMemory(uint64_t groupId, const std::string& chatRecords) const;
-
-        // ============================================================
-        //                      长期记忆操作
-        // ============================================================
-
-        /// @brief 从短期记忆迁移到长期记忆库
-        drogon::Task<std::string> migrateToLongTermMemory(
-            uint64_t groupId,
-            const std::string& shortTermMemory) const;
-
-        /// @brief 筛选值得长期保存的记忆
-        drogon::Task<std::string> selectMemoriesToMigrate(const std::string& shortTermMemory) const;
-
-        /// @brief 从文本中删除已迁移的行
-        [[nodiscard]] std::string removeMigratedLines(
-            const std::string& original,
-            const std::string& migrated) const;
-
-        /// @brief 截断记忆到最多 N 条
-        [[nodiscard]] std::string trimToMaxLines(const std::string& memory, int maxLines) const;
-
-        /// @brief 统计文本行数
-        [[nodiscard]] int countLines(const std::string& text) const;
-
-    private:
-        MemoryService() = default;
-    };
+    /// @brief 记忆服务 - 短期记忆提取、合并与迁移逻辑
+    namespace MemoryService {
+        /// @brief 窗口超限时提取记忆并滑动窗口（完整流程：提取+合并 → 原子写记忆+水位线 → 超限迁移）
+        /// @param groupId 群号
+        /// @details 窗口条数超过 windowTriggerCount 时触发，删除至 windowKeepCount 条。
+        ///          API 失败时水位线不推进，下条消息自动重试；判定"无"时正常推进水位线。
+        drogon::Task<void> appendAndMergeMemory(uint64_t groupId);
+    }
 }

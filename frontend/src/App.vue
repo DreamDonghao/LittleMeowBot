@@ -18,6 +18,7 @@ import KBConfig from './components/KBConfig.vue'
 import MemoryConfig from './components/MemoryConfig.vue'
 import QQConfigVue from './components/QQConfig.vue'
 import CustomTools from './components/CustomTools.vue'
+import UsageStats from './components/UsageStats.vue'
 
 interface NavItem {
   key: string
@@ -35,8 +36,9 @@ const navItems: NavItem[] = [
   {key: 'groups', label: '群管理', icon: 'groups'},
   {key: 'chatRecords', label: '聊天记录', icon: 'chat'},
   {key: 'kb', label: '知识库配置', icon: 'kb'},
-  {key: 'memoryConfig', label: '记忆配置', icon: 'memory'},
-  {key: 'qqConfig', label: 'OneBot 配置', icon: 'qq'}
+  {key: 'memoryConfig', label: '记忆与上下文', icon: 'memory'},
+  {key: 'qqConfig', label: 'OneBot 配置', icon: 'qq'},
+  {key: 'usage', label: '用量统计', icon: 'memory'}
 ]
 
 const currentView: Ref<string> = ref('llm')
@@ -129,6 +131,7 @@ onMounted(async () => {
       <KBConfig v-else-if="currentView === 'kb'"/>
       <MemoryConfig v-else-if="currentView === 'memoryConfig'"/>
       <QQConfigVue v-else-if="currentView === 'qqConfig'"/>
+      <UsageStats v-else-if="currentView === 'usage'"/>
     </div>
   </div>
 

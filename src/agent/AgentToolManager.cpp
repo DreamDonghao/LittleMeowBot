@@ -4,16 +4,20 @@
 /// @date 2026-04-02
 
 #include <agent/AgentToolManager.hpp>
-#include <ranges>
+#include <config/Config.hpp>
 #include <fstream>
+#include <random>
+#include <filesystem>
+#include <chrono>
+#include <mutex>
+#include <set>
+
+#include "service/MessageService.hpp"
+#include "service/RAGFlowClient.hpp"
+#include "service/ToolRegistry.hpp"
 
 namespace LittleMeowBot {
-    AgentToolManager& AgentToolManager::instance(){
-        static AgentToolManager manager;
-        return manager;
-    }
-
-    void AgentToolManager::registerAllTools() const{
+    void AgentToolManager::registerAllTools(){
         auto& registry = ToolRegistry::instance();
 
         // ========== 终端工具 ==========
@@ -63,23 +67,25 @@ namespace LittleMeowBot {
         );
 
         // ========== 信息工具 ==========
-        // list_emojis
+        // list_stickers
         registry.registerTool(
             {
-                .name = "list_emojis",
-                .description = "获取本地表情库中所有可用的表情名称列表。",
+                .name = "list_stickers",
+                .description = "获取QQ收藏表情中所有可用的表情名称列表。",
                 .parameters = Json::Value(),
                 .handler = [](const Json::Value&) -> drogon::Task<std::string> {
-                    const auto& db = Database::instance();
-                    auto emojis = db.getAllEmojis();
+                    const Json::Value emojis = co_await fetchFavoriteEmojis();
+                    if (emojis.empty()) {
+                        co_return std::string("表情库为空（QQ收藏表情列表获取失败或没有收藏表情）");
+                    }
                     std::string result = "可用表情: ";
                     bool first = true;
-                    for (const auto& name : emojis | std::views::keys) {
+                    for (const auto& emoji : emojis) {
                         if (!first) result += ", ";
-                        result += name;
+                        result += emoji["name"].asString();
                         first = false;
                     }
-                    co_return emojis.empty() ? "表情库为空" : result;
+                    co_return result;
                 }
             }, ToolCategory::INFORMATION
         );
@@ -100,7 +106,7 @@ namespace LittleMeowBot {
                     if (query.empty()) co_return std::string("请提供检索问题");
 
                     const auto result =
-                        co_await RAGFlowClient::instance().searchKnowledge(query);
+                        co_await RAGFlowClient::searchKnowledge(query);
                     co_return result.value_or("知识库检索失败");
                 }
             }, ToolCategory::INFORMATION
@@ -122,7 +128,7 @@ namespace LittleMeowBot {
                     if (query.empty()) co_return std::string("请提供回忆关键词");
 
                     const auto result =
-                        co_await RAGFlowClient::instance().searchMemory(query);
+                        co_await RAGFlowClient::searchMemory(query);
                     if (!result || result->empty()) {
                         co_return "想不起来了，没有找到相关记忆";
                     }
@@ -161,7 +167,7 @@ namespace LittleMeowBot {
         registry.registerTool(
             {
                 .name = "send_face",
-                .description = "发送QQ表情，不自主使用。",
+                .description = "获取QQ原生表情的CQ码。返回的CQ码必须复制到reply的content中。",
                 .parameters = faceParams,
                 .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
                     int id = args.isMember("id") ? args["id"].asInt() : 1;
@@ -179,7 +185,7 @@ namespace LittleMeowBot {
         registry.registerTool(
             {
                 .name = "send_image",
-                .description = "发送图片。提供图片URL地址。用于分享图片、表情包等。",
+                .description = "获取网络图片的CQ码。提供图片URL。返回的CQ码必须复制到reply的content中。",
                 .parameters = imageParams,
                 .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
                     std::string url = args.isMember("url") ? args["url"].asString() : "";
@@ -189,27 +195,321 @@ namespace LittleMeowBot {
             }, ToolCategory::ACTION
         );
 
-        // send_emoji
-        Json::Value emojiParams;
-        emojiParams["type"] = "object";
-        emojiParams["properties"]["name"]["type"] = "string";
-        emojiParams["properties"]["name"]["description"] = "表情名称，如: happy, sad, cat, dog 等";
-        emojiParams["required"].append("name");
+        // send_sticker
+        Json::Value stickerParams;
+        stickerParams["type"] = "object";
+        stickerParams["properties"]["name"]["type"] = "string";
+        stickerParams["properties"]["name"]["description"] = "表情名称（先调list_stickers查看可用名称）";
+        stickerParams["required"].append("name");
         registry.registerTool(
             {
-                .name = "send_emoji",
-                .description = "从本地表情库发送表情。常用表情名称会动态更新。返回CQ码用于reply。",
-                .parameters = emojiParams,
+                .name = "send_sticker",
+                .description = "获取QQ收藏表情的CQ码。先调list_stickers查看可用表情名，再用此工具。返回的CQ码必须复制到reply的content中，否则表情不会显示。",
+                .parameters = stickerParams,
                 .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
                     std::string name = args.isMember("name") ? args["name"].asString() : "";
                     if (name.empty()) co_return std::string("请提供表情名称");
 
-                    auto& db = Database::instance();
-                    std::string path = db.getEmoji(name);
-                    if (path.empty()) {
-                        co_return fmt::format("表情'{}'不存在，可用表情请查询表情库", name);
+                    Json::Value emoji = co_await findFavoriteEmoji(name);
+                    if (emoji.isNull()) {
+                        co_return fmt::format("表情'{}'不存在，先调list_stickers查看可用表情", name);
                     }
-                    co_return fmt::format("[CQ:image,file={}]", path);
+
+                    // 商城表情（字段齐全）走 mface；个人收藏表情走 image+sub_type=1（QQ 渲染为表情）
+                    if (emoji.get("is_mark_face", false).asBool()
+                        && !emoji["emoji_id"].asString().empty()
+                        && !emoji["key"].asString().empty()) {
+                        co_return fmt::format(
+                            "[CQ:mface,summary={},emoji_id={},emoji_package_id={},key={}]",
+                            emoji["summary"].asString(),
+                            emoji["emoji_id"].asString(),
+                            emoji["emoji_package_id"].asString(),
+                            emoji["key"].asString());
+                    }
+
+                    if (emoji["url"].asString().empty()) {
+                        co_return fmt::format("表情'{}'缺少图片地址，无法发送", name);
+                    }
+                    co_return fmt::format(
+                        "[CQ:image,file={},sub_type=1,summary={}]",
+                        emoji["url"].asString(),
+                        emoji["summary"].asString());
+                }
+            }, ToolCategory::ACTION
+        );
+
+        // save_sticker - 保存别人发的表情为QQ收藏表情
+        Json::Value saveParams;
+        saveParams["type"] = "object";
+        saveParams["properties"]["file"]["type"] = "string";
+        saveParams["properties"]["file"]["description"] =
+            "图片在QQ缓存中的文件名（来自聊天记录JSON的images[].file字段）";
+        saveParams["properties"]["url"]["type"] = "string";
+        saveParams["properties"]["url"]["description"] =
+            "图片URL（来自聊天记录JSON的images[].url字段），file方式获取失败时用于下载，最好同时提供";
+        saveParams["properties"]["name"]["type"] = "string";
+        saveParams["properties"]["name"]["description"] =
+            "给表情起的简短名字（根据图片内容），如: 摸头、猫猫惊讶";
+        saveParams["required"].append("file");
+        saveParams["required"].append("name");
+        registry.registerTool(
+            {
+                .name = "save_sticker",
+                .description =
+                "把用户发的表情/图片保存为自己的QQ收藏表情并设置描述名称。仅在用户明确要求保存表情时使用。聊天记录中图片消息会带images数组，同时传images[].file和images[].url作为参数。name必须起一个能体现图片内容的名字，方便以后用send_sticker引用。",
+                .parameters = saveParams,
+                .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
+                    std::string file = args.isMember("file") ? args["file"].asString() : "";
+                    std::string url = args.isMember("url") ? args["url"].asString() : "";
+                    std::string name = args.isMember("name") ? args["name"].asString() : "";
+                    if (file.empty()) co_return std::string("请提供图片文件名(file)");
+                    if (name.empty()) co_return std::string("请提供表情名称(name)");
+
+                    spdlog::info("[Sticker] save_sticker 参数: file={} url={}",
+                                 file, url.substr(0, 150));
+
+                    const auto& config = Config::instance();
+
+                    // 每个请求独立 client，避免超时后复用坏连接
+                    const auto newClient = [&config] {
+                        return drogon::HttpClient::newHttpClient(config.qqHttpHost);
+                    };
+
+                    // Step 1: 尝试 get_image 拿容器内路径（商城表情会失败/超时）
+                    std::string containerPath;
+                    {
+                        Json::Value getBody;
+                        getBody["file"] = file;
+                        auto getReq = drogon::HttpRequest::newHttpJsonRequest(getBody);
+                        getReq->setMethod(drogon::Post);
+                        getReq->setPath("/get_image");
+                        getReq->addHeader("Authorization", "Bearer " + config.accessToken);
+
+                        drogon::HttpResponsePtr getResp;
+                        bool getError = false;
+                        try {
+                            getResp = co_await newClient()->sendRequestCoro(getReq, 15.0);
+                        } catch (const std::exception& e) {
+                            spdlog::warn("[Sticker] get_image 异常: {}", e.what());
+                            getError = true;
+                        }
+                        if (!getError) {
+                            const auto getJson = getResp->getJsonObject();
+                            if (getResp->getStatusCode() == drogon::k200OK && getJson
+                                && getJson->get("status", "failed").asString() == "ok"
+                                && getJson->isMember("data")) {
+                                containerPath = (*getJson)["data"]["file"].asString();
+                            }
+                        }
+                    }
+
+                    // Step 2: get_image 失败则回退到 download_file（URL 下载进容器）
+                    if (containerPath.empty()) {
+                        if (url.empty()) {
+                            co_return std::string("获取图片失败，请确认图片仍可访问");
+                        }
+                        Json::Value dlBody;
+                        dlBody["url"] = url;
+                        auto dlReq = drogon::HttpRequest::newHttpJsonRequest(dlBody);
+                        dlReq->setMethod(drogon::Post);
+                        dlReq->setPath("/download_file");
+                        dlReq->addHeader("Authorization", "Bearer " + config.accessToken);
+
+                        drogon::HttpResponsePtr dlResp;
+                        bool dlError = false;
+                        try {
+                            dlResp = co_await newClient()->sendRequestCoro(dlReq, 30.0);
+                        } catch (const std::exception& e) {
+                            spdlog::warn("[Sticker] download_file 异常: {}", e.what());
+                            dlError = true;
+                        }
+                        if (!dlError) {
+                            const auto dlJson = dlResp->getJsonObject();
+                            if (dlResp->getStatusCode() == drogon::k200OK && dlJson
+                                && dlJson->get("status", "failed").asString() == "ok"
+                                && dlJson->isMember("data")) {
+                                containerPath = (*dlJson)["data"]["file"].asString();
+                            }
+                        }
+                        if (containerPath.empty()) {
+                            co_return std::string("获取图片失败，可能是图片链接已过期，请让对方重新发送后立即保存");
+                        }
+                    }
+
+                    // Step 3: 记录保存前的 res_id 集合，用于保存后定位新表情
+                    invalidateFavoriteEmojiCache();
+                    std::set<std::string> beforeIds;
+                    for (const auto& e : co_await fetchFavoriteEmojis()) {
+                        if (!e["res_id"].asString().empty()) {
+                            beforeIds.insert(e["res_id"].asString());
+                        }
+                    }
+
+                    // Step 4: add_custom_face 保存为收藏表情
+                    Json::Value addBody;
+                    addBody["file"] = containerPath;
+                    auto addReq = drogon::HttpRequest::newHttpJsonRequest(addBody);
+                    addReq->setMethod(drogon::Post);
+                    addReq->setPath("/add_custom_face");
+                    addReq->addHeader("Authorization", "Bearer " + config.accessToken);
+
+                    auto addResp = co_await newClient()->sendRequestCoro(addReq, 30.0);
+                    auto addJson = addResp->getJsonObject();
+                    if (addResp->getStatusCode() != drogon::k200OK || !addJson
+                        || addJson->get("status", "failed").asString() != "ok") {
+                        spdlog::error("[Sticker] 保存收藏表情失败: {}", containerPath);
+                        co_return std::string("保存为收藏表情失败");
+                    }
+
+                    // Step 5: 定位新表情并设置描述
+                    invalidateFavoriteEmojiCache();
+                    Json::Value newItem(Json::nullValue);
+                    for (const auto& e : co_await fetchFavoriteEmojis()) {
+                        if (const std::string rid = e["res_id"].asString(); !rid.empty() && !beforeIds.contains(rid)) {
+                            newItem = e;
+                            break;
+                        }
+                    }
+                    if (!newItem.isNull()) {
+                        Json::Value descBody;
+                        descBody["emoji_id"] = newItem["emoji_id"].asString().empty()
+                                                  ? "0"
+                                                  : newItem["emoji_id"].asString();
+                        descBody["res_id"] = newItem["res_id"].asString();
+                        descBody["md5"] = newItem["md5"].asString();
+                        descBody["desc"] = name;
+                        auto descReq = drogon::HttpRequest::newHttpJsonRequest(descBody);
+                        descReq->setMethod(drogon::Post);
+                        descReq->setPath("/set_custom_face_desc");
+                        descReq->addHeader("Authorization", "Bearer " + config.accessToken);
+
+                        auto descResp = co_await newClient()->sendRequestCoro(descReq, 30.0);
+                        auto descJson = descResp->getJsonObject();
+                        if (descResp->getStatusCode() == drogon::k200OK && descJson
+                            && descJson->get("status", "failed").asString() == "ok") {
+                            invalidateFavoriteEmojiCache();
+                        } else {
+                            spdlog::warn("[Sticker] 设置表情描述失败: {}",
+                                         newItem["res_id"].asString());
+                        }
+                    }
+
+                    spdlog::info("[Sticker] 已保存收藏表情: {} ({})", containerPath, name);
+                    co_return fmt::format("已保存为收藏表情，名称: {}", name);
+                }
+            }, ToolCategory::ACTION
+        );
+
+        // rename_sticker - 修改收藏表情的名称/描述
+        Json::Value renameParams;
+        renameParams["type"] = "object";
+        renameParams["properties"]["name"]["type"] = "string";
+        renameParams["properties"]["name"]["description"] = "要改名的表情当前名称（先用list_stickers查看）";
+        renameParams["properties"]["new_name"]["type"] = "string";
+        renameParams["properties"]["new_name"]["description"] = "新名称，简短体现图片内容";
+        renameParams["required"].append("name");
+        renameParams["required"].append("new_name");
+        registry.registerTool(
+            {
+                .name = "rename_sticker",
+                .description =
+                "修改收藏表情的名称/描述。仅在用户明确要求给表情改名时使用。先调list_stickers查看当前名称，再把新名称传给new_name。",
+                .parameters = renameParams,
+                .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
+                    std::string name = args.isMember("name") ? args["name"].asString() : "";
+                    std::string newName = args.isMember("new_name") ? args["new_name"].asString() : "";
+                    if (name.empty()) co_return std::string("请提供表情当前名称(name)");
+                    if (newName.empty()) co_return std::string("请提供新名称(new_name)");
+
+                    Json::Value emoji = co_await findFavoriteEmoji(name);
+                    if (emoji.isNull()) {
+                        co_return fmt::format("表情'{}'不存在，先调list_stickers查看可用表情", name);
+                    }
+
+                    const auto& config = Config::instance();
+                    const auto client = drogon::HttpClient::newHttpClient(config.qqHttpHost);
+
+                    Json::Value body;
+                    body["emoji_id"] = emoji["emoji_id"].asString().empty()
+                                           ? "0"
+                                           : emoji["emoji_id"].asString();
+                    body["res_id"] = emoji["res_id"].asString();
+                    body["md5"] = emoji["md5"].asString();
+                    body["desc"] = newName;
+                    auto req = drogon::HttpRequest::newHttpJsonRequest(body);
+                    req->setMethod(drogon::Post);
+                    req->setPath("/set_custom_face_desc");
+                    req->addHeader("Authorization", "Bearer " + config.accessToken);
+
+                    drogon::HttpResponsePtr resp;
+                    try {
+                        resp = co_await client->sendRequestCoro(req, 30.0);
+                    } catch (const std::exception& e) {
+                        spdlog::error("[Sticker] 改名请求网络异常: {}", e.what());
+                        co_return std::string("改名失败: QQ 客户端连接异常");
+                    }
+                    const auto json = resp->getJsonObject();
+                    if (resp->getStatusCode() != drogon::k200OK || !json
+                        || json->get("status", "failed").asString() != "ok") {
+                        spdlog::error("[Sticker] 修改表情描述失败: {}", emoji["res_id"].asString());
+                        co_return std::string("改名失败");
+                    }
+
+                    invalidateFavoriteEmojiCache();
+                    spdlog::info("[Sticker] 表情改名: {} -> {}", name, newName);
+                    co_return fmt::format("已改名为: {}", newName);
+                }
+            }, ToolCategory::ACTION
+        );
+
+        // delete_sticker - 从收藏表情中删除
+        Json::Value delParams;
+        delParams["type"] = "object";
+        delParams["properties"]["name"]["type"] = "string";
+        delParams["properties"]["name"]["description"] = "要删除的表情名称（先用list_stickers查看）";
+        delParams["required"].append("name");
+        registry.registerTool(
+            {
+                .name = "delete_sticker",
+                .description =
+                "从QQ收藏表情中删除表情。仅在用户明确要求删除表情时使用，删除前先确认名称无误。先调list_stickers查看名称。",
+                .parameters = delParams,
+                .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
+                    std::string name = args.isMember("name") ? args["name"].asString() : "";
+                    if (name.empty()) co_return std::string("请提供表情名称(name)");
+
+                    Json::Value emoji = co_await findFavoriteEmoji(name);
+                    if (emoji.isNull()) {
+                        co_return fmt::format("表情'{}'不存在，先调list_stickers查看可用表情", name);
+                    }
+
+                    const auto& config = Config::instance();
+                    const auto client = drogon::HttpClient::newHttpClient(config.qqHttpHost);
+
+                    Json::Value body;
+                    body["res_id"] = emoji["res_id"].asString();
+                    auto req = drogon::HttpRequest::newHttpJsonRequest(body);
+                    req->setMethod(drogon::Post);
+                    req->setPath("/delete_custom_face");
+                    req->addHeader("Authorization", "Bearer " + config.accessToken);
+
+                    drogon::HttpResponsePtr resp;
+                    try {
+                        resp = co_await client->sendRequestCoro(req, 30.0);
+                    } catch (const std::exception& e) {
+                        spdlog::error("[Sticker] 删除请求网络异常: {}", e.what());
+                        co_return std::string("删除失败: QQ 客户端连接异常");
+                    }
+                    const auto json = resp->getJsonObject();
+                    if (resp->getStatusCode() != drogon::k200OK || !json
+                        || json->get("status", "failed").asString() != "ok") {
+                        spdlog::error("[Sticker] 删除收藏表情失败: {}", emoji["res_id"].asString());
+                        co_return std::string("删除失败");
+                    }
+
+                    invalidateFavoriteEmojiCache();
+                    spdlog::info("[Sticker] 已删除收藏表情: {}", name);
+                    co_return fmt::format("已删除表情: {}", name);
                 }
             }, ToolCategory::ACTION
         );
@@ -260,7 +560,7 @@ namespace LittleMeowBot {
 
                     if (userId == 0) co_return std::string("禁言失败: 请提供有效的QQ号");
 
-                    const bool success = co_await MessageService::instance().setGroupBan(groupId, userId, duration);
+                    const bool success = co_await MessageService::setGroupBan(groupId, userId, duration);
                     co_return success
                                   ? fmt::format("已禁言用户 {} {}秒", userId, duration)
                                   : "禁言失败: 权限不足或用户不存在";
@@ -287,7 +587,7 @@ namespace LittleMeowBot {
                     uint64_t userId = args.isMember("qq") ? std::stoull(args["qq"].asString()) : 0;
                     if (userId == 0) co_return std::string("拍一拍失败: 请提供有效的QQ号");
 
-                    const bool success = co_await MessageService::instance().setGroupPoke(groupId, userId);
+                    const bool success = co_await MessageService::setGroupPoke(groupId, userId);
                     co_return success
                                   ? fmt::format("已拍一拍用户 {}", userId)
                                   : "拍一拍失败: 权限不足或用户不存在";
@@ -311,7 +611,7 @@ namespace LittleMeowBot {
                     uint64_t messageId = args.isMember("message_id") ? std::stoull(args["message_id"].asString()) : 0;
                     if (messageId == 0) co_return std::string("撤回失败: 请提供有效的消息ID");
 
-                    const bool success = co_await MessageService::instance().deleteMessage(messageId);
+                    const bool success = co_await MessageService::deleteMessage(messageId);
                     co_return success
                                   ? fmt::format("已撤回消息 {}", messageId)
                                   : "撤回失败: 消息可能已超过2分钟或权限不足";
@@ -319,22 +619,23 @@ namespace LittleMeowBot {
             }, ToolCategory::ACTION
         );
 
-        spdlog::info("ToolManager: 工具注册完成（共16个工具）");
+        spdlog::info("ToolManager: 工具注册完成（共19个工具）");
     }
 
-    void AgentToolManager::registerCustomTools() const{
+    void AgentToolManager::registerCustomTools(){
         auto& registry = ToolRegistry::instance();
         const auto& db = Database::instance();
 
         // 先清除所有已注册的自定义工具
         registry.clearAllCustomTools();
 
+
         // 只注册启用的工具
         const auto tools = db.getEnabledCustomTools();
         int count = 0;
 
         for (const auto& tool : tools) {
-            // 解析参数 JSON嫂认证请
+            // 解析参数 JSON
             Json::Value params;
             if (!tool.parameters.empty()) {
                 Json::CharReaderBuilder builder;
@@ -343,6 +644,10 @@ namespace LittleMeowBot {
                 reader->parse(tool.parameters.c_str(),
                               tool.parameters.c_str() + tool.parameters.size(),
                               &params, &errors);
+                // 确保顶层 type 为 object（OpenAI function calling 要求）
+                if (!params.isNull() && !params.isMember("type")) {
+                    params["type"] = "object";
+                }
             }
 
             // 根据执行类型注册不同的 handler
@@ -467,7 +772,6 @@ namespace LittleMeowBot {
 
         std::string url = configJson.isMember("url") ? configJson["url"].asString() : "";
         std::string method = configJson.isMember("method") ? configJson["method"].asString() : "POST";
-        int timeout = configJson.isMember("timeout") ? configJson["timeout"].asInt() : 30;
 
         if (url.empty()) {
             co_return std::string("未配置URL");
@@ -503,11 +807,104 @@ namespace LittleMeowBot {
         }
 
         try {
-            auto resp = co_await client->sendRequestCoro(req);
+            auto resp = co_await client->sendRequestCoro(req, 30.0);
             co_return std::string(resp->getBody());
         } catch (const std::exception& e) {
             spdlog::error("HTTP工具执行失败: {}", e.what());
             co_return std::string("HTTP请求失败: ") + e.what();
         }
+    }
+
+    namespace {
+        // 收藏表情缓存（60秒TTL）
+        std::mutex g_favEmojiCacheMutex;
+        Json::Value g_favEmojiCache(Json::nullValue);
+        std::chrono::steady_clock::time_point g_favEmojiCacheTime{};
+
+        // CQ码参数值不能包含逗号和方括号，替换为空格
+        std::string sanitizeCqParam(std::string s) {
+            for (char& c : s) {
+                if (c == ',' || c == '[' || c == ']') c = ' ';
+            }
+            return s;
+        }
+    }
+
+    drogon::Task<Json::Value> AgentToolManager::fetchFavoriteEmojis(){
+        using namespace std::chrono_literals;
+        {
+            std::lock_guard lock(g_favEmojiCacheMutex);
+            if (!g_favEmojiCache.isNull()
+                && std::chrono::steady_clock::now() - g_favEmojiCacheTime < 60s) {
+                co_return g_favEmojiCache;
+            }
+        }
+
+        const auto& config = Config::instance();
+        const auto client = drogon::HttpClient::newHttpClient(config.qqHttpHost);
+
+        Json::Value body;
+        body["count"] = 200;
+        const auto req = drogon::HttpRequest::newHttpJsonRequest(body);
+        req->setMethod(drogon::Post);
+        req->setPath("/fetch_custom_face_detail");
+        req->addHeader("Authorization", "Bearer " + config.accessToken);
+
+        Json::Value result(Json::arrayValue);
+        try {
+            const auto resp = co_await client->sendRequestCoro(req, 30.0);
+            const auto json = resp->getJsonObject();
+            if (resp->getStatusCode() != drogon::k200OK || !json
+                || json->get("status", "failed").asString() != "ok") {
+                spdlog::error("[Sticker] 获取收藏表情失败: status={}",
+                              static_cast<int>(resp->getStatusCode()));
+                co_return result;
+            }
+
+            int idx = 0;
+            for (const auto& item : (*json)["data"]) {
+                Json::Value emoji;
+                const std::string desc = sanitizeCqParam(item.get("desc", "").asString());
+                const std::string md5 = item.get("md5", "").asString();
+                // 无名表情用 md5 前6位兜底（稳定且可区分），序号会随列表顺序漂移
+                std::string fallback = md5.size() >= 6
+                                           ? "表情" + md5.substr(0, 6)
+                                           : fmt::format("表情{}", idx + 1);
+                emoji["name"] = desc.empty() ? fallback : desc;
+                emoji["summary"] = desc;
+                emoji["emoji_id"] = item.get("eId", "").asString();
+                emoji["emoji_package_id"] = item.get("epId", "").asString();
+                emoji["key"] = item.get("key", "").asString();
+                emoji["url"] = item.get("url", "").asString();
+                emoji["md5"] = md5;
+                emoji["res_id"] = item.get("resId", "").asString();
+                emoji["is_mark_face"] = item.get("isMarkFace", false).asBool();
+                result.append(emoji);
+                idx++;
+            }
+        } catch (const std::exception& e) {
+            spdlog::error("[Sticker] 获取收藏表情异常: {}", e.what());
+        }
+
+        {
+            std::lock_guard lock(g_favEmojiCacheMutex);
+            g_favEmojiCache = result;
+            g_favEmojiCacheTime = std::chrono::steady_clock::now();
+        }
+        co_return result;
+    }
+
+    drogon::Task<Json::Value> AgentToolManager::findFavoriteEmoji(const std::string& name){
+        for (const Json::Value emojis = co_await fetchFavoriteEmojis(); const auto& emoji : emojis) {
+            if (emoji["name"].asString() == name || emoji["summary"].asString() == name) {
+                co_return emoji;
+            }
+        }
+        co_return Json::Value(Json::nullValue);
+    }
+
+    void AgentToolManager::invalidateFavoriteEmojiCache(){
+        std::lock_guard lock(g_favEmojiCacheMutex);
+        g_favEmojiCache = Json::Value(Json::nullValue);
     }
 }

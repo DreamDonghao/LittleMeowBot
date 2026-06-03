@@ -7,7 +7,6 @@
 
 #include <drogon/HttpController.h>
 #include <drogon/utils/coroutine.h>
-#include <storage/Database.hpp>
 #include <service/MessageService.hpp>
 
 namespace LittleMeowBot {
@@ -30,10 +29,11 @@ namespace LittleMeowBot {
         // 提示词
         ADD_METHOD_TO(AdminController::getPrompts, "/admin/api/prompts", drogon::Get);
         ADD_METHOD_TO(AdminController::savePrompt, "/admin/api/prompt", drogon::Post);
-        // 表情库
+        // 表情包库（QQ 收藏表情）
         ADD_METHOD_TO(AdminController::getEmojis, "/admin/api/emojis", drogon::Get);
-        ADD_METHOD_TO(AdminController::addEmoji, "/admin/api/emoji", drogon::Post);
-        ADD_METHOD_TO(AdminController::removeEmoji, "/admin/api/emoji/{name}", drogon::Delete);
+        ADD_METHOD_TO(AdminController::updateEmojiDesc, "/admin/api/emoji/desc", drogon::Post);
+        // 用量统计
+        ADD_METHOD_TO(AdminController::getUsage, "/admin/api/usage", drogon::Get);
         // 管理员
         ADD_METHOD_TO(AdminController::getAdmins, "/admin/api/admins", drogon::Get);
         ADD_METHOD_TO(AdminController::addAdmin, "/admin/api/admin", drogon::Post);
@@ -115,28 +115,24 @@ namespace LittleMeowBot {
 
         // ============== 表情库 ==============
 
-        /// @brief 获取所有表情
+        /// @brief 获取表情包库（QQ 收藏表情列表，含预览图 URL）
         /// @param req HTTP 请求
         /// @param callback HTTP 响应回调
         drogon::Task<> getEmojis(
             drogon::HttpRequestPtr req,
             std::function<void(const drogon::HttpResponsePtr &)> callback) const;
 
-        /// @brief 添加表情
-        /// @param req HTTP 请求，body 包含 name 和 path
-        /// @param callback HTTP 响应回调
-        drogon::Task<> addEmoji(
+        /// @brief 修改收藏表情描述（调用 NapCat set_custom_face_desc）
+        /// @param req body: {emoji_id, res_id, md5, desc}
+        drogon::Task<> updateEmojiDesc(
             drogon::HttpRequestPtr req,
             std::function<void(const drogon::HttpResponsePtr &)> callback) const;
 
-        /// @brief 删除表情
-        /// @param req HTTP 请求
-        /// @param callback HTTP 响应回调
-        /// @param name 表情名称
-        drogon::Task<> removeEmoji(
+        /// @brief 获取 Token 用量统计
+        /// @param req query: days（可选，默认30）
+        drogon::Task<> getUsage(
             drogon::HttpRequestPtr req,
-            std::function<void(const drogon::HttpResponsePtr &)> callback,
-            const std::string& name) const;
+            std::function<void(const drogon::HttpResponsePtr &)> callback) const;
 
         // ============== 管理员 ==============
 

@@ -1,54 +1,25 @@
 /// @file RouterAgent.hpp
-/// @brief Router Agent - 第一层路由决策代理
-/// @author donghao
-/// @date 2026-04-02
-/// @details 负责快速判断消息是否需要处理：
-///          - 硬规则检查（冷却、刷屏、@提及）- 无需 LLM
-///          - LLM 辅助判断（意图、话题参与）
-///          决策结果：
-///          - SKIP: 不处理，跳过
-///          - PRIORITY_REPLY: 高优先级回复（@提及、紧急求助）
-///          - NORMAL_PROCESS: 正常处理，进入 Planner
+/// @brief Router Agent - 消息路由与规划（合并原 Router + Planner）
+/// @details 负责判断消息是否需要回复，并规划回复策略：
+///          - 硬规则检查（@提及、刷屏、自身消息）- 无需 LLM
+///          - LLM 辅助判断（意图分析 + 策略规划）
+///          决策结果包含是否回复 + 回复策略（语气、长度、是否启用思考等）
 
 #pragma once
 #include "AgentTypes.hpp"
 #include <model/ChatRecordManager.hpp>
 #include <model/QQMessage.hpp>
+#include <model/MemoryManager.hpp>
 #include <drogon/utils/coroutine.h>
-#include <json/value.h>
-#include <string>
-#include <optional>
 
 namespace LittleMeowBot {
-    /// @brief Router Agent - 第一层，快速路由决策
-    /// @details 负责快速判断消息是否需要处理：
-    ///          - 硬规则检查（冷却、刷屏、@提及）- 无需 LLM
-    ///          - LLM 辅助判断（意图、话题参与）
-    class RouterAgent{
-    public:
-        static RouterAgent& instance();
-
-        /// @brief 路由决策
-        /// @param chatRecords 聊天记录管理器
-        /// @param message QQ 消息
-        /// @return 路由决策结果
-        drogon::Task<RouterDecision> route(
-            const ChatRecordManager& chatRecords,
-            const QQMessage& message) const;
-
-    private:
-        RouterAgent() = default;
-
-        /// @brief 刷屏检测 - 检查是否是纯表情/无意义消息
-        [[nodiscard]] bool checkSpam(const QQMessage& message) const;
-
-        /// @brief LLM 辅助路由判断（使用轻量模型）
-        drogon::Task<std::optional<RouterDecision>> llmRoute(const ChatRecordManager& chatRecords) const;
-
-        /// @brief 构建 Router Prompt
-        [[nodiscard]] Json::Value buildRouterPrompt(const ChatRecordManager& chatRecords) const;
-
-        /// @brief 解析 Router LLM 响应
-        [[nodiscard]] std::optional<RouterDecision> parseRouterResponse(const std::string& content) const;
-    };
+    /// @brief 路由决策与规划
+    /// @param chatRecords 聊天记录
+    /// @param memory 记忆管理器
+    /// @param message QQ 消息
+    /// @return 路由决策结果（包含回复策略）
+    [[nodiscard]] drogon::Task<RouterDecision> route(
+        const ChatRecordManager& chatRecords,
+        const MemoryManager& memory,
+        const QQMessage& message);
 }

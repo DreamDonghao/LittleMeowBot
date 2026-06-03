@@ -19,18 +19,6 @@ namespace LittleMeowBot {
         /// @param groupId 群号
         explicit MemoryManager(uint64_t groupId);
 
-        /// @brief 设置群号
-        /// @param groupId 群号
-        void setGroupId(uint64_t groupId);
-
-        /// @brief 获取群号
-        /// @return 群号
-        uint64_t getGroupId() const;
-
-        /// @brief 更新短期记忆
-        /// @param content 记忆内容（每行一条）
-        void updateMemory(const std::string& content) const;
-
         /// @brief 获取短期记忆
         /// @return 记忆内容（每行一条）
         [[nodiscard]] std::string getMemory() const;

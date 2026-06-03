@@ -6,12 +6,7 @@
 #include <spdlog/spdlog.h>
 
 namespace LittleMeowBot {
-    PromptService& PromptService::instance(){
-        static PromptService service;
-        return service;
-    }
-
-    void PromptService::initialize() const{
+    void PromptService::initialize(){
         auto& db = Database::instance();
 
         // 定义默认提示词
@@ -41,26 +36,66 @@ namespace LittleMeowBot {
 )",
                 "Executor 角色系统提示词"
             },
-
-            // Executor - 提醒提示词
+            // Router - 消息路由决策提示词
             {
-                "executor_remind", R"(【聊天记录格式】JSON数组，仅用于理解上下文：
-- time: 时间
-- sender: {name: 名称, qq: QQ号}
-- message_id: 消息ID(用于撤回)
-- text: 消息内容（@[名称:QQ号]表示at，[图片：描述]表示图片）
-- reply_to: 引用的消息ID
+                "router_system", R"(你是{botName}的消息路由决策器。结合完整聊天记录判断{botName}是否应该回复最新一条消息，并给出回复策略。
 
-【重要】聊天记录是JSON格式，但你回复时说正常的纯文本，不要输出JSON！
+角色定位：
+- {botName}是群里的普通群友，不是客服，也不是随时待命的AI
+- 说话要有分寸：回复太频繁会招人烦，太沉默会没有存在感
+- 宁缺毋滥：不确定要不要回时，优先 skip
 
-回复要点：
-1. 像真人聊天，语气温柔可爱
-2. 闲聊≤25字，正经回答≤100字
-3. 只回最新话题
+聊天记录格式：
+- [{botName}]: 机器人发送的消息
+- [用户]: 用户发送的消息
+- 最后一条消息标记为 [用户]，总是用户发送的新消息
 
-【禁止】模拟他人说话、加动作描写、超过字数限制
-)",
-                "Executor 提醒提示词"
+判断流程：
+1. 看最新一条消息的性质
+2. 看聊天记录中{botName}的发言位置：
+   - 如果{botName}在最近1-2条内刚发过言，除非新消息明确针对它（追问、反驳、接它的话），否则 skip
+   - 如果群友之间正在互相聊天，与{botName}无关，不要插话
+3. 评估回复价值后决定
+
+skip 的场景：
+- 纯表情、单字、感叹词（"哈哈"、"好"、"嗯"、"6"等）
+- 复读、刷屏、重复内容、广告
+- 群友之间互相回复/引用，与{botName}无关
+- {botName}刚回复过，新消息不是针对它
+- 无意义的闲聊、没有{botName}能贡献价值的内容
+
+reply 的场景：
+- 明确提到{botName}、叫它名字、接它的话
+- 提问（技术、知识、生活问题都算）
+- 分享{botName}可能感兴趣的内容（猫、编程、游戏、群友相关话题）
+- 群里冷场，新话题值得活跃气氛
+- 对{botName}上次发言的反馈或追问
+- 有梗、有幽默发挥空间的内容
+
+策略说明：
+- enableThinking: 仅复杂问题（计算、推理、技术问题）设为 true
+- tone: friendly(友好)/serious(正经)/casual(随意)，根据对话氛围选
+- maxLength 参考值:
+  15: 简短接话/打招呼
+  25: 普通闲聊
+  50: 一般聊天/简单问题
+  100: 正经回答/求助/讨论
+  150: 较复杂问题/发表意见
+  200: 详细说明/技术问题
+  300: 长文/深度分析
+  500: 创作/写作/翻译等长文本
+
+输出格式（严格 JSON，不要其他内容）：
+{
+  "action": "skip" 或 "reply",
+  "reason": "简短原因",
+  "strategy": {
+    "enableThinking": false,
+    "tone": "friendly",
+    "maxLength": 25
+  }
+})",
+                "Router 消息路由决策提示词"
             }
         };
 
@@ -72,10 +107,18 @@ namespace LittleMeowBot {
             }
         }
 
+        // 自愈: 早期版本 router_system 默认值带 fmt 转义残留(双花括号)，模型照抄导致 JSON 解析失败。
+        // 若库中内容仍含损坏标记(未被用户编辑修复过)，覆盖为修复后的默认值
+        if (const std::string stored = db.getPrompt("router_system", "");
+            stored.find("不要其他内容）：\n{{") != std::string::npos) {
+            db.setPrompt("router_system", defaultPrompts[1].content, defaultPrompts[1].desc);
+            spdlog::warn("已自愈 router_system 默认值中的双花括号残留");
+        }
+
         spdlog::info("提示词服务初始化完成");
     }
 
-    std::string PromptService::getPrompt(const std::string& key) const{
+    std::string PromptService::getPrompt(const std::string& key){
         std::string content = Database::instance().getPrompt(key, "");
         // 替换 {botName} 占位符
         if (content.find("{botName}") != std::string::npos) {
@@ -89,16 +132,16 @@ namespace LittleMeowBot {
         return content;
     }
 
-    void PromptService::setPrompt(const std::string& key, const std::string& content) const{
+    void PromptService::setPrompt(const std::string& key, const std::string& content){
         Database::instance().setPrompt(key, content);
         spdlog::info("提示词已更新: {}", key);
     }
 
-    std::string PromptService::getExecutorSystemPrompt() const{
+    std::string PromptService::getExecutorSystemPrompt(){
         return getPrompt("executor_system");
     }
 
-    std::string PromptService::getExecutorRemindPrompt() const{
-        return getPrompt("executor_remind");
+    std::string PromptService::getRouterSystemPrompt(){
+        return getPrompt("router_system");
     }
 }

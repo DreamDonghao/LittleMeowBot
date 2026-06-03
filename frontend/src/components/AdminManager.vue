@@ -4,7 +4,7 @@
  * @brief 管理员管理组件
  */
 import {inject, onMounted, ref, type Ref} from 'vue'
-import type {Admin, ApiResponse} from '../vite-env'
+import type {Admin, ApiResponse} from '../vite-env.d'
 
 const showToast = inject<(msg: string, isError?: boolean) => void>('showToast')
 
@@ -17,7 +17,20 @@ const loadAdmins = async (): Promise<void> => {
   loading.value = true
   try {
     const resp = await fetch('/admin/api/admins')
-    admins.value = await resp.json()
+    if (!resp.ok) {
+      showToast!('加载失败: ' + resp.status, true)
+      admins.value = []
+      return
+    }
+    const data = await resp.json()
+    if (Array.isArray(data)) {
+      admins.value = data
+    } else {
+      admins.value = []
+    }
+  } catch (e) {
+    showToast!('网络错误，请检查后端服务', true)
+    admins.value = []
   } finally {
     loading.value = false
   }
@@ -86,29 +99,35 @@ onMounted(loadAdmins)
         <h3 class="card-title">管理员列表</h3>
       </div>
       <div class="table-container">
-        <table v-if="!loading">
-          <thead>
-          <tr>
-            <th>QQ号</th>
-            <th style="width:100px">操作</th>
-          </tr>
-          </thead>
-          <tbody>
-          <tr v-for="admin in admins" :key="admin.qq">
-            <td><code>{{ admin.qq }}</code></td>
-            <td>
-              <button class="btn btn-danger btn-sm" @click="removeAdmin(admin.qq)">移除</button>
-            </td>
-          </tr>
-          </tbody>
-        </table>
-        <div v-if="loading" class="empty-state">
-          <p>加载中...</p>
-        </div>
-        <div v-else-if="admins.length === 0" class="empty-state">
-          <div class="empty-icon">👤</div>
-          <p>暂无管理员</p>
-        </div>
+        <template v-if="loading">
+          <div class="empty-state">
+            <p>加载中...</p>
+          </div>
+        </template>
+        <template v-else-if="admins.length === 0">
+          <div class="empty-state">
+            <div class="empty-icon">👤</div>
+            <p>暂无管理员</p>
+          </div>
+        </template>
+        <template v-else>
+          <table>
+            <thead>
+            <tr>
+              <th>QQ号</th>
+              <th style="width:100px">操作</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr v-for="admin in admins" :key="admin.qq">
+              <td><code>{{ admin.qq }}</code></td>
+              <td>
+                <button class="btn btn-danger btn-sm" @click="removeAdmin(admin.qq)">移除</button>
+              </td>
+            </tr>
+            </tbody>
+          </table>
+        </template>
       </div>
     </div>
   </div>

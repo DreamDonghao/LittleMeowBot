@@ -22,17 +22,9 @@ namespace LittleMeowBot {
         /// @param qqMessageJson OneBot 消息 JSON
         explicit QQMessage(const Json::Value& qqMessageJson);
 
-        /// @brief 设置消息 JSON（重新解析）
-        /// @param qqMessageJson OneBot 消息 JSON
-        void setMessageJson(const Json::Value& qqMessageJson);
-
         /// @brief 检查是否 @ 了机器人
         /// @return 是否 @ 了机器人
         [[nodiscard]] bool atMe() const;
-
-        /// @brief 检查消息是否包含图片
-        /// @return 是否包含图片
-        [[nodiscard]] bool existImage() const;
 
         /// @brief 获取群号
         /// @return 群号
@@ -45,14 +37,6 @@ namespace LittleMeowBot {
         /// @brief 获取发送者 QQ 号
         /// @return 发送者 QQ 号
         [[nodiscard]] Json::UInt64 getSenderQQNumber() const;
-
-        /// @brief 获取发送者昵称
-        /// @return 发送者昵称
-        [[nodiscard]] Json::String getSenderQQName() const;
-
-        /// @brief 获取发送者群名片
-        /// @return 群名片（若无则返回空）
-        [[nodiscard]] Json::String getSenderGroupName() const;
 
         /// @brief 获取消息 ID
         /// @return 消息 ID
@@ -94,11 +78,18 @@ namespace LittleMeowBot {
         static void addMessageCache(Json::UInt64 messageId, Json::String message);
 
     private:
+        /// @brief 设置消息 JSON（仅构造函数使用）
+        /// @param qqMessageJson OneBot 消息 JSON
+        void setMessageJson(const Json::Value& qqMessageJson);
+
+        /// @brief 获取发送者昵称
+        /// @return 发送者昵称
+        [[nodiscard]] Json::String getSenderQQName() const;
+
         const Json::Value* m_qqMessageJson{}; ///< OneBot 消息 JSON 指针
         Json::String m_formatMessage;         ///< 格式化后的消息（JSON格式）
         uint64_t m_replyTo{0};                ///< 引用的消息ID
         bool m_isAtMe{false};                 ///< 是否 @ 了机器人
-        bool m_isExistImage{false};           ///< 是否包含图片
 
 
         inline static std::unordered_map<Json::UInt64, Json::String> m_QQNameMap;       ///< QQ 号到昵称映射

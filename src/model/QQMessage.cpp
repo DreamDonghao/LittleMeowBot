@@ -2,6 +2,7 @@
 /// @brief QQ 消息模型 - 实现
 
 #include <model/QQMessage.hpp>
+#include <api/ApiClient.hpp>
 #include <util/tool.h>
 #include <spdlog/spdlog.h>
 #include <fstream>
@@ -28,9 +29,9 @@ namespace LittleMeowBot {
         req->setPath(config.image.path);
         req->addHeader("Authorization", "Bearer " + config.image.apiKey);
 
-        const auto resp = co_await client->sendRequestCoro(req);
+        const auto resp = co_await client->sendRequestCoro(req, 90.0);
         if (resp->getStatusCode() != drogon::k200OK) {
-            spdlog::error("图像描述请求失败: status={}", resp->getStatusCode());
+            spdlog::error("图像描述请求失败: status={}",static_cast<int>( resp->getStatusCode()));
             co_return "无法识别图片";
         }
         const auto json = resp->getJsonObject();
@@ -40,6 +41,8 @@ namespace LittleMeowBot {
         }
         const auto& choices = (*json)["choices"];
         const auto& content = choices[0]["message"]["content"].asString();
+
+        ApiClient::logUsage(*json, config.image.model);
 
         co_return content;
     }
@@ -67,8 +70,6 @@ namespace LittleMeowBot {
                 if (std::stoul(item["data"]["qq"].asString()) == getSelfQQNumber()) {
                     m_isAtMe = true;
                 }
-            } else if (item["type"] == "image") {
-                m_isExistImage = true;
             } else if (item["type"] == "reply") {
                 m_replyTo = std::stoull(item["data"]["id"].asString());
             }
@@ -76,12 +77,10 @@ namespace LittleMeowBot {
     }
 
     bool QQMessage::atMe() const{ return m_isAtMe; }
-    bool QQMessage::existImage() const{ return m_isExistImage; }
     Json::UInt64 QQMessage::getGroupId() const{ return (*m_qqMessageJson)["group_id"].asUInt64(); }
     Json::UInt64 QQMessage::getSelfQQNumber() const{ return (*m_qqMessageJson)["self_id"].asUInt64(); }
     Json::UInt64 QQMessage::getSenderQQNumber() const{ return (*m_qqMessageJson)["sender"]["user_id"].asUInt64(); }
     Json::String QQMessage::getSenderQQName() const{ return (*m_qqMessageJson)["sender"]["nickname"].asString(); }
-    Json::String QQMessage::getSenderGroupName() const{ return (*m_qqMessageJson)["sender"]["card"].asString(); }
     Json::UInt64 QQMessage::getMessageId() const{ return (*m_qqMessageJson)["message_id"].asUInt64(); }
     uint64_t QQMessage::getReplyTo() const{ return m_replyTo; }
 
@@ -93,6 +92,7 @@ namespace LittleMeowBot {
 
         // 构建消息内容
         std::string textContent;
+        Json::Value images(Json::arrayValue);
         for (const auto& item : (*m_qqMessageJson)["message"]) {
             if (item["type"] == "text") {
                 textContent += item["data"]["text"].asString();
@@ -103,6 +103,10 @@ namespace LittleMeowBot {
                 textContent += item["data"]["raw"]["faceText"].asString();
             } else if (item["type"] == "image") {
                 textContent += "[图片：" + co_await getImageDescribe(item["data"]["url"].asString()) + "]";
+                Json::Value imgInfo;
+                imgInfo["file"] = item["data"].get("file", "").asString();
+                imgInfo["url"] = item["data"].get("url", "").asString();
+                images.append(imgInfo);
             }
             // reply类型不在这里处理，通过reply_to字段传递
         }
@@ -114,6 +118,9 @@ namespace LittleMeowBot {
         msgJson["sender"]["qq"] = std::to_string(senderQQ);
         msgJson["message_id"] = std::to_string(msgId);
         msgJson["text"] = textContent;
+        if (!images.empty()) {
+            msgJson["images"] = images;
+        }
         if (m_replyTo > 0) {
             msgJson["reply_to"] = std::to_string(m_replyTo);
         } else {

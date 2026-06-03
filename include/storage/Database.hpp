@@ -18,7 +18,6 @@
 #include <vector>
 #include <unordered_map>
 #include <optional>
-#include <filesystem>
 
 namespace LittleMeowBot {
     /// @brief 群组配置结构
@@ -54,16 +53,24 @@ namespace LittleMeowBot {
         void addChatRecord(uint64_t groupId, const std::string& role, const std::string& content) const;
         std::vector<Json::Value> getChatRecords(uint64_t groupId, int limit = 50) const;
         std::vector<Json::Value> getChatRecordsWithIds(uint64_t groupId, int limit = 50) const;
-        std::string getChatRecordsText(uint64_t groupId, int limit = 12, const std::string& botName = "小喵") const;
         size_t getChatRecordCount(uint64_t groupId) const;
         void clearOldRecords(uint64_t groupId, int keepLast = 12) const;
+
+        /// @brief 获取水位线之后的最新记录（旧→新），limit<=0 表示不限
+        std::vector<Json::Value> getChatRecordsSince(uint64_t groupId, uint64_t watermarkId, int limit = 0) const;
+        /// @brief 统计水位线之后的记录条数
+        size_t getChatRecordCountSince(uint64_t groupId, uint64_t watermarkId) const;
 
         // ============================================================
         //                      长期记忆操作
         // ============================================================
 
-        std::string getLongTermMemory(uint64_t groupId);
-        void updateLongTermMemory(uint64_t groupId, const std::string& memory) const;
+        std::string getShortTermMemory(uint64_t groupId);
+        void updateShortTermMemory(uint64_t groupId, const std::string& memory) const;
+        /// @brief 获取群记忆水位线（最后已提取的聊天记录 id，无记录时为 0）
+        uint64_t getMemoryWatermark(uint64_t groupId);
+        /// @brief 原子更新记忆与水位线（单条 upsert 语句，崩溃安全）
+        void updateShortTermMemoryWithWatermark(uint64_t groupId, const std::string& memory, uint64_t watermarkId) const;
 
         // ============================================================
         //                      消息缓存操作
@@ -121,14 +128,6 @@ namespace LittleMeowBot {
         void removeAdmin(uint64_t qqNumber) const;
         std::vector<uint64_t> getAdmins() const;
 
-        // ============================================================
-        //                      表情库操作
-        // ============================================================
-
-        std::string getEmoji(const std::string& name);
-        void addEmoji(const std::string& name, const std::string& path, const std::string& description = "") const;
-        void removeEmoji(const std::string& name);
-        std::unordered_map<std::string, std::string> getAllEmojis() const;
 
         // ============================================================
         //                      LLM 配置操作
@@ -161,6 +160,18 @@ namespace LittleMeowBot {
         Json::Value getMemoryConfig() const;
         void saveMemoryConfig(const Json::Value& config) const;
         bool hasMemoryConfig() const;
+
+        // ============================================================
+        //                      用量统计操作
+        // ============================================================
+
+        /// @brief 记录一次 LLM 调用用量
+        void addUsageRecord(const std::string& model, int promptTokens, int completionTokens,
+                            int totalTokens, int cachedTokens) const;
+        /// @brief 获取最近 N 天用量汇总（按模型、按天聚合）
+        Json::Value getUsageSummary(int days) const;
+        /// @brief 获取最近调用明细
+        Json::Value getRecentUsage(int limit) const;
 
         // ============================================================
         //                      自定义工具操作

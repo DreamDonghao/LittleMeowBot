@@ -3,7 +3,7 @@
  * @file ChatRecords.vue
  * @brief 聊天记录组件 - 实时查看、编辑、删除
  */
-import {inject, nextTick, onMounted, onUnmounted, ref, type Ref} from 'vue'
+import {inject, nextTick, onMounted, onUnmounted, ref, watch, type Ref} from 'vue'
 import type {ApiResponse, ChatMessage, Group, QQConfig} from '../vite-env.d'
 
 const showToast = inject<(msg: string, isError?: boolean) => void>('showToast')
@@ -31,7 +31,20 @@ const loadGroups = async (): Promise<void> => {
   loading.value = true
   try {
     const resp = await fetch('/admin/api/chat-groups')
-    groups.value = await resp.json()
+    if (!resp.ok) {
+      showToast!('加载失败: ' + resp.status, true)
+      groups.value = []
+      return
+    }
+    const data = await resp.json()
+    if (Array.isArray(data)) {
+      groups.value = data
+    } else {
+      groups.value = []
+    }
+  } catch (e) {
+    showToast!('网络错误，请检查后端服务', true)
+    groups.value = []
   } finally {
     loading.value = false
   }
@@ -140,7 +153,7 @@ let originalOnMessage: ((event: MessageEvent) => void) | null | undefined = null
 
 const setupWebSocket = (): void => {
   const ws = wsObj!.get()
-  if (ws) {
+  if (ws && wsConnected.value) {
     originalOnMessage = ws.onmessage ? ws.onmessage.bind(ws) : null
     ws.onmessage = (event: MessageEvent) => {
       const data = JSON.parse(event.data)
@@ -152,6 +165,17 @@ const setupWebSocket = (): void => {
     }
   }
 }
+
+// WebSocket 重连时重新设置消息处理器并重新订阅
+watch(wsConnected, (connected) => {
+  if (connected && selectedGroup.value) {
+    setupWebSocket()
+    const ws = wsObj!.get()
+    if (ws) {
+      ws.send(JSON.stringify({action: 'subscribe', groupId: selectedGroup.value}))
+    }
+  }
+})
 
 const restoreWebSocket = (): void => {
   const ws = wsObj!.get()
@@ -185,42 +209,48 @@ onUnmounted(restoreWebSocket)
         </div>
       </div>
       <div class="table-container">
-        <table v-if="!loading">
-          <thead>
-          <tr>
-            <th>群名称</th>
-            <th style="width: 140px;">群号</th>
-            <th style="width: 100px;">消息数</th>
-            <th style="width: 130px;">操作</th>
-          </tr>
-          </thead>
-          <tbody>
-          <tr v-for="group in groups" :key="group.groupId" class="group-row"
-              @click="selectGroup(group.groupId, group.groupName || String(group.groupId))">
-            <td>
-              <strong v-if="group.groupName">{{ group.groupName }}</strong>
-              <span v-else style="color: var(--text-light)">群 {{ group.groupId }}</span>
-            </td>
-            <td><code>{{ group.groupId }}</code></td>
-            <td>{{ group.messageCount || 0 }}</td>
-            <td style="white-space: nowrap;">
-              <button class="btn btn-primary btn-sm"
-                      @click.stop="selectGroup(group.groupId, group.groupName || String(group.groupId))">进入
-              </button>
-              <button :disabled="!group.messageCount" class="btn btn-danger btn-sm"
-                      style="margin-left: 8px;" @click.stop="clearGroupRecords(group.groupId)">清空
-              </button>
-            </td>
-          </tr>
-          </tbody>
-        </table>
-        <div v-if="loading" class="empty-state">
-          <p>加载中...</p>
-        </div>
-        <div v-else-if="groups.length === 0" class="empty-state">
-          <div class="empty-icon">💬</div>
-          <p>暂无聊天记录</p>
-        </div>
+        <template v-if="loading">
+          <div class="empty-state">
+            <p>加载中...</p>
+          </div>
+        </template>
+        <template v-else-if="groups.length === 0">
+          <div class="empty-state">
+            <div class="empty-icon">💬</div>
+            <p>暂无聊天记录</p>
+          </div>
+        </template>
+        <template v-else>
+          <table>
+            <thead>
+            <tr>
+              <th>群名称</th>
+              <th style="width: 140px;">群号</th>
+              <th style="width: 100px;">消息数</th>
+              <th style="width: 130px;">操作</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr v-for="group in groups" :key="group.groupId" class="group-row"
+                @click="selectGroup(group.groupId, group.groupName || String(group.groupId))">
+              <td>
+                <strong v-if="group.groupName">{{ group.groupName }}</strong>
+                <span v-else style="color: var(--text-light)">群 {{ group.groupId }}</span>
+              </td>
+              <td><code>{{ group.groupId }}</code></td>
+              <td>{{ group.messageCount || 0 }}</td>
+              <td style="white-space: nowrap;">
+                <button class="btn btn-primary btn-sm"
+                        @click.stop="selectGroup(group.groupId, group.groupName || String(group.groupId))">进入
+                </button>
+                <button :disabled="!group.messageCount" class="btn btn-danger btn-sm"
+                        style="margin-left: 8px;" @click.stop="clearGroupRecords(group.groupId)">清空
+                </button>
+              </td>
+            </tr>
+            </tbody>
+          </table>
+        </template>
       </div>
     </div>
 

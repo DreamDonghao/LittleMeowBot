@@ -26,13 +26,6 @@ namespace LittleMeowBot {
 
         static void init(bool enableFile = false, const std::string& logPath = "logs/bot.log", bool asyncMode = true);
         static void shutdown();
-        static void setLevel(Level level);
-        static void flush();
-
-        template <typename... Args>
-        static void trace(const std::string_view f, const Args&... args){
-            logImpl(Level::trace, std::vformat(std::string(f), std::make_format_args(args...)));
-        }
 
         template <typename... Args>
         static void debug(const std::string_view f, const Args&... args){
@@ -102,13 +95,5 @@ namespace LittleMeowBot {
         if (s_logger) s_logger->info("日志系统关闭...");
         spdlog::shutdown();
         s_logger = nullptr;
-    }
-
-    inline void Log::setLevel(Level level){
-        if (s_logger) s_logger->set_level(level);
-    }
-
-    inline void Log::flush(){
-        if (s_logger) s_logger->flush();
     }
 }

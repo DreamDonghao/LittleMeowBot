@@ -18,12 +18,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(SRC_FILES
         # storage
         src/storage/Database.cpp
-        src/storage/Statement.cpp
         # agent
-        src/agent/AgentTypes.cpp
         src/agent/AgentToolManager.cpp
         src/agent/RouterAgent.cpp
-        src/agent/PlannerAgent.cpp
         src/agent/ExecutorAgent.cpp
         src/agent/AgentSystem.cpp
         # service
@@ -55,9 +52,11 @@ add_executable(${PROJECT_NAME} ${SRC_FILES})
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
 
 # 静态链接 C++ 标准库和 GCC 运行时
-set_target_properties(${PROJECT_NAME} PROPERTIES
-        LINK_FLAGS "-static-libgcc -static-libstdc++"
-)
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND NOT APPLE)
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+            LINK_FLAGS "-static-libgcc -static-libstdc++"
+    )
+endif()
 # ##############################################################################
 # If you include the drogon source code locally in your project, use this method
 # to add drogon

@@ -8,10 +8,9 @@ import type {ApiResponse, LLMConfig} from '../vite-env.d'
 
 const showToast = inject<(msg: string, isError?: boolean) => void>('showToast')
 
-const llmNames: Ref<string[]> = ref(['router', 'planner', 'executor', 'executorThinking', 'memory', 'image'])
+const llmNames: Ref<string[]> = ref(['router', 'executor', 'executorThinking', 'memory', 'image'])
 const llmLabels: Record<string, string> = {
   router: 'Router',
-  planner: 'Planner',
   executor: 'Executor',
   executorThinking: 'Executor思考',
   memory: 'Memory',
@@ -21,7 +20,7 @@ const selectedLLM: Ref<string> = ref('router')
 const llmConfigs = reactive<Record<string, LLMConfig>>({})
 const llmConfig = reactive<LLMConfig>({
   apiKey: '', baseUrl: '', path: '', model: '',
-  maxTokens: 100, temperature: 0.7, topP: 0.9
+  maxTokens: 100, temperature: 0.7, topP: 0.9, reasoningEffort: ''
 })
 const saving: Ref<boolean> = ref(false)
 
@@ -110,6 +109,18 @@ const saveLLMConfig = async (): Promise<void> => {
         <div class="form-group">
           <label class="form-label">Top P</label>
           <input v-model.number="llmConfig.topP" class="form-input" max="1" min="0" step="0.1" type="number">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Reasoning Effort（Gemma等模型专用）</label>
+          <select v-model="llmConfig.reasoningEffort" class="form-input">
+            <option value="">不发送（默认）</option>
+            <option value="none">关闭思考 (none)</option>
+            <option value="medium">中等思考 (medium)</option>
+            <option value="high">深度思考 (high)</option>
+          </select>
+          <p class="form-hint">设置为"关闭思考"可大幅减少token消耗，适合简单任务（如Router）</p>
         </div>
       </div>
       <button :disabled="saving" class="btn btn-primary" @click="saveLLMConfig">

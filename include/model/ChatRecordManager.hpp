@@ -21,10 +21,6 @@ namespace LittleMeowBot {
         /// @param groupId 群号
         explicit ChatRecordManager(uint64_t groupId);
 
-        /// @brief 设置群号
-        /// @param groupId 群号
-        void setGroupId(uint64_t groupId);
-
         /// @brief 获取群号
         /// @return 群号
         uint64_t getGroupId() const;
@@ -37,25 +33,13 @@ namespace LittleMeowBot {
         /// @param content 回复内容
         void addAssistantRecord(const std::string& content) const;
 
-        /// @brief 获取聊天记录 JSON 数组
-        /// @return JSON 数组，每条记录包含 role 和 content 字段
-        [[nodiscard]] Json::Value getRecordsJson() const;
-
-        /// @brief 获取聊天记录文本
-        /// @return 格式化的聊天记录文本
-        [[nodiscard]] std::string getRecordsText() const;
-
-        /// @brief 获取聊天记录双端队列
+        /// @brief 获取上下文窗口内的聊天记录（水位线之后的最新记录，旧→新）
         /// @return 聊天记录队列
         [[nodiscard]] std::deque<Json::Value> getRecords() const;
 
         /// @brief 获取聊天记录数量
         /// @return 记录数量
         [[nodiscard]] size_t getRecordCount() const;
-
-        /// @brief 清理旧记录
-        /// @details 保留最近 N 条记录，删除其余记录
-        void clearOldRecords() const;
 
     private:
         uint64_t m_groupId; ///< 群号

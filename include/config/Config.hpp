@@ -11,6 +11,7 @@ namespace LittleMeowBot {
         std::string baseUrl;
         std::string path;
         std::string model;
+        std::string reasoningEffort; // "none"/"medium"/"high"，空串表示不发送
     };
 
     struct LLMModelParams{
@@ -20,6 +21,7 @@ namespace LittleMeowBot {
     };
 
     struct KBApiConfig{
+        bool enabled = true;  // 是否启用 RAGFlow
         std::string apiKey;
         std::string baseUrl;
         std::string knowledgeDatasetId;
@@ -32,21 +34,19 @@ namespace LittleMeowBot {
         // Agent 配置
         LLMApiConfig router;
         LLMModelParams routerParams;
-        LLMApiConfig planner;
-        LLMModelParams plannerParams;
         LLMApiConfig executor;
         LLMModelParams executorParams;
         LLMApiConfig executorThinking;  // Executor 思考模型配置
         LLMModelParams executorThinkingParams;
-        LLMApiConfig memory;
-        LLMModelParams memoryParams;
         LLMApiConfig image;
 
         // 记忆配置
-        int memoryTriggerCount = 16;
-        int memoryChatRecordLimit = 18;
+        int windowTriggerCount = 100;  // 上下文窗口超过该条数时触发提取与滑动
+        int windowKeepCount = 50;      // 触发后保留的最近消息条数
+        int memoryExtractMaxTokens = 4000;  // 记忆提取 LLM 调用的 maxTokens
+        int routerWindowTriggerCount = 20;  // Router 子窗口触发条数（批量滑动）
+        int routerWindowKeepCount = 10;     // Router 子窗口保留条数
         int shortTermMemoryMax = 15;
-        int shortTermMemoryLimit = 20;
         int memoryMigrateCount = 5;
 
         // QQ Bot 配置
@@ -70,6 +70,9 @@ namespace LittleMeowBot {
             apiConfig.baseUrl = cfg["baseUrl"].asString();
             apiConfig.path = cfg["path"].asString();
             apiConfig.model = cfg["model"].asString();
+            if (cfg.isMember("reasoningEffort")) {
+                apiConfig.reasoningEffort = cfg["reasoningEffort"].asString();
+            }
 
             if constexpr (!std::is_null_pointer_v<ParamsCfg>) {
                 if (modelParams) {

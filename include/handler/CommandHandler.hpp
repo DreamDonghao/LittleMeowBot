@@ -11,7 +11,7 @@ namespace LittleMeowBot {
     public:
         static CommandHandler& instance();
 
-        bool isCommand(const QQMessage& message) const;
+        [[nodiscard]] bool isCommand(const QQMessage& message) const;
 
         drogon::Task<std::string> handleCommand(
             const QQMessage& message,

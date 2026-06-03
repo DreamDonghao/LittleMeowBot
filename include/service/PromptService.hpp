@@ -11,36 +11,27 @@
 #include <string>
 
 namespace LittleMeowBot {
-    /// @brief 提示词服务类（单例模式）
-    /// @details 管理所有 LLM 使用的提示词，支持运行时修改
-    class PromptService{
-    public:
-        /// @brief 获取单例实例
-        /// @return PromptService 实例引用
-        static PromptService& instance();
-
+    /// @brief 提示词服务 - 管理所有 LLM 使用的提示词，支持运行时修改
+    namespace PromptService {
         /// @brief 初始化提示词（如果不存在则插入默认值）
-        void initialize() const;
+        void initialize();
 
         /// @brief 获取提示词（支持占位符替换）
         /// @param key 提示词键名
         /// @return 提示词内容，已替换 {botName} 等占位符
-        std::string getPrompt(const std::string& key) const;
+        std::string getPrompt(const std::string& key);
 
         /// @brief 设置提示词（运行时修改）
         /// @param key 提示词键名
         /// @param content 提示词内容
-        void setPrompt(const std::string& key, const std::string& content) const;
+        void setPrompt(const std::string& key, const std::string& content);
 
         /// @brief 获取 Executor 系统提示词
         /// @return Executor 角色系统提示词
-        [[nodiscard]] std::string getExecutorSystemPrompt() const;
+        [[nodiscard]] std::string getExecutorSystemPrompt();
 
-        /// @brief 获取 Executor 提醒提示词
-        /// @return Executor 提醒提示词（添加在 assistant 消息后）
-        [[nodiscard]] std::string getExecutorRemindPrompt() const;
-
-    private:
-        PromptService() = default;
-    };
+        /// @brief 获取 Router 系统提示词
+        /// @return Router 消息路由决策提示词
+        [[nodiscard]] std::string getRouterSystemPrompt();
+    }
 }

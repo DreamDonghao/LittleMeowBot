@@ -8,7 +8,7 @@ import type {ApiResponse} from '../vite-env.d'
 
 const showToast = inject<(msg: string, isError?: boolean) => void>('showToast')
 
-const promptKeys: Ref<string[]> = ref(['executor_system', 'executor_remind'])
+const promptKeys: Ref<string[]> = ref(['executor_system', 'router_system'])
 const selectedPrompt: Ref<string> = ref('executor_system')
 const prompts = reactive<Record<string, string>>({})
 const promptContent: Ref<string> = ref('')

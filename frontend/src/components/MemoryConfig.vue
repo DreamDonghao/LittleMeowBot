@@ -9,10 +9,12 @@ import type {ApiResponse, MemoryConfig} from '../vite-env.d'
 const showToast = inject<(msg: string, isError?: boolean) => void>('showToast')
 
 const memoryConfig = reactive<MemoryConfig>({
-  memoryTriggerCount: 16,
-  memoryChatRecordLimit: 18,
+  windowTriggerCount: 100,
+  windowKeepCount: 50,
+  memoryExtractMaxTokens: 4000,
+  routerWindowTriggerCount: 20,
+  routerWindowKeepCount: 10,
   shortTermMemoryMax: 15,
-  shortTermMemoryLimit: 20,
   memoryMigrateCount: 5
 })
 const saving: Ref<boolean> = ref(false)
@@ -20,7 +22,7 @@ const saving: Ref<boolean> = ref(false)
 onMounted(async () => {
   const resp = await fetch('/admin/api/memory-config')
   const data = await resp.json()
-  if (data.memoryTriggerCount !== undefined) {
+  if (data.windowTriggerCount !== undefined) {
     Object.assign(memoryConfig, data)
   }
 })
@@ -48,8 +50,8 @@ const saveMemoryConfig = async (): Promise<void> => {
 <template>
   <div>
     <div class="page-header">
-      <h1 class="page-title">记忆配置</h1>
-      <p class="page-subtitle">配置记忆系统参数</p>
+      <h1 class="page-title">记忆与上下文</h1>
+      <p class="page-subtitle">配置记忆系统与回复上下文参数</p>
     </div>
 
     <div class="card">
@@ -58,29 +60,41 @@ const saveMemoryConfig = async (): Promise<void> => {
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">记忆触发间隔</label>
-          <input v-model="memoryConfig.memoryTriggerCount" class="form-input" type="number">
-          <p class="form-hint">每 N 条消息触发记忆生成</p>
+          <label class="form-label">窗口触发条数</label>
+          <input v-model="memoryConfig.windowTriggerCount" class="form-input" type="number">
+          <p class="form-hint">上下文窗口超过 N 条时触发记忆提取与窗口滑动</p>
         </div>
         <div class="form-group">
-          <label class="form-label">聊天记录保留数</label>
-          <input v-model="memoryConfig.memoryChatRecordLimit" class="form-input" type="number">
-          <p class="form-hint">保留的聊天记录数量</p>
+          <label class="form-label">窗口保留条数</label>
+          <input v-model="memoryConfig.windowKeepCount" class="form-input" type="number">
+          <p class="form-hint">滑动后保留的最近消息数，必须小于触发条数</p>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">记忆提取 maxTokens</label>
+          <input v-model="memoryConfig.memoryExtractMaxTokens" class="form-input" type="number">
+          <p class="form-hint">记忆提取 LLM 调用的输出 token 上限</p>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Router 窗口触发条数</label>
+          <input v-model="memoryConfig.routerWindowTriggerCount" class="form-input" type="number">
+          <p class="form-hint">Router 上下文超过 N 条时批量滑动（建议 40~60，前缀需超过缓存阈值）</p>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Router 窗口保留条数</label>
+          <input v-model="memoryConfig.routerWindowKeepCount" class="form-input" type="number">
+          <p class="form-hint">滑动后保留的条数，必须小于触发条数</p>
         </div>
       </div>
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">短期记忆上限</label>
           <input v-model="memoryConfig.shortTermMemoryMax" class="form-input" type="number">
-          <p class="form-hint">超过此数量触发迁移</p>
+          <p class="form-hint">超过此数量触发迁移，合并时也以此为上限</p>
         </div>
-        <div class="form-group">
-          <label class="form-label">合并保留上限</label>
-          <input v-model="memoryConfig.shortTermMemoryLimit" class="form-input" type="number">
-          <p class="form-hint">合并时保留的最大条数</p>
-        </div>
-      </div>
-      <div class="form-row">
         <div class="form-group">
           <label class="form-label">每次迁移条数</label>
           <input v-model="memoryConfig.memoryMigrateCount" class="form-input" type="number">

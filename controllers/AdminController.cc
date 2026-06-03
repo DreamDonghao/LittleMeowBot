@@ -1,9 +1,11 @@
 #include "AdminController.h"
 #include <model/QQMessage.hpp>
 #include <agent/AgentToolManager.hpp>
+#include <service/ToolRegistry.hpp>
 #include <spdlog/spdlog.h>
 #include <config/Config.hpp>
 #include <algorithm>
+#include <drogon/utils/Utilities.h>
 
 using namespace LittleMeowBot;
 using namespace drogon;
@@ -41,22 +43,16 @@ Task<> AdminController::saveLLMConfig(
         config.router.baseUrl = json->get("baseUrl", "").asString();
         config.router.path = json->get("path", "").asString();
         config.router.model = json->get("model", "").asString();
+        config.router.reasoningEffort = json->get("reasoningEffort", "").asString();
         config.routerParams.maxTokens = json->get("maxTokens", 100).asInt();
         config.routerParams.temperature = json->get("temperature", 0.7f).asFloat();
         config.routerParams.topP = json->get("topP", 0.9f).asFloat();
-    } else if (name == "planner") {
-        config.planner.apiKey = json->get("apiKey", "").asString();
-        config.planner.baseUrl = json->get("baseUrl", "").asString();
-        config.planner.path = json->get("path", "").asString();
-        config.planner.model = json->get("model", "").asString();
-        config.plannerParams.maxTokens = json->get("maxTokens", 100).asInt();
-        config.plannerParams.temperature = json->get("temperature", 0.7f).asFloat();
-        config.plannerParams.topP = json->get("topP", 0.9f).asFloat();
     } else if (name == "executor") {
         config.executor.apiKey = json->get("apiKey", "").asString();
         config.executor.baseUrl = json->get("baseUrl", "").asString();
         config.executor.path = json->get("path", "").asString();
         config.executor.model = json->get("model", "").asString();
+        config.executor.reasoningEffort = json->get("reasoningEffort", "").asString();
         config.executorParams.maxTokens = json->get("maxTokens", 100).asInt();
         config.executorParams.temperature = json->get("temperature", 0.7f).asFloat();
         config.executorParams.topP = json->get("topP", 0.9f).asFloat();
@@ -65,22 +61,16 @@ Task<> AdminController::saveLLMConfig(
         config.executorThinking.baseUrl = json->get("baseUrl", "").asString();
         config.executorThinking.path = json->get("path", "").asString();
         config.executorThinking.model = json->get("model", "").asString();
+        config.executorThinking.reasoningEffort = json->get("reasoningEffort", "").asString();
         config.executorThinkingParams.maxTokens = json->get("maxTokens", 512).asInt();
         config.executorThinkingParams.temperature = json->get("temperature", 0.7f).asFloat();
         config.executorThinkingParams.topP = json->get("topP", 0.9f).asFloat();
-    } else if (name == "memory") {
-        config.memory.apiKey = json->get("apiKey", "").asString();
-        config.memory.baseUrl = json->get("baseUrl", "").asString();
-        config.memory.path = json->get("path", "").asString();
-        config.memory.model = json->get("model", "").asString();
-        config.memoryParams.maxTokens = json->get("maxTokens", 100).asInt();
-        config.memoryParams.temperature = json->get("temperature", 0.7f).asFloat();
-        config.memoryParams.topP = json->get("topP", 0.9f).asFloat();
     } else if (name == "image") {
         config.image.apiKey = json->get("apiKey", "").asString();
         config.image.baseUrl = json->get("baseUrl", "").asString();
         config.image.path = json->get("path", "").asString();
         config.image.model = json->get("model", "").asString();
+        config.image.reasoningEffort = json->get("reasoningEffort", "").asString();
     }
 
     Json::Value resp;
@@ -122,7 +112,18 @@ Task<> AdminController::savePrompt(
     std::string content = (*json)["content"].asString();
     std::string description = json->isMember("description") ? (*json)["description"].asString() : "";
 
+    // 防护: router_system 的 JSON 格式示例若含双花括号(fmt 转义残留/旧页面缓存内容),模型会照抄导致解析失败
+    if (key == "router_system" && (content.find("{{") != std::string::npos
+        || content.find("}}") != std::string::npos)) {
+        Json::Value err;
+        err["success"] = false;
+        err["error"] = "提示词包含双花括号{{ }}，JSON 格式示例应为单花括号，请刷新页面后重试";
+        callback(HttpResponse::newHttpJsonResponse(err));
+        co_return;
+    }
+
     Database::instance().setPrompt(key, content, description);
+    spdlog::warn("管理后台更新提示词: key={}, 长度={}", key, content.size());
 
     Json::Value resp;
     resp["success"] = true;
@@ -131,61 +132,92 @@ Task<> AdminController::savePrompt(
     co_return;
 }
 
-// ==================== 表情库 ====================
+// ==================== 用量统计 ====================
+
+Task<> AdminController::getUsage(
+    HttpRequestPtr req,
+    std::function<void(const HttpResponsePtr&)> callback
+) const{
+    int days = 30;
+    if (const std::string p = req->getParameter("days"); !p.empty()) {
+        try {
+            days = std::stoi(p);
+        } catch (...) {}
+    }
+    days = std::clamp(days, 1, 365);
+
+    Json::Value resp = Database::instance().getUsageSummary(days);
+    resp["recent"] = Database::instance().getRecentUsage(50);
+    callback(HttpResponse::newHttpJsonResponse(resp));
+    co_return;
+}
+
+// ==================== 表情包库（QQ 收藏表情，以实际收藏为基准） ====================
 
 Task<> AdminController::getEmojis(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr&)> callback
 ) const{
-    auto emojis = Database::instance().getAllEmojis();
-
-    Json::Value result;
-    for (const auto& [name, path] : emojis) {
-        Json::Value emoji;
-        emoji["name"] = name;
-        emoji["path"] = path;
-        result.append(emoji);
-    }
-    callback(HttpResponse::newHttpJsonResponse(result));
+    callback(HttpResponse::newHttpJsonResponse(co_await AgentToolManager::fetchFavoriteEmojis()));
     co_return;
 }
 
-Task<> AdminController::addEmoji(
+Task<> AdminController::updateEmojiDesc(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr&)> callback
 ) const{
     auto json = req->getJsonObject();
-    if (!json || !json->isMember("name") || !json->isMember("path")) {
+    if (!json || !json->isMember("res_id") || !json->isMember("desc")) {
         Json::Value err;
-        err["error"] = "缺少name或path字段";
+        err["error"] = "缺少必要字段: res_id、desc";
         callback(HttpResponse::newHttpJsonResponse(err));
         co_return;
     }
 
-    std::string name = (*json)["name"].asString();
-    std::string path = (*json)["path"].asString();
-    std::string description = json->isMember("description") ? (*json)["description"].asString() : "";
+    const auto& config = Config::instance();
+    const auto client = drogon::HttpClient::newHttpClient(config.qqHttpHost);
 
-    Database::instance().addEmoji(name, path, description);
+    Json::Value body;
+    body["emoji_id"] = json->isMember("emoji_id") ? (*json)["emoji_id"].asString() : "0";
+    body["res_id"] = (*json)["res_id"].asString();
+    body["md5"] = json->isMember("md5") ? (*json)["md5"].asString() : "";
+    body["desc"] = (*json)["desc"].asString();
 
-    Json::Value resp;
-    resp["success"] = true;
-    resp["message"] = "表情已添加";
-    callback(HttpResponse::newHttpJsonResponse(resp));
-    co_return;
-}
+    const auto httpReq = drogon::HttpRequest::newHttpJsonRequest(body);
+    httpReq->setMethod(drogon::Post);
+    httpReq->setPath("/set_custom_face_desc");
+    httpReq->addHeader("Authorization", "Bearer " + config.accessToken);
 
-Task<> AdminController::removeEmoji(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback,
-    const std::string& name
-) const{
-    Database::instance().removeEmoji(name);
+    drogon::HttpResponsePtr resp;
+    try {
+        resp = co_await client->sendRequestCoro(httpReq, 30.0);
+    } catch (const std::exception& e) {
+        spdlog::error("[Admin] 修改表情描述网络异常: {}", e.what());
+        Json::Value err;
+        err["error"] = "修改表情描述失败，请确认 QQ 客户端在线";
+        callback(HttpResponse::newHttpJsonResponse(err));
+        co_return;
+    }
+    const auto respJson = resp->getJsonObject();
 
-    Json::Value resp;
-    resp["success"] = true;
-    resp["message"] = "表情已删除";
-    callback(HttpResponse::newHttpJsonResponse(resp));
+    if (resp->getStatusCode() != drogon::k200OK || !respJson
+        || respJson->get("status", "failed").asString() != "ok") {
+        spdlog::error("[Admin] 修改表情描述失败: status={}",
+                      static_cast<int>(resp->getStatusCode()));
+        Json::Value err;
+        err["error"] = "修改表情描述失败，请确认 QQ 客户端在线";
+        callback(HttpResponse::newHttpJsonResponse(err));
+        co_return;
+    }
+
+    AgentToolManager::invalidateFavoriteEmojiCache();
+    spdlog::info("[Admin] 已修改表情描述: res_id={} desc={}",
+                 body["res_id"].asString(), body["desc"].asString());
+
+    Json::Value respJson2;
+    respJson2["success"] = true;
+    respJson2["message"] = "描述已修改";
+    callback(HttpResponse::newHttpJsonResponse(respJson2));
     co_return;
 }
 
@@ -197,7 +229,7 @@ Task<> AdminController::getAdmins(
 ) const{
     auto admins = Database::instance().getAdmins();
 
-    Json::Value result;
+    Json::Value result(Json::arrayValue);
     for (uint64_t qq : admins) {
         Json::Value admin;
         admin["qq"] = static_cast<Json::UInt64>(qq);
@@ -252,7 +284,7 @@ Task<> AdminController::getGroups(
 ) const{
     auto groups = Database::instance().getAllGroupsWithStatus();
 
-    Json::Value result;
+    Json::Value result(Json::arrayValue);
     for (const auto& [groupId, groupName, enabled, messageCount] : groups) {
         Json::Value group;
         group["groupId"] = static_cast<Json::UInt64>(groupId);
@@ -281,7 +313,7 @@ Task<> AdminController::enableGroup(
     Database::instance().enableGroup(groupId);
 
     // 自动获取群名称
-    auto groupName = co_await MessageService::instance().fetchAndUpdateGroupName(groupId);
+    auto groupName = co_await MessageService::fetchAndUpdateGroupName(groupId);
 
     Json::Value resp;
     resp["success"] = true;
@@ -327,7 +359,7 @@ Task<> AdminController::refreshGroupName(
     const std::string& groupId
 ) const{
     uint64_t gid = std::stoull(groupId);
-    auto groupName = co_await MessageService::instance().fetchAndUpdateGroupName(gid);
+    auto groupName = co_await MessageService::fetchAndUpdateGroupName(gid);
 
     Json::Value resp;
     resp["success"] = true;
@@ -343,7 +375,7 @@ Task<> AdminController::refreshAllGroupNames(
     auto groups = Database::instance().getAllGroupsWithStatus();
 
     for (const auto& [groupId, groupName, enabled, messageCount] : groups) {
-        co_await MessageService::instance().fetchAndUpdateGroupName(groupId);
+        co_await MessageService::fetchAndUpdateGroupName(groupId);
     }
 
     Json::Value resp;
@@ -361,7 +393,7 @@ Task<> AdminController::getChatGroups(
 ) const{
     auto groups = Database::instance().getGroupsWithChatRecords();
 
-    Json::Value result;
+    Json::Value result(Json::arrayValue);
     for (const auto& [groupId, groupName, messageCount] : groups) {
         Json::Value group;
         group["groupId"] = static_cast<Json::UInt64>(groupId);
@@ -480,6 +512,7 @@ Task<> AdminController::saveKBConfig(
 
     // 更新内存中的配置
     auto& kbConfig = Config::instance().knowledgeBase;
+    kbConfig.enabled = json->get("enabled", true).asBool();
     kbConfig.apiKey = json->get("apiKey", "").asString();
     kbConfig.baseUrl = json->get("baseUrl", "").asString();
     kbConfig.knowledgeDatasetId = json->get("knowledgeDatasetId", "").asString();
@@ -501,7 +534,7 @@ Task<> AdminController::getGroupMemory(
     const std::string& groupId
 ) const{
     const uint64_t gid = std::stoull(groupId);
-    const std::string memory = Database::instance().getLongTermMemory(gid);
+    const std::string memory = Database::instance().getShortTermMemory(gid);
 
     Json::Value resp;
     resp["groupId"] = static_cast<Json::UInt64>(gid);
@@ -525,7 +558,7 @@ Task<> AdminController::updateGroupMemory(
 
     uint64_t gid = std::stoull(groupId);
     std::string memory = (*json)["memory"].asString();
-    Database::instance().updateLongTermMemory(gid, memory);
+    Database::instance().updateShortTermMemory(gid, memory);
 
     Json::Value resp;
     resp["success"] = true;
@@ -557,14 +590,36 @@ Task<> AdminController::saveMemoryConfig(
         co_return;
     }
 
+    // 窗口配置校验: 保留条数必须小于触发条数,否则窗口永远滑不动
+    if (!(*json).isMember("windowTriggerCount") || (*json)["windowTriggerCount"].asInt() <= 0) {
+        (*json)["windowTriggerCount"] = Config::instance().windowTriggerCount;
+    }
+    if (!(*json).isMember("windowKeepCount") || (*json)["windowKeepCount"].asInt() <= 0
+        || (*json)["windowKeepCount"].asInt() >= (*json)["windowTriggerCount"].asInt()) {
+        (*json)["windowKeepCount"] = (*json)["windowTriggerCount"].asInt() / 2;
+    }
+    if (!(*json).isMember("memoryExtractMaxTokens") || (*json)["memoryExtractMaxTokens"].asInt() <= 0) {
+        (*json)["memoryExtractMaxTokens"] = Config::instance().memoryExtractMaxTokens;
+    }
+    // Router 子窗口校验: 保留条数必须小于触发条数
+    if (!(*json).isMember("routerWindowTriggerCount") || (*json)["routerWindowTriggerCount"].asInt() <= 0) {
+        (*json)["routerWindowTriggerCount"] = Config::instance().routerWindowTriggerCount;
+    }
+    if (!(*json).isMember("routerWindowKeepCount") || (*json)["routerWindowKeepCount"].asInt() <= 0
+        || (*json)["routerWindowKeepCount"].asInt() >= (*json)["routerWindowTriggerCount"].asInt()) {
+        (*json)["routerWindowKeepCount"] = (*json)["routerWindowTriggerCount"].asInt() / 2;
+    }
+
     Database::instance().saveMemoryConfig(*json);
 
     // 更新内存中的配置
     auto& config = Config::instance();
-    config.memoryTriggerCount = (*json)["memoryTriggerCount"].asInt();
-    config.memoryChatRecordLimit = (*json)["memoryChatRecordLimit"].asInt();
+    config.windowTriggerCount = (*json)["windowTriggerCount"].asInt();
+    config.windowKeepCount = (*json)["windowKeepCount"].asInt();
+    config.memoryExtractMaxTokens = (*json)["memoryExtractMaxTokens"].asInt();
+    config.routerWindowTriggerCount = (*json)["routerWindowTriggerCount"].asInt();
+    config.routerWindowKeepCount = (*json)["routerWindowKeepCount"].asInt();
     config.shortTermMemoryMax = (*json)["shortTermMemoryMax"].asInt();
-    config.shortTermMemoryLimit = (*json)["shortTermMemoryLimit"].asInt();
     config.memoryMigrateCount = (*json)["memoryMigrateCount"].asInt();
 
     Json::Value resp;
@@ -678,7 +733,7 @@ Task<> AdminController::addCustomTool(
     int id = Database::instance().addCustomTool(tool);
 
     // 立即注册到 ToolRegistry
-    AgentToolManager::instance().registerCustomTools();
+    AgentToolManager::registerCustomTools();
 
     Json::Value resp;
     resp["success"] = true;
@@ -715,7 +770,7 @@ Task<> AdminController::updateCustomTool(
     Database::instance().updateCustomTool(tool);
 
     // 重新注册工具
-    AgentToolManager::instance().registerCustomTools();
+    AgentToolManager::registerCustomTools();
 
     Json::Value resp;
     resp["success"] = true;
@@ -733,7 +788,7 @@ Task<> AdminController::deleteCustomTool(
     Database::instance().deleteCustomTool(toolId);
 
     // 重新注册工具（移除已删除的）
-    AgentToolManager::instance().registerCustomTools();
+    AgentToolManager::registerCustomTools();
 
     Json::Value resp;
     resp["success"] = true;
@@ -751,7 +806,7 @@ Task<> AdminController::toggleCustomTool(
     Database::instance().toggleCustomTool(toolId);
 
     // 重新注册工具
-    AgentToolManager::instance().registerCustomTools();
+    AgentToolManager::registerCustomTools();
 
     Json::Value resp;
     resp["success"] = true;
@@ -764,7 +819,7 @@ Task<> AdminController::reloadCustomTools(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr&)> callback
 ) const{
-    AgentToolManager::instance().registerCustomTools();
+    AgentToolManager::registerCustomTools();
 
     Json::Value resp;
     resp["success"] = true;
@@ -989,7 +1044,7 @@ Task<> AdminController::importCustomTool(
 
     // 添加到数据库
     int newId = Database::instance().addCustomTool(tool);
-    AgentToolManager::instance().registerCustomTools();
+    AgentToolManager::registerCustomTools();
 
     spdlog::info("导入自定义工具: {} (ID: {})", tool.name, newId);
 

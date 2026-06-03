@@ -11,11 +11,6 @@
 #include <service/WebSocketManager.hpp>
 
 namespace LittleMeowBot {
-    MessageService& MessageService::instance(){
-        static MessageService service;
-        return service;
-    }
-
     std::string MessageService::convertAtToCQCode(const std::string& text){
         std::string result = text;
 
@@ -61,7 +56,7 @@ namespace LittleMeowBot {
     drogon::Task<> MessageService::sendGroupMsg(
         Json::UInt64 groupId,
         const std::string& message,
-        const ChatRecordManager& chatRecords) const{
+        const ChatRecordManager& chatRecords){
         const auto& config = Config::instance();
         const auto client = drogon::HttpClient::newHttpClient(config.qqHttpHost);
 
@@ -78,17 +73,25 @@ namespace LittleMeowBot {
         req->setPath("/send_group_msg");
         req->addHeader("Authorization", "Bearer " + config.accessToken);
 
-        const auto resp = co_await client->sendRequestCoro(req);
+        drogon::HttpResponsePtr resp;
+        try {
+            resp = co_await client->sendRequestCoro(req, 30.0);
+        } catch (const std::exception& e) {
+            spdlog::error("发送群消息网络异常: {}", e.what());
+            co_return;
+        }
         const auto requestJson = resp->getJsonObject();
 
         if (resp->getStatusCode() != drogon::k200OK || !requestJson) {
-            LOG_ERROR << "发送消息错误: status=" << resp->getStatusCode();
+            spdlog::error("发送消息错误: status={}", static_cast<int>(resp->getStatusCode()));
             co_return;
         }
 
         std::string status = requestJson->get("status", "").asString();
         if (status != "ok") {
-            LOG_ERROR << "发送消息错误: status=" << status << ", retcode=" << requestJson->get("retcode", -1).asInt();
+            spdlog::error("发送消息错误: status={}, retcode={}, msgLen={}, preview={}",
+                          status, requestJson->get("retcode", -1).asInt(),
+                          processedMessage.size(), processedMessage.substr(0, 200));
             co_return;
         }
 
@@ -125,7 +128,7 @@ namespace LittleMeowBot {
     drogon::Task<bool> MessageService::setGroupBan(
         Json::UInt64 groupId,
         Json::UInt64 userId,
-        Json::UInt64 duration) const{
+        Json::UInt64 duration){
         const auto& config = Config::instance();
         const auto client = drogon::HttpClient::newHttpClient(config.qqHttpHost);
 
@@ -139,11 +142,17 @@ namespace LittleMeowBot {
         req->setPath("/set_group_ban");
         req->addHeader("Authorization", "Bearer " + config.accessToken);
 
-        const auto resp = co_await client->sendRequestCoro(req);
+        drogon::HttpResponsePtr resp;
+        try {
+            resp = co_await client->sendRequestCoro(req, 30.0);
+        } catch (const std::exception& e) {
+            spdlog::error("禁言请求网络异常: {}", e.what());
+            co_return false;
+        }
         const auto requestJson = resp->getJsonObject();
 
         if (resp->getStatusCode() != drogon::k200OK || !requestJson) {
-            spdlog::error("禁言请求失败: http_status={}", resp->getStatusCode());
+            spdlog::error("禁言请求失败: http_status={}", static_cast<int>(resp->getStatusCode()));
             co_return false;
         }
 
@@ -163,7 +172,7 @@ namespace LittleMeowBot {
         co_return false;
     }
 
-    drogon::Task<Json::Value> MessageService::getGroupInfo(Json::UInt64 groupId) const{
+    drogon::Task<Json::Value> MessageService::getGroupInfo(Json::UInt64 groupId){
         const auto& config = Config::instance();
         const auto client = drogon::HttpClient::newHttpClient(config.qqHttpHost);
 
@@ -172,7 +181,13 @@ namespace LittleMeowBot {
         req->setPath(fmt::format("/get_group_info?group_id={}", groupId));
         req->addHeader("Authorization", "Bearer " + config.accessToken);
 
-        const auto resp = co_await client->sendRequestCoro(req);
+        drogon::HttpResponsePtr resp;
+        try {
+            resp = co_await client->sendRequestCoro(req, 30.0);
+        } catch (const std::exception& e) {
+            spdlog::error("获取群信息网络异常: {}", e.what());
+            co_return Json::Value(Json::nullValue);
+        }
 
         Json::Value result;
         if (resp->getStatusCode() == drogon::k200OK) {
@@ -182,7 +197,7 @@ namespace LittleMeowBot {
         co_return result;
     }
 
-    drogon::Task<std::string> MessageService::fetchAndUpdateGroupName(Json::UInt64 groupId) const{
+    drogon::Task<std::string> MessageService::fetchAndUpdateGroupName(Json::UInt64 groupId){
         auto result = co_await getGroupInfo(groupId);
 
         std::string groupName;
@@ -194,7 +209,7 @@ namespace LittleMeowBot {
         co_return groupName;
     }
 
-    drogon::Task<bool> MessageService::setGroupPoke(Json::UInt64 groupId, Json::UInt64 userId) const{
+    drogon::Task<bool> MessageService::setGroupPoke(Json::UInt64 groupId, Json::UInt64 userId){
         const auto& config = Config::instance();
         const auto client = drogon::HttpClient::newHttpClient(config.qqHttpHost);
 
@@ -207,11 +222,17 @@ namespace LittleMeowBot {
         req->setPath("/send_poke");
         req->addHeader("Authorization", "Bearer " + config.accessToken);
 
-        const auto resp = co_await client->sendRequestCoro(req);
+        drogon::HttpResponsePtr resp;
+        try {
+            resp = co_await client->sendRequestCoro(req, 30.0);
+        } catch (const std::exception& e) {
+            spdlog::error("拍一拍请求网络异常: {}", e.what());
+            co_return false;
+        }
         const auto requestJson = resp->getJsonObject();
 
         if (resp->getStatusCode() != drogon::k200OK || !requestJson) {
-            spdlog::error("拍一拍请求失败: http_status={}", resp->getStatusCode());
+            spdlog::error("拍一拍请求失败: http_status={}", static_cast<int>(resp->getStatusCode()));
             co_return false;
         }
 
@@ -227,7 +248,7 @@ namespace LittleMeowBot {
         co_return false;
     }
 
-    drogon::Task<bool> MessageService::deleteMessage(Json::UInt64 messageId) const{
+    drogon::Task<bool> MessageService::deleteMessage(Json::UInt64 messageId){
         const auto& config = Config::instance();
         const auto client = drogon::HttpClient::newHttpClient(config.qqHttpHost);
 
@@ -239,11 +260,17 @@ namespace LittleMeowBot {
         req->setPath("/delete_msg");
         req->addHeader("Authorization", "Bearer " + config.accessToken);
 
-        const auto resp = co_await client->sendRequestCoro(req);
+        drogon::HttpResponsePtr resp;
+        try {
+            resp = co_await client->sendRequestCoro(req, 30.0);
+        } catch (const std::exception& e) {
+            spdlog::error("撤回消息请求网络异常: {}", e.what());
+            co_return false;
+        }
         const auto requestJson = resp->getJsonObject();
 
         if (resp->getStatusCode() != drogon::k200OK || !requestJson) {
-            spdlog::error("撤回消息请求失败: http_status={}", resp->getStatusCode());
+            spdlog::error("撤回消息请求失败: http_status={}", static_cast<int>(resp->getStatusCode()));
             co_return false;
         }
 
