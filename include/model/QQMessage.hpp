@@ -8,7 +8,6 @@
 ///          - 用户昵称管理（自定义昵称映射）
 
 #pragma once
-
 #include <drogon/drogon.h>
 #include <unordered_map>
 #include <string>
@@ -50,10 +49,6 @@ namespace LittleMeowBot {
         /// @return 格式化后的JSON字符串
         [[nodiscard]] Json::String getFormatMessage() const;
 
-        /// @brief 获取引用的消息ID
-        /// @return 引用的消息ID，无引用返回0
-        [[nodiscard]] uint64_t getReplyTo() const;
-
         /// @brief 获取原始消息文本（不含 CQ 码）
         /// @return 原始消息文本
         [[nodiscard]] std::string getRawMessage() const;
@@ -72,11 +67,6 @@ namespace LittleMeowBot {
         /// @return 昵称到QQ号的映射表
         static std::unordered_map<std::string, uint64_t> getNameToQQMap();
 
-        /// @brief 添加消息缓存
-        /// @param messageId 消息 ID
-        /// @param message 格式化后的消息
-        static void addMessageCache(Json::UInt64 messageId, Json::String message);
-
     private:
         /// @brief 设置消息 JSON（仅构造函数使用）
         /// @param qqMessageJson OneBot 消息 JSON
@@ -94,6 +84,5 @@ namespace LittleMeowBot {
 
         inline static std::unordered_map<Json::UInt64, Json::String> m_QQNameMap;       ///< QQ 号到昵称映射
         inline static std::unordered_map<Json::UInt64, Json::String> m_customQQNameMap; ///< 自定义昵称映射
-        inline static std::unordered_map<uint64_t, Json::String> m_messageCache;        ///< 消息缓存
     };
 }

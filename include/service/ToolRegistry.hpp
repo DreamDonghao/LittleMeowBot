@@ -38,9 +38,9 @@ namespace LittleMeowBot {
 
     /// @brief 工具分类
     enum class ToolCategory{
-        TERMINAL, // 终端工具：reply, no_reply（结束处理）
-        INFORMATION, // 信息工具：get_weather, search_web（获取数据）
-        ACTION // 动作工具：random（执行动作）
+        TERMINAL, // 终端工具：reply, no_reply, reply_with_quote（结束处理）
+        INFORMATION, // 信息工具：search_knowledge, recall_memory, get_group_name, list_stickers（获取数据）
+        ACTION // 动作工具：send_face, send_sticker, ban_user, send_poke 等（执行操作）
     };
 
     /// @brief 工具注册中心，分类管理工具
@@ -51,30 +51,15 @@ namespace LittleMeowBot {
         /// @brief 注册工具到指定分类
         void registerTool(const Tool& tool, ToolCategory category);
 
-        /// @brief 获取指定分类的工具定义（用于 API 请求）
-        [[nodiscard]] Json::Value getToolsByCategory(ToolCategory category) const;
-
         /// @brief 获取所有工具定义
         [[nodiscard]] Json::Value getAllTools() const;
-
-        /// @brief 获取 Executor 使用的工具（终端 + 信息 + 动作）
-        [[nodiscard]] Json::Value getExecutorTools() const;
-
-        /// @brief 获取 Planner 可用的工具（仅信息工具，用于规划）
-        [[nodiscard]] Json::Value getPlannerInfoTools() const;
 
         /// @brief 执行工具（异步）
         [[nodiscard]] drogon::Task<std::string> executeTool(const std::string& name, const Json::Value& args,
                                               uint64_t groupId = 0) const;
 
         /// @brief 检查工具是否存在
-        bool hasTool(const std::string& name) const;
-
-        /// @brief 检查是否是终端工具
-        bool isTerminalTool(const std::string& name) const;
-
-        /// @brief 检查是否是信息工具
-        bool isInfoTool(const std::string& name) const;
+        [[nodiscard]] bool hasTool(const std::string& name) const;
 
         /// @brief 注销工具
         void unregisterTool(const std::string& name);
@@ -84,12 +69,6 @@ namespace LittleMeowBot {
 
         /// @brief 记录自定义工具名称（注册时调用）
         void recordCustomTool(const std::string& name);
-
-        /// @brief 获取工具分类
-        [[nodiscard]] ToolCategory getCategory(const std::string& name) const;
-
-        /// @brief 获取所有工具名称列表
-        [[nodiscard]] std::vector<std::string> getToolNames() const;
 
         /// @brief 生成工具说明文本（用于 Executor Prompt）
         [[nodiscard]] std::string getToolsDescription() const;
@@ -102,7 +81,6 @@ namespace LittleMeowBot {
         std::unordered_map<std::string, Tool> m_actionTools;
         std::vector<std::string> m_customToolNames; // 记录已注册的自定义工具名称
 
-        const std::unordered_map<std::string, Tool>& getToolMap(ToolCategory category) const;
         static std::string categoryToString(ToolCategory category);
     };
 } // namespace LittleMeowBot

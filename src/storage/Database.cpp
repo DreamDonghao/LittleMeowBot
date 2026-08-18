@@ -58,19 +58,19 @@ namespace LittleMeowBot {
                 sqlite3_bind_double(m_stmt, idx, static_cast<double>(v));
             }
 
-            void bind(const int idx, const std::string& v) const noexcept{
+            void bind(int idx, const std::string& v) const noexcept{
                 sqlite3_bind_text(m_stmt, idx, v.c_str(), static_cast<int>(v.size()), SQLITE_TRANSIENT);
             }
 
-            void bind(const int idx, const std::string_view v) const noexcept{
+            void bind(int idx, const std::string_view v) const noexcept{
                 sqlite3_bind_text(m_stmt, idx, v.data(), static_cast<int>(v.size()), SQLITE_TRANSIENT);
             }
 
-            void bind(const int idx, const char* v) const noexcept{
+            void bind(int idx, const char* v) const noexcept{
                 sqlite3_bind_text(m_stmt, idx, v, -1, SQLITE_TRANSIENT);
             }
 
-            void bind(const int idx, const std::vector<uint8_t>& data) const noexcept{
+            void bind(int idx, const std::vector<uint8_t>& data) const noexcept{
                 if (data.empty()) {
                     sqlite3_bind_null(m_stmt, idx);
                 } else {
@@ -78,7 +78,7 @@ namespace LittleMeowBot {
                 }
             }
 
-            void bindNull(const int idx) const noexcept{
+            void bindNull(int idx) const noexcept{
                 sqlite3_bind_null(m_stmt, idx);
             }
 
@@ -216,8 +216,14 @@ namespace LittleMeowBot {
         stmt.exec();
 
         if (Statement::changes(m_db) == 0) {
-            GroupConfig config{1, charCount};
-            saveGroupConfig(groupId, config);
+            // 首条消息：配置行不存在，直接插入（不能调用 saveGroupConfig，避免重复加锁）
+            Statement insert(
+                m_db,
+                "INSERT OR REPLACE INTO group_config (group_id, all_mes_count, all_char_count) VALUES (?, ?, ?)");
+            insert.bind(1, groupId);
+            insert.bind(2, 1);
+            insert.bind(3, charCount);
+            insert.exec();
         }
     }
 
@@ -300,7 +306,7 @@ namespace LittleMeowBot {
         }
 
         // DESC 查询结果反转为旧→新
-        std::reverse(records.begin(), records.end());
+        std::ranges::reverse(records);
         return records;
     }
 
@@ -312,29 +318,11 @@ namespace LittleMeowBot {
         return stmt.step() ? stmt.getInt64(0) : 0;
     }
 
-    size_t Database::getChatRecordCount(uint64_t groupId) const{
-        std::shared_lock lock(m_mutex);
-        Statement stmt(m_db, "SELECT COUNT(*) FROM chat_records WHERE group_id = ?");
-        stmt.bind(1, groupId);
-        return stmt.step() ? stmt.getInt64(0) : 0;
-    }
-
-    void Database::clearOldRecords(uint64_t groupId, int keepLast) const{
-        std::unique_lock lock(m_mutex);
-        Statement stmt(
-            m_db,
-            "DELETE FROM chat_records WHERE group_id = ? AND id NOT IN (SELECT id FROM chat_records WHERE group_id = ? ORDER BY id DESC LIMIT ?)");
-        stmt.bind(1, groupId);
-        stmt.bind(2, groupId);
-        stmt.bind(3, keepLast);
-        stmt.exec();
-    }
-
     // ============================================================
     //                      长期记忆操作
     // ============================================================
 
-    std::string Database::getShortTermMemory(uint64_t groupId){
+    std::string Database::getShortTermMemory(uint64_t groupId) const{
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT memory_content FROM short_term_memory WHERE group_id = ?");
         stmt.bind(1, groupId);
@@ -353,7 +341,7 @@ namespace LittleMeowBot {
         stmt.exec();
     }
 
-    uint64_t Database::getMemoryWatermark(uint64_t groupId){
+    uint64_t Database::getMemoryWatermark(uint64_t groupId) const{
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT watermark_id FROM short_term_memory WHERE group_id = ?");
         stmt.bind(1, groupId);
@@ -376,32 +364,10 @@ namespace LittleMeowBot {
     }
 
     // ============================================================
-    //                      消息缓存操作
-    // ============================================================
-
-    void Database::cacheMessage(uint64_t messageId, const std::string& formattedText){
-        std::unique_lock lock(m_mutex);
-        Statement stmt(m_db, "INSERT OR REPLACE INTO message_cache (message_id, formatted_text) VALUES (?, ?)");
-        stmt.bind(1, messageId);
-        stmt.bind(2, formattedText);
-        stmt.exec();
-    }
-
-    std::optional<std::string> Database::getCachedMessage(uint64_t messageId){
-        std::shared_lock lock(m_mutex);
-        Statement stmt(m_db, "SELECT formatted_text FROM message_cache WHERE message_id = ?");
-        stmt.bind(1, messageId);
-        if (stmt.step()) {
-            return stmt.getText(0);
-        }
-        return std::nullopt;
-    }
-
-    // ============================================================
     //                      提示词操作
     // ============================================================
 
-    std::string Database::getPrompt(const std::string& key, const std::string& defaultValue){
+    std::string Database::getPrompt(const std::string& key, const std::string& defaultValue) const{
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT prompt_content FROM prompts WHERE prompt_key = ?");
         stmt.bind(1, key);
@@ -418,14 +384,14 @@ namespace LittleMeowBot {
         stmt.exec();
     }
 
-    bool Database::hasPrompt(const std::string& key){
+    bool Database::hasPrompt(const std::string& key) const{
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT 1 FROM prompts WHERE prompt_key = ?");
         stmt.bind(1, key);
         return stmt.step();
     }
 
-    std::unordered_map<std::string, std::string> Database::getAllPrompts(){
+    std::unordered_map<std::string, std::string> Database::getAllPrompts() const{
         std::shared_lock lock(m_mutex);
         std::unordered_map<std::string, std::string> prompts;
 
@@ -469,16 +435,6 @@ namespace LittleMeowBot {
         Statement stmt(m_db, "SELECT group_id FROM enabled_groups WHERE enabled = 1");
         while (stmt.step()) {
             groups.push_back(stmt.getInt64(0));
-        }
-        return groups;
-    }
-
-    std::vector<std::pair<uint64_t, std::string>> Database::getEnabledGroupsWithNames() const{
-        std::shared_lock lock(m_mutex);
-        std::vector<std::pair<uint64_t, std::string>> groups;
-        Statement stmt(m_db, "SELECT group_id, group_name FROM enabled_groups WHERE enabled = 1");
-        while (stmt.step()) {
-            groups.emplace_back(stmt.getInt64(0), stmt.getText(1));
         }
         return groups;
     }
@@ -551,7 +507,7 @@ namespace LittleMeowBot {
         spdlog::info("更新群名称: {} -> {}", groupId, name);
     }
 
-    std::string Database::getGroupName(uint64_t groupId){
+    std::string Database::getGroupName(uint64_t groupId) const{
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT group_name FROM enabled_groups WHERE group_id = ?");
         stmt.bind(1, groupId);
@@ -562,14 +518,14 @@ namespace LittleMeowBot {
     //                      管理员操作
     // ============================================================
 
-    bool Database::isAdmin(uint64_t qqNumber){
+    bool Database::isAdmin(uint64_t qqNumber) const{
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT 1 FROM admins WHERE qq_number = ?");
         stmt.bind(1, qqNumber);
         return stmt.step();
     }
 
-    void Database::addAdmin(uint64_t qqNumber){
+    void Database::addAdmin(uint64_t qqNumber) const{
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db, "INSERT OR IGNORE INTO admins (qq_number) VALUES (?)");
         stmt.bind(1, qqNumber);
@@ -703,12 +659,6 @@ namespace LittleMeowBot {
         spdlog::info("知识库配置已保存");
     }
 
-    bool Database::hasKBConfig() const{
-        std::shared_lock lock(m_mutex);
-        Statement stmt(m_db, "SELECT 1 FROM kb_config WHERE id = 1");
-        return stmt.step();
-    }
-
     // ============================================================
     //                      QQ Bot 配置操作
     // ============================================================
@@ -741,12 +691,6 @@ namespace LittleMeowBot {
         stmt.bind(4, config.isMember("botName") ? config["botName"].asString() : "小喵");
         stmt.exec();
         spdlog::info("QQ Bot 配置已保存");
-    }
-
-    bool Database::hasQQConfig() const{
-        std::shared_lock lock(m_mutex);
-        Statement stmt(m_db, "SELECT 1 FROM qq_config WHERE id = 1");
-        return stmt.step();
     }
 
     // ============================================================
@@ -789,12 +733,6 @@ namespace LittleMeowBot {
         spdlog::info("记忆配置已保存");
     }
 
-    bool Database::hasMemoryConfig() const{
-        std::shared_lock lock(m_mutex);
-        Statement stmt(m_db, "SELECT 1 FROM memory_config WHERE id = 1");
-        return stmt.step();
-    }
-
     // ============================================================
     //                      用量统计操作
     // ============================================================
@@ -817,6 +755,7 @@ namespace LittleMeowBot {
     Json::Value Database::getUsageSummary(const int days) const{
         std::shared_lock lock(m_mutex);
         Json::Value result;
+        const std::string sinceDate = fmt::format("-{} days", days);
 
         // 汇总
         {
@@ -824,7 +763,7 @@ namespace LittleMeowBot {
                 "SELECT COUNT(*), COALESCE(SUM(prompt_tokens),0), COALESCE(SUM(completion_tokens),0), "
                 "COALESCE(SUM(total_tokens),0), COALESCE(SUM(cached_tokens),0) "
                 "FROM llm_usage WHERE created_at >= datetime('now', ?)");
-            stmt.bind(1, fmt::format("-{} days", days));
+            stmt.bind(1, sinceDate);
             if (stmt.step()) {
                 result["total_calls"] = stmt.getInt(0);
                 result["total_prompt"] = stmt.getInt64(1);
@@ -842,7 +781,7 @@ namespace LittleMeowBot {
                 "COALESCE(SUM(total_tokens),0), COALESCE(SUM(cached_tokens),0) "
                 "FROM llm_usage WHERE created_at >= datetime('now', ?) "
                 "GROUP BY model ORDER BY SUM(total_tokens) DESC");
-            stmt.bind(1, fmt::format("-{} days", days));
+            stmt.bind(1, sinceDate);
             while (stmt.step()) {
                 Json::Value item;
                 item["model"] = stmt.getText(0);
@@ -863,7 +802,7 @@ namespace LittleMeowBot {
                 "SELECT date(created_at) AS day, COUNT(*), COALESCE(SUM(total_tokens),0) "
                 "FROM llm_usage WHERE created_at >= datetime('now', ?) "
                 "GROUP BY day ORDER BY day");
-            stmt.bind(1, fmt::format("-{} days", days));
+            stmt.bind(1, sinceDate);
             while (stmt.step()) {
                 Json::Value item;
                 item["day"] = stmt.getText(0);
@@ -901,12 +840,12 @@ namespace LittleMeowBot {
     //                      自定义工具操作
     // ============================================================
 
-    std::vector<Database::CustomTool> Database::getCustomTools() const{
+    std::vector<Database::CustomTool> Database::loadCustomTools(const bool onlyEnabled) const{
         std::shared_lock lock(m_mutex);
         std::vector<CustomTool> tools;
         Statement stmt(m_db,
-                       "SELECT id, name, description, parameters, executor_type, executor_config, script_content, readme, enabled "
-                       "FROM custom_tools ORDER BY id");
+            fmt::format("SELECT id, name, description, parameters, executor_type, executor_config, script_content, readme, enabled "
+                        "FROM custom_tools{} ORDER BY id", onlyEnabled ? " WHERE enabled = 1" : ""));
         while (stmt.step()) {
             CustomTool tool;
             tool.id = stmt.getInt(0);
@@ -918,31 +857,17 @@ namespace LittleMeowBot {
             tool.scriptContent = stmt.getText(6);
             tool.readme = stmt.getText(7);
             tool.enabled = stmt.getInt(8) == 1;
-            tools.push_back(tool);
+            tools.push_back(std::move(tool));
         }
         return tools;
     }
 
+    std::vector<Database::CustomTool> Database::getCustomTools() const{
+        return loadCustomTools(false);
+    }
+
     std::vector<Database::CustomTool> Database::getEnabledCustomTools() const{
-        std::shared_lock lock(m_mutex);
-        std::vector<CustomTool> tools;
-        Statement stmt(m_db,
-                       "SELECT id, name, description, parameters, executor_type, executor_config, script_content, readme "
-                       "FROM custom_tools WHERE enabled = 1 ORDER BY id");
-        while (stmt.step()) {
-            CustomTool tool;
-            tool.id = stmt.getInt(0);
-            tool.name = stmt.getText(1);
-            tool.description = stmt.getText(2);
-            tool.parameters = stmt.getText(3);
-            tool.executorType = stmt.getText(4);
-            tool.executorConfig = stmt.getText(5);
-            tool.scriptContent = stmt.getText(6);
-            tool.readme = stmt.getText(7);
-            tool.enabled = true;
-            tools.push_back(tool);
-        }
-        return tools;
+        return loadCustomTools(true);
     }
 
     int Database::addCustomTool(const CustomTool& tool) const{
@@ -1049,11 +974,6 @@ namespace LittleMeowBot {
         watermark_id INTEGER DEFAULT 0,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ))",
-            R"(CREATE TABLE IF NOT EXISTS message_cache (
-        message_id INTEGER PRIMARY KEY,
-        formatted_text TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    ))",
             R"(CREATE TABLE IF NOT EXISTS prompts (
         prompt_key TEXT PRIMARY KEY,
         prompt_content TEXT NOT NULL,
@@ -1124,6 +1044,7 @@ namespace LittleMeowBot {
         executor_type TEXT NOT NULL CHECK(executor_type IN ('python', 'http')),
         executor_config TEXT,
         script_content TEXT,
+        readme TEXT,
         enabled INTEGER DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ))",
@@ -1160,205 +1081,117 @@ namespace LittleMeowBot {
     }
 
     void Database::migrateDatabase() const{
-        // 检查 custom_tools 表是否有 script_content 列
-        bool hasScriptContent = false;
-        bool hasReadme = false;
-        bool kbHasEnabled = false;
-        bool llmHasReasoning = false;
-        auto callback = [](void* data, int argc, char** argv, char** colNames) -> int {
-            for (int i = 0; i < argc; i++) {
-                if (argv[i] && std::string(argv[i]) == "script_content") {
-                    *static_cast<bool*>(data) = true;
-                    break;
-                }
-            }
-            return 0;
-        };
-        auto callbackReadme = [](void* data, int argc, char** argv, char** colNames) -> int {
-            for (int i = 0; i < argc; i++) {
-                if (argv[i] && std::string(argv[i]) == "readme") {
-                    *static_cast<bool*>(data) = true;
-                    break;
-                }
-            }
-            return 0;
-        };
-        auto callbackKBEnabled = [](void* data, int argc, char** argv, char** colNames) -> int {
-            for (int i = 0; i < argc; i++) {
-                if (argv[i] && std::string(argv[i]) == "enabled") {
-                    *static_cast<bool*>(data) = true;
-                    break;
-                }
-            }
-            return 0;
-        };
-        auto callbackReasoning = [](void* data, int argc, char** argv, char** colNames) -> int {
-            for (int i = 0; i < argc; i++) {
-                if (argv[i] && std::string(argv[i]) == "reasoning_effort") {
-                    *static_cast<bool*>(data) = true;
-                    break;
-                }
-            }
-            return 0;
-        };
-        sqlite3_exec(m_db, "PRAGMA table_info(custom_tools)", callback, &hasScriptContent, nullptr);
-        sqlite3_exec(m_db, "PRAGMA table_info(custom_tools)", callbackReadme, &hasReadme, nullptr);
-        sqlite3_exec(m_db, "PRAGMA table_info(kb_config)", callbackKBEnabled, &kbHasEnabled, nullptr);
-        sqlite3_exec(m_db, "PRAGMA table_info(llm_config)", callbackReasoning, &llmHasReasoning, nullptr);
-
-        if (!hasScriptContent) {
-            spdlog::info("数据库迁移: 添加 script_content 列");
-            sqlite3_exec(m_db, "ALTER TABLE custom_tools ADD COLUMN script_content TEXT", nullptr, nullptr, nullptr);
-        }
-        if (!hasReadme) {
-            spdlog::info("数据库迁移: 添加 readme 列");
-            sqlite3_exec(m_db, "ALTER TABLE custom_tools ADD COLUMN readme TEXT", nullptr, nullptr, nullptr);
-        }
-        if (!kbHasEnabled) {
-            spdlog::info("数据库迁移: 添加 kb_config.enabled 列");
-            sqlite3_exec(m_db, "ALTER TABLE kb_config ADD COLUMN enabled INTEGER DEFAULT 1", nullptr, nullptr, nullptr);
-        }
-        // 数据库迁移: long_term_memory → short_term_memory
-        // 注：createTables() 可能已创建空的 short_term_memory，需先检查旧表是否有数据
-        {
-            bool hasOldTable = false;
-            auto checkExists = [](void* data, int argc, char** argv, char**) -> int {
-                if (argc > 0 && argv[0]) *static_cast<bool*>(data) = true;
-                return 0;
-            };
-            sqlite3_exec(m_db,
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='long_term_memory'",
-                checkExists, &hasOldTable, nullptr);
-
-            if (hasOldTable) {
-                // 检查旧表是否有数据
-                int oldCount = 0;
-                auto countCb = [](void* data, int argc, char** argv, char**) -> int {
-                    if (argc > 0 && argv[0]) *static_cast<int*>(data) = std::stoi(argv[0]);
-                    return 0;
-                };
-                sqlite3_exec(m_db, "SELECT COUNT(*) FROM long_term_memory",
-                    countCb, &oldCount, nullptr);
-
-                if (oldCount > 0) {
-                    bool hasNewTable = false;
-                    sqlite3_exec(m_db,
-                        "SELECT name FROM sqlite_master WHERE type='table' AND name='short_term_memory'",
-                        checkExists, &hasNewTable, nullptr);
-
-                    if (hasNewTable) {
-                        // createTables() 创建了空表，先删掉再重命名旧表
-                        sqlite3_exec(m_db, "DROP TABLE short_term_memory",
-                            nullptr, nullptr, nullptr);
-                    }
-                    spdlog::info("数据库迁移: 重命名 long_term_memory → short_term_memory ({} 条数据)", oldCount);
-                    sqlite3_exec(m_db, "ALTER TABLE long_term_memory RENAME TO short_term_memory",
-                        nullptr, nullptr, nullptr);
-                } else {
-                    // 旧表为空，直接删掉即可
-                    spdlog::info("数据库迁移: 删除空的 long_term_memory 表");
-                    sqlite3_exec(m_db, "DROP TABLE long_term_memory",
-                        nullptr, nullptr, nullptr);
-                }
-            }
-        }
-
-        // 数据库迁移: 移除废弃的 short_term_memory_limit 列
-        {
-            bool hasColumn = false;
-            auto checkCol = [](void* data, int argc, char** argv, char**) -> int {
-                for (int i = 0; i < argc; i++) {
-                    if (argv[i] && std::string(argv[i]) == "short_term_memory_limit") {
-                        *static_cast<bool*>(data) = true;
+        // 检查表中是否存在指定列（sqlite3_exec 回调，同步执行）
+        const auto columnExists = [&](const std::string& table, const std::string& column) {
+            bool found = false;
+            const auto cb = [](void* data, int argc, char** argv, char**) -> int {
+                auto* ctx = static_cast<std::pair<bool*, const std::string*>*>(data);
+                for (int i = 0; i < argc; ++i) {
+                    if (argv[i] && *ctx->second == argv[i]) {
+                        *ctx->first = true;
                         break;
                     }
                 }
                 return 0;
             };
-            sqlite3_exec(m_db, "PRAGMA table_info(memory_config)", checkCol, &hasColumn, nullptr);
-            if (hasColumn) {
-                spdlog::info("数据库迁移: 移除废弃的 short_term_memory_limit 列");
-                sqlite3_exec(m_db, "ALTER TABLE memory_config DROP COLUMN short_term_memory_limit",
+            std::pair ctx{&found, &column};
+            sqlite3_exec(m_db, fmt::format("PRAGMA table_info({})", table).c_str(), cb, &ctx, nullptr);
+            return found;
+        };
+        // 检查表是否存在
+        const auto tableExists = [&](const std::string& name) {
+            bool found = false;
+            const auto cb = [](void* data, int argc, char** argv, char**) -> int {
+                if (argc > 0 && argv[0]) *static_cast<bool*>(data) = true;
+                return 0;
+            };
+            sqlite3_exec(m_db,
+                fmt::format("SELECT name FROM sqlite_master WHERE type='table' AND name='{}'", name).c_str(),
+                cb, &found, nullptr);
+            return found;
+        };
+
+        if (!columnExists("kb_config", "enabled")) {
+            spdlog::info("数据库迁移: 添加 kb_config.enabled 列");
+            sqlite3_exec(m_db, "ALTER TABLE kb_config ADD COLUMN enabled INTEGER DEFAULT 1", nullptr, nullptr, nullptr);
+        }
+        if (!columnExists("llm_config", "reasoning_effort")) {
+            spdlog::info("数据库迁移: 添加 llm_config.reasoning_effort 列");
+            sqlite3_exec(m_db, "ALTER TABLE llm_config ADD COLUMN reasoning_effort TEXT DEFAULT ''", nullptr, nullptr, nullptr);
+        }
+
+        // 数据库迁移: long_term_memory → short_term_memory
+        // 注：createTables() 可能已创建空的 short_term_memory，需先检查旧表是否有数据
+        if (tableExists("long_term_memory")) {
+            // 检查旧表是否有数据
+            int oldCount = 0;
+            const auto countCb = [](void* data, int argc, char** argv, char**) -> int {
+                if (argc > 0 && argv[0]) *static_cast<int*>(data) = std::stoi(argv[0]);
+                return 0;
+            };
+            sqlite3_exec(m_db, "SELECT COUNT(*) FROM long_term_memory",
+                countCb, &oldCount, nullptr);
+
+            if (oldCount > 0) {
+                if (tableExists("short_term_memory")) {
+                    // createTables() 创建了空表，先删掉再重命名旧表
+                    sqlite3_exec(m_db, "DROP TABLE short_term_memory",
+                        nullptr, nullptr, nullptr);
+                }
+                spdlog::info("数据库迁移: 重命名 long_term_memory → short_term_memory ({} 条数据)", oldCount);
+                sqlite3_exec(m_db, "ALTER TABLE long_term_memory RENAME TO short_term_memory",
+                    nullptr, nullptr, nullptr);
+            } else {
+                // 旧表为空，直接删掉即可
+                spdlog::info("数据库迁移: 删除空的 long_term_memory 表");
+                sqlite3_exec(m_db, "DROP TABLE long_term_memory",
                     nullptr, nullptr, nullptr);
             }
         }
 
         // 数据库迁移: 上下文窗口配置（窗口触发条数/保留条数/提取 maxTokens/记忆水位线）
-        {
-            struct ColCheck{
-                const std::string& name;
-                bool found = false;
-            };
-
-            auto checkCol = [](void* data, int argc, char** argv, char**) -> int {
-                auto* state = static_cast<ColCheck*>(data);
-                for (int i = 0; i < argc; i++) {
-                    if (argv[i] && state->name == argv[i]) {
-                        state->found = true;
-                        break;
-                    }
-                }
-                return 0;
-            };
-
-            auto ensureColumn = [&](const std::string& table, const std::string& colName,
-                                    const std::string& colDefault) {
-                ColCheck state{colName, false};
-                sqlite3_exec(m_db, fmt::format("PRAGMA table_info({})", table).c_str(), checkCol, &state, nullptr);
-                if (!state.found) {
-                    spdlog::info("数据库迁移: 新增 {}.{} 列", table, colName);
-                    sqlite3_exec(m_db, fmt::format("ALTER TABLE {} ADD COLUMN {} INTEGER DEFAULT {}",
-                                                   table, colName, colDefault).c_str(),
-                        nullptr, nullptr, nullptr);
-                }
-            };
-            auto dropColumn = [&](const std::string& table, const std::string& colName) {
-                ColCheck state{colName, false};
-                sqlite3_exec(m_db, fmt::format("PRAGMA table_info({})", table).c_str(), checkCol, &state, nullptr);
-                if (state.found) {
-                    spdlog::info("数据库迁移: 移除废弃的 {}.{} 列", table, colName);
-                    sqlite3_exec(m_db, fmt::format("ALTER TABLE {} DROP COLUMN {}", table, colName).c_str(),
-                        nullptr, nullptr, nullptr);
-                }
-            };
-
-            ensureColumn("memory_config", "window_trigger_count", "100");
-            ensureColumn("memory_config", "window_keep_count", "50");
-            ensureColumn("memory_config", "memory_extract_max_tokens", "4000");
-            ensureColumn("memory_config", "router_window_trigger_count", "20");
-            ensureColumn("memory_config", "router_window_keep_count", "10");
-            ensureColumn("short_term_memory", "watermark_id", "0");
-            dropColumn("memory_config", "memory_trigger_count");
-            dropColumn("memory_config", "memory_chat_record_limit");
-            dropColumn("memory_config", "executor_context_limit");
-
-            // 老群已有短期记忆：水位线初始化为该群最新记录 id，
-            // 避免升级后首次触发时把全部历史重新提取一遍（历史已浓缩在现有记忆中）
-            sqlite3_exec(m_db,
-                "UPDATE short_term_memory SET watermark_id = "
-                "(SELECT COALESCE(MAX(id), 0) FROM chat_records c WHERE c.group_id = short_term_memory.group_id) "
-                "WHERE watermark_id = 0 "
-                "AND EXISTS (SELECT 1 FROM chat_records c WHERE c.group_id = short_term_memory.group_id)",
+        const auto ensureColumn = [&](const std::string& table, const std::string& colName,
+                                      const std::string& colDefault) {
+            if (columnExists(table, colName)) return;
+            spdlog::info("数据库迁移: 新增 {}.{} 列", table, colName);
+            sqlite3_exec(m_db, fmt::format("ALTER TABLE {} ADD COLUMN {} INTEGER DEFAULT {}",
+                                           table, colName, colDefault).c_str(),
                 nullptr, nullptr, nullptr);
-            if (const int backfilled = sqlite3_changes(m_db); backfilled > 0) {
-                spdlog::info("数据库迁移: 回填 {} 个群的记忆水位线", backfilled);
-            }
+        };
+        const auto dropColumn = [&](const std::string& table, const std::string& colName) {
+            if (!columnExists(table, colName)) return;
+            spdlog::info("数据库迁移: 移除废弃的 {}.{} 列", table, colName);
+            sqlite3_exec(m_db, fmt::format("ALTER TABLE {} DROP COLUMN {}", table, colName).c_str(),
+                nullptr, nullptr, nullptr);
+        };
+
+        ensureColumn("memory_config", "window_trigger_count", "100");
+        ensureColumn("memory_config", "window_keep_count", "50");
+        ensureColumn("memory_config", "memory_extract_max_tokens", "4000");
+        ensureColumn("memory_config", "router_window_trigger_count", "20");
+        ensureColumn("memory_config", "router_window_keep_count", "10");
+        ensureColumn("short_term_memory", "watermark_id", "0");
+        dropColumn("memory_config", "memory_trigger_count");
+        dropColumn("memory_config", "memory_chat_record_limit");
+        dropColumn("memory_config", "executor_context_limit");
+        dropColumn("memory_config", "short_term_memory_limit");
+
+        // 老群已有短期记忆：水位线初始化为该群最新记录 id，
+        // 避免升级后首次触发时把全部历史重新提取一遍（历史已浓缩在现有记忆中）
+        sqlite3_exec(m_db,
+            "UPDATE short_term_memory SET watermark_id = "
+            "(SELECT COALESCE(MAX(id), 0) FROM chat_records c WHERE c.group_id = short_term_memory.group_id) "
+            "WHERE watermark_id = 0 "
+            "AND EXISTS (SELECT 1 FROM chat_records c WHERE c.group_id = short_term_memory.group_id)",
+            nullptr, nullptr, nullptr);
+        if (const int backfilled = sqlite3_changes(m_db); backfilled > 0) {
+            spdlog::info("数据库迁移: 回填 {} 个群的记忆水位线", backfilled);
         }
 
         // 数据库迁移: emojis 表已废弃（表情包改为直接使用 QQ 收藏表情，不再存库）
-        {
-            bool hasEmojisTable = false;
-            auto checkEmojiTable = [](void* data, int argc, char** argv, char**) -> int {
-                if (argc > 0 && argv[0]) *static_cast<bool*>(data) = true;
-                return 0;
-            };
-            sqlite3_exec(m_db,
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='emojis'",
-                checkEmojiTable, &hasEmojisTable, nullptr);
-            if (hasEmojisTable) {
-                spdlog::info("数据库迁移: 删除废弃的 emojis 表（表情包改为直接使用 QQ 收藏表情）");
-                sqlite3_exec(m_db, "DROP TABLE emojis", nullptr, nullptr, nullptr);
-            }
+        if (tableExists("emojis")) {
+            spdlog::info("数据库迁移: 删除废弃的 emojis 表（表情包改为直接使用 QQ 收藏表情）");
+            sqlite3_exec(m_db, "DROP TABLE emojis", nullptr, nullptr, nullptr);
         }
     }
 

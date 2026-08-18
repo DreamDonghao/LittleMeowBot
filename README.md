@@ -1,8 +1,11 @@
-# LittleMeowBot 🐱
+# LittleMeowBot
 
-一个智能 QQ 群聊机器人，基于 Agent 架构，支持自定义角色、长期记忆、多工具调用。
+一个智能 QQ 群聊机器人，基于两层 Agent 架构，支持自定义角色、长期记忆、多工具调用。
 
 QQ交流群：1097487360
+
+[开发文档](./docs/DEVELOPMENT.md)
+
 
 > ⚠️ **使用约束**
 > - ✅ 个人和非商业组织免费使用
@@ -12,13 +15,16 @@ QQ交流群：1097487360
 
 ## ✨ 特性
 
-- **智能对话** - Agent 架构，理解上下文，智能回复
-- **自定义角色** - 可设置 Bot 名称和人设
-- **长期记忆** - 记住群友的喜好、习惯、重要事件
-- **自定义工具** - 支持 Python 脚本，可视化配置，一键导入导出
+- **智能对话** - 两层 Agent 架构（Router + Executor），理解上下文，智能回复
+- **自定义角色** - 可设置 Bot 名称和人设，提示词可视化编辑
+- **滑动窗口上下文** - 按配置滑动提取，权衡上下文长度与缓存命中
+- **智能记忆** - 短期记忆（本地）自动提炼迁移到长期记忆（RAGFlow），记住群友的喜好、习惯、重要事件
+- **自定义工具** - 支持 Python 脚本 / HTTP 接口，可视化配置，一键导入导出
+- **表情包系统** - 收藏、重命名、删除、发送表情，全由 LLM 自动决策
 - **图片识别** - 自动识别群聊图片内容
-- **Web 管理后台** - 可视化配置，实时查看聊天记录
-- **知识库对接** - 支持 RAGFlow，可接入自定义知识库
+- **互动能力** - 拍一拍、撤回消息、引用回复、@群友
+- **Web 管理后台** - 可视化配置，实时查看聊天记录，用量统计
+- **知识库对接** - 支持 RAGFlow，可接入自定义知识库，可一键禁用
 
 ## 🚀 快速开始
 
@@ -43,7 +49,7 @@ QQ交流群：1097487360
 
    ```sudo bash run.sh```
 
-3. 访问管理后台：`http://localhost:7778/admin.html`
+3. 访问管理后台：`http://localhost:7778/index.html`
 
 ### 首次配置
 
@@ -56,7 +62,7 @@ QQ交流群：1097487360
     - Bot 名称（可自定义）
 
 2. **LLM 配置** - 配置模型 API
-    - 支持三层 Agent 分别配置不同模型
+    - 支持 Router / Executor / Memory / Image 分别配置不同模型
     - 兼容 OpenAI API 格式
 
 3. **启用群聊** - 添加要启用的 QQ 群
@@ -67,16 +73,19 @@ QQ交流群：1097487360
 
 在群中 @机器人 发送命令：
 
-| 命令                | 说明    | 权限  |
-|-------------------|-------|-----|
-| `/help`           | 显示帮助  | 所有人 |
-| `/status`         | 查看群状态 | 所有人 |
-| `/admins`         | 查看管理员 | 所有人 |
-| `/enable [群号]`    | 启用群聊  | 管理员 |
-| `/disable [群号]`   | 禁用群聊  | 管理员 |
-| `/groups`         | 启用群列表 | 管理员 |
+| 命令               | 说明       | 权限   |
+|--------------------|------------|--------|
+| `/help`            | 显示帮助   | 所有人 |
+| `/status`          | 查看群状态 | 所有人 |
+| `/admins`          | 查看管理员 | 所有人 |
+| `/about`           | 关于本项目 | 所有人 |
+| `/enable [群号]`   | 启用群聊   | 管理员 |
+| `/disable [群号]`  | 禁用群聊   | 管理员 |
+| `/groups`          | 启用群列表 | 管理员 |
 | `/addadmin <QQ号>` | 添加管理员 | 管理员 |
 | `/deladmin <QQ号>` | 移除管理员 | 管理员 |
+| `/listemoji`       | 表情包列表 | 管理员 |
+| `/delemoji <名称>` | 删除表情包 | 管理员 |
 
 ### 机器人能力
 
@@ -92,6 +101,7 @@ QQ交流群：1097487360
 - 📝 **回复引用** - 引用回复特定消息
 - ↩️ **撤回消息** - 撤回刚才发的消息
 - 🔇 **禁言** - 可配置权限
+- 🖼️ **表情包** - 收藏、发送、管理表情，自动决策
 - 🧠 **记忆** - 记住群友喜好，长期不忘
 - 📚 **知识库** - 查询已配置的专业知识
 
@@ -99,10 +109,10 @@ QQ交流群：1097487360
 
 机器人有两层记忆：
 
-| 类型   | 存储      | 用途          |
-|------|---------|-------------|
-| 短期记忆 | 本地数据库   | 最近发生的事，快速回忆 |
-| 长期记忆 | RAGFlow | 重要信息，永久保存   |
+| 类型     | 存储       | 用途                   |
+|----------|------------|------------------------|
+| 短期记忆 | 本地数据库 | 最近发生的事，快速回忆 |
+| 长期记忆 | RAGFlow    | 重要信息，永久保存     |
 
 当短期记忆积累到上限，机器人会自动筛选重要信息存入长期记忆。
 
@@ -110,53 +120,55 @@ QQ交流群：1097487360
 
 ### OneBot 配置
 
-| 参数           | 说明               |
-|--------------|------------------|
-| Access Token | OneBot API 访问令牌  |
-| Bot QQ 号     | 机器人自身的 QQ 号      |
-| HTTP 服务地址    | OneBot HTTP 服务地址 |
-| Bot 名称       | 机器人在群聊中的名称       |
+| 参数          | 说明                 |
+|---------------|----------------------|
+| Access Token  | OneBot API 访问令牌  |
+| Bot QQ 号     | 机器人自身的 QQ 号   |
+| HTTP 服务地址 | OneBot HTTP 服务地址 |
+| Bot 名称      | 机器人在群聊中的名称 |
 
 ### LLM 配置
 
-多层 Agent 可分别配置：
+各模型可分别配置：
 
-| Agent            | 用途         | 建议配置        |
-|------------------|------------|-------------|
-| Router           | 快速路由决策     | 轻量模型，低温度    |
-| Planner          | 意图分析规划     | 中等模型        |
-| Executor         | 生成回复       | 主力模型，较高温度   |
-| ExecutorThinking | 深度思考（可选）  | 推理模型，如 DeepSeek |
+| 模型             | 用途             | 建议配置              |
+|------------------|------------------|-----------------------|
+| Router           | 快速路由决策     | 轻量模型，低温度      |
+| Executor         | 生成回复         | 主力模型，较高温度    |
+| Executor思考     | 深度思考（可选） | 推理模型，如 DeepSeek |
+| Memory           | 记忆提取与合并   | 轻量模型              |
+| Image            | 图片内容识别     | 多模态模型            |
 
-**思考模式**：启用 ExecutorThinking 后，机器人会先用推理模型分析问题，再生成回复，适合复杂问题的深度思考。
+**思考模式**：启用 Executor思考 后，机器人会先用推理模型分析问题，再交给 Executor 生成回复，适合复杂问题的深度思考。
 
-### 记忆参数
+### 记忆与上下文参数
 
-| 参数      | 说明          | 默认值 |
-|---------|-------------|-----|
-| 记忆触发间隔  | 每 N 条消息生成记忆 | 16  |
-| 聊天记录保留数 | 保留的记录数量     | 18  |
-| 短期记忆上限  | 触发迁移的阈值     | 15  |
-| 每次迁移条数  | 迁移到长期记忆的数量  | 5   |
+- **上下文触发条数** - 上下文窗口超过该条数时提取，默认 100
+- **上下文保留条数** - 触发后保留的最近消息条数，默认 50
+- **Router 子窗口触发** - Router 子窗口批量滑动条数，默认 20
+- **Router 子窗口保留** - Router 子窗口保留条数，默认 10
+- **短期记忆上限** - 触发迁移的阈值，默认 15
+- **每次迁移条数** - 迁移到长期记忆的数量，默认 5
 
 ### 提示词定制
 
-在管理后台可修改 Agent 提示词，支持 `{botName}` 占位符自动替换。
+在管理后台可修改 Router 与 Executor 的系统提示词，支持 `{botName}` 占位符自动替换。
 
 ## 🔧 高级功能
 
 ### 自定义工具
 
-支持通过 Python 脚本扩展机器人能力：
+支持通过 Python 脚本或 HTTP 接口扩展机器人能力：
 
 1. 进入管理后台 → 自定义工具
 2. 点击"添加工具"或"导入"
-3. 填写工具名称、描述、参数定义和 Python 脚本
+3. 填写工具名称、描述、参数定义和执行方式（Python 脚本 / HTTP 请求）
 4. 保存并启用
 
 工具支持：
 - **参数定义** - JSON Schema 格式，LLM 自动理解
-- **Python 脚本** - 通过 `sys.argv[1]` 接收参数 JSON 文件路径
+- **Python 脚本** - 通过 `sys.argv[1]` 接收参数 JSON 文件路径，可自定义 Python 解释器路径
+- **HTTP 接口** - 配置请求地址、方法、参数模板
 - **说明文档** - Markdown 格式，记录作者、用法、联系方式
 - **导入导出** - JSON 文件格式，方便分享
 
@@ -164,12 +176,12 @@ QQ交流群：1097487360
 
 项目提供了一些常用工具配置，位于 `agentTools/` 目录：
 
-| 文件 | 功能 | 依赖 |
-|------|------|------|
-| `random.json` | 随机数生成 | 无 |
-| `get_time.json` | 获取时间 | 无 |
-| `get_weather.json` | 天气查询 | 无 |
-| `search_web.json` | 网络搜索 | `duckduckgo-search` |
+| 文件               | 功能       | 依赖                |
+|--------------------|------------|---------------------|
+| `random.json`      | 随机数生成 | 无                  |
+| `get_time.json`    | 获取时间   | 无                  |
+| `get_weather.json` | 天气查询   | 无                  |
+| `search_web.json`  | 网络搜索   | `duckduckgo-search` |
 
 导入方法：
 1. 管理后台 → 自定义工具 → 导入
@@ -178,10 +190,10 @@ QQ交流群：1097487360
 ### 对接知识库
 
 1. 部署 RAGFlow 服务
-2. 创建知识库 Dataset
+2. 创建知识库 Dataset（专业知识库 + 记忆库）
 3. 在管理后台填写 RAGFlow API 配置
 
-机器人即可通过 `search_knowledge` 工具查询知识库。
+机器人即可通过 `search_knowledge` 工具查询知识库。不需要时可在后台关闭"启用 RAGFlow"开关。
 
 ## 📁 数据存储
 
@@ -194,111 +206,29 @@ QQ交流群：1097487360
 - LLM 配置
 - 自定义工具
 - 提示词
+- 表情包
 
 ---
 
 ## 🛠️ 开发者指南
 
-### 环境要求
+完整开发文档见 [docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md)，包含：
 
-- Linux (Ubuntu 22.04 推荐)
-- GCC 11+ 或 Clang 14+
-- CMake 3.5+
+- 环境要求与依赖安装
+- 构建与运行
+- 项目结构与架构说明
+- 如何添加工具、API、前端页面
+- 调试技巧与代码规范
 
-### 安装依赖
-
-```bash
-sudo apt update && sudo apt install -y \
-    cmake g++ \
-    libdrogon-dev \
-    libspdlog-dev \
-    libfmt-dev \
-    libsqlite3-dev \
-    libjsoncpp-dev \
-    libssl-dev \
-    libbrotli-dev \
-    zlib1g-dev \
-    libuuid1
-```
-
-### 编译
+快速构建：
 
 ```bash
 git clone https://github.com/DreamDonghao/LittleMeowBot.git
 cd LittleMeowBot
 mkdir build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release ..
-make -j$(nproc)
+make -j    # Linux 可用 -j$(nproc)
 ```
-
-### 项目结构
-
-```
-LittleMeowBot/
-├── main.cpp                 # 入口
-├── controllers/             # HTTP 控制器
-│   ├── ProcessQQMessages.cc # 消息处理
-│   ├── AdminController.cc   # 管理 API
-│   └── AdminWebSocket.cc    # WebSocket
-├── agentTools/              # 工具配置文件
-│   ├── random.json
-│   ├── get_time.json
-│   ├── get_weather.json
-│   └── search_web.json
-└── include/
-    ├── agent/               # Agent 系统
-    ├── config/              # 配置管理
-    ├── model/               # 数据模型
-    ├── service/             # 服务层
-    └── storage/             # 数据存储
-```
-
-### 添加自定义工具
-
-#### 方式一：Web 管理后台（推荐）
-
-在管理后台可视化配置，支持 Python 脚本。
-
-#### 方式二：C++ 内置工具
-
-编辑 `src/agent/AgentToolManager.cpp`：
-
-```cpp
-registry.registerTool(
-    {
-        .name = "my_tool",
-        .description = "工具描述",
-        .parameters = paramsJson,
-        .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
-            co_return "结果";
-        }
-    }, ToolCategory::ACTION);
-```
-
-### 工具 JSON 格式
-
-```json
-{
-  "name": "tool_name",
-  "description": "工具描述，LLM 会根据此判断何时调用",
-  "parameters": {
-    "type": "object",
-    "properties": {
-      "param1": {
-        "type": "string",
-        "description": "参数说明"
-      }
-    },
-    "required": ["param1"]
-  },
-  "scriptContent": "import json\nimport sys\n\n# 参数从 sys.argv[1] 传入的 JSON 文件读取\nwith open(sys.argv[1]) as f:\n    args = json.load(f)\n\nprint(args['param1'])",
-  "readme": "# 工具说明\n\n作者、用法、联系方式等"
-}
-```
-
-### 添加新 API
-
-在 `controllers/AdminController.h` 中声明，在 `AdminController.cc` 中实现。
 
 ---
 

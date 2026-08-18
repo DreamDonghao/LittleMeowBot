@@ -11,6 +11,7 @@
 #include <vector>
 #include <drogon/HttpClient.h>
 #include <model/GroupConfigManager.hpp>
+#include <util/tool.h>
 namespace LittleMeowBot {
     CommandHandler& CommandHandler::instance(){
         static CommandHandler handler;
@@ -23,7 +24,7 @@ namespace LittleMeowBot {
 
         size_t pos = 0;
         while (pos < rawMsg.length()) {
-            while (pos < rawMsg.length() && std::isspace(rawMsg[pos])) {
+            while (pos < rawMsg.length() && std::isspace(static_cast<unsigned char>(rawMsg[pos]))) {
                 pos++;
             }
             if (pos < rawMsg.length() && rawMsg[pos] == '[') {
@@ -52,7 +53,7 @@ namespace LittleMeowBot {
         std::string cmdStr;
         size_t pos = 0;
         while (pos < rawMsg.length()) {
-            while (pos < rawMsg.length() && std::isspace(rawMsg[pos])) {
+            while (pos < rawMsg.length() && std::isspace(static_cast<unsigned char>(rawMsg[pos]))) {
                 pos++;
             }
             if (pos < rawMsg.length() && rawMsg[pos] == '[') {
@@ -126,9 +127,9 @@ namespace LittleMeowBot {
         } else if (cmd == "/enable" || cmd == "/启用") {
             uint64_t targetGroup = groupId;
             if (std::string arg; iss >> arg) {
-                try {
-                    targetGroup = std::stoull(arg);
-                } catch (...) {
+                if (const auto parsed = tryParseUInt64(arg)) {
+                    targetGroup = *parsed;
+                } else {
                     co_return "无效的群号格式";
                 }
             }
@@ -137,9 +138,9 @@ namespace LittleMeowBot {
         } else if (cmd == "/disable" || cmd == "/禁用") {
             uint64_t targetGroup = groupId;
             if (std::string arg; iss >> arg) {
-                try {
-                    targetGroup = std::stoull(arg);
-                } catch (...) {
+                if (const auto parsed = tryParseUInt64(arg)) {
+                    targetGroup = *parsed;
+                } else {
                     co_return "无效的群号格式";
                 }
             }
@@ -159,11 +160,10 @@ namespace LittleMeowBot {
             if (!(iss >> arg)) {
                 co_return "用法: /addadmin <QQ号>";
             }
-            try {
-                uint64_t qq = std::stoull(arg);
-                database.addAdmin(qq);
-                response = fmt::format("已添加管理员: {}", qq);
-            } catch (...) {
+            if (const auto qq = tryParseUInt64(arg)) {
+                database.addAdmin(*qq);
+                response = fmt::format("已添加管理员: {}", *qq);
+            } else {
                 response = "无效的QQ号格式";
             }
         } else if (cmd == "/deladmin" || cmd == "/移除管理员") {
@@ -171,11 +171,10 @@ namespace LittleMeowBot {
             if (!(iss >> arg)) {
                 co_return "用法: /deladmin <QQ号>";
             }
-            try {
-                uint64_t qq = std::stoull(arg);
-                database.removeAdmin(qq);
-                response = fmt::format("已移除管理员: {}", qq);
-            } catch (...) {
+            if (const auto qq = tryParseUInt64(arg)) {
+                database.removeAdmin(*qq);
+                response = fmt::format("已移除管理员: {}", *qq);
+            } else {
                 response = "无效的QQ号格式";
             }
         } else if (cmd == "/delemoji" || cmd == "/删除表情") {
@@ -213,8 +212,7 @@ namespace LittleMeowBot {
                 response = fmt::format("删除失败: {}（请确认名称或序号正确）", name);
             }
         } else if (cmd == "/listemoji" || cmd == "/表情列表") {
-            const Json::Value emojis = co_await AgentToolManager::fetchFavoriteEmojis();
-            if (emojis.empty()) {
+            if (const Json::Value emojis = co_await AgentToolManager::fetchFavoriteEmojis(); emojis.empty()) {
                 response = "QQ收藏表情为空或获取失败";
             } else {
                 response = "收藏表情列表:\n";

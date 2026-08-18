@@ -2,9 +2,8 @@
 /// @brief WebSocket 连接管理器 - 实现
 
 #include <service/WebSocketManager.hpp>
+#include <util/tool.h>
 #include <spdlog/spdlog.h>
-#include <chrono>
-#include <ctime>
 
 namespace LittleMeowBot {
     WebSocketManager& WebSocketManager::instance(){
@@ -77,34 +76,7 @@ namespace LittleMeowBot {
         }
     }
 
-    void WebSocketManager::pushGroupList(const std::vector<uint64_t>& groups){
-        std::lock_guard<std::mutex> lock(m_mutex);
-
-        Json::Value msg;
-        msg["type"] = "group_list";
-        for (uint64_t groupId : groups) {
-            msg["groups"].append(static_cast<Json::UInt64>(groupId));
-        }
-
-        Json::StreamWriterBuilder builder;
-        std::string jsonStr = Json::writeString(builder, msg);
-
-        for (const auto& conn : m_connections) {
-            conn->send(jsonStr);
-        }
-    }
-
-    size_t WebSocketManager::getConnectionCount() const{
-        std::lock_guard<std::mutex> lock(m_mutex);
-        return m_connections.size();
-    }
-
     std::string WebSocketManager::getCurrentTimestamp() const{
-        auto now = std::chrono::system_clock::now();
-        auto time = std::chrono::system_clock::to_time_t(now);
-        std::tm tm = *std::localtime(&time);
-        char buffer[20];
-        std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &tm);
-        return buffer;
+        return currentDateTime();
     }
 }

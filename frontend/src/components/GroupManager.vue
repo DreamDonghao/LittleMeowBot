@@ -37,7 +37,7 @@ const loadGroups = async (): Promise<void> => {
     } else {
       groups.value = []
     }
-  } catch (e) {
+  } catch {
     showToast!('网络错误，请检查后端服务', true)
     groups.value = []
   } finally {

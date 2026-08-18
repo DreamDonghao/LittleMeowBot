@@ -5,7 +5,7 @@
 /// @details 管理 Web 管理后台的 WebSocket 连接：
 ///          - 连接管理：添加、移除连接
 ///          - 群订阅：支持按群订阅消息推送
-///          - 消息推送：实时推送新消息和群列表更新
+///          - 消息推送：实时推送新消息
 
 #pragma once
 #include <drogon/WebSocketConnection.h>
@@ -49,14 +49,6 @@ namespace LittleMeowBot {
         /// @param role 角色（user/assistant）
         /// @param content 消息内容
         void pushMessage(uint64_t groupId, const std::string& role, const std::string& content);
-
-        /// @brief 推送群列表更新
-        /// @param groups 群号列表
-        void pushGroupList(const std::vector<uint64_t>& groups);
-
-        /// @brief 获取当前连接数
-        /// @return 连接数量
-        size_t getConnectionCount() const;
 
     private:
         WebSocketManager() = default;

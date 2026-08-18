@@ -2,6 +2,7 @@
 /// @brief 全局配置管理
 #pragma once
 #include <json/value.h>
+#include <cstdint>
 #include <string>
 #include <storage/Database.hpp>
 
@@ -61,27 +62,10 @@ namespace LittleMeowBot {
         static Config& instance();
 
         /// @brief 从数据库加载单个 LLM 配置
-        template <typename ApiCfg, typename ParamsCfg = LLMModelParams*>
-        void loadLLMConfig(const std::string_view name, ApiCfg& apiConfig, ParamsCfg modelParams = nullptr){
-            auto cfg = Database::instance().getLLMConfig(std::string(name));
-            if (cfg.isNull()) return;
-
-            apiConfig.apiKey = cfg["apiKey"].asString();
-            apiConfig.baseUrl = cfg["baseUrl"].asString();
-            apiConfig.path = cfg["path"].asString();
-            apiConfig.model = cfg["model"].asString();
-            if (cfg.isMember("reasoningEffort")) {
-                apiConfig.reasoningEffort = cfg["reasoningEffort"].asString();
-            }
-
-            if constexpr (!std::is_null_pointer_v<ParamsCfg>) {
-                if (modelParams) {
-                    modelParams->maxTokens = cfg["maxTokens"].asInt();
-                    modelParams->temperature = cfg["temperature"].asFloat();
-                    modelParams->topP = cfg["topP"].asFloat();
-                }
-            }
-        }
+        /// @param name 配置名（router/executor/executorThinking/image）
+        /// @param apiConfig 输出的 API 配置
+        /// @param modelParams 模型参数（可为 nullptr，表示不加载）
+        void loadLLMConfig(std::string_view name, LLMApiConfig& apiConfig, LLMModelParams* modelParams = nullptr);
 
         void loadFromDatabase();
 

@@ -13,8 +13,7 @@
 #include <regex>
 #include <drogon/HttpClient.h>
 #include <drogon/HttpAppFramework.h>
-
-#include "config/Config.hpp"
+#include <config/Config.hpp>
 
 namespace LittleMeowBot {
     namespace {
@@ -61,7 +60,7 @@ namespace LittleMeowBot {
         }
 
         /// @brief 清理回复内容，并在模型忘记拼 CQ 码时自动补上
-        std::string finalizeContent(const std::string& rawContent, const std::string& accumulatedCQCodes) {
+        std::string finalizeContent(const std::string &rawContent, const std::string &accumulatedCQCodes) {
             std::string content = cleanReplyContent(rawContent);
             if (!accumulatedCQCodes.empty() && content.find("[CQ:") == std::string::npos) {
                 content += accumulatedCQCodes;
@@ -82,7 +81,7 @@ namespace LittleMeowBot {
             thinkingSystem["content"] = getThinkingSystemPrompt(maxLength);
             thinkingMessages.append(thinkingSystem);
 
-            for (unsigned int i = 1; i < messages.size(); ++i) {
+            for (Json::ArrayIndex i = 1; i < messages.size(); ++i) {
                 thinkingMessages.append(messages[i]);
             }
 
@@ -110,9 +109,9 @@ namespace LittleMeowBot {
                 auto json = resp->getJsonObject();
 
                 if (resp->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
-                    std::string body = std::string(resp->getBody()).substr(0, 500);
+                    const std::string respBody = std::string(resp->getBody()).substr(0, 500);
                     Log::error("[Executor] 思考模型失败: status={} body={}",
-                               static_cast<int>(resp->getStatusCode()), body);
+                               static_cast<int>(resp->getStatusCode()), respBody);
                     co_return std::nullopt;
                 }
 
@@ -129,7 +128,7 @@ namespace LittleMeowBot {
                 }
 
                 co_return content;
-            } catch (const std::exception& e) {
+            } catch (const std::exception &e) {
                 Log::error("[Executor] 思考模型请求异常: {}", e.what());
                 co_return std::nullopt;
             }
@@ -137,25 +136,24 @@ namespace LittleMeowBot {
 
 
         /// @brief 把记录队列拼接为 JSON 数组字符串
-        std::string joinRecords(const std::deque<Json::Value>& records, size_t from, size_t to){
+        std::string joinRecords(const std::deque<Json::Value> &records, const size_t from, const size_t to) {
             std::string text = "[";
             bool first = true;
             for (size_t i = from; i < to; ++i) {
-                if (!first) text += ",";
+                if (!first) text += ',';
                 first = false;
                 text += records[i]["content"].asString();
             }
-            text += "]";
+            text += ']';
             return text;
         }
 
         /// @brief 按 UTF-8 字符边界截断
-        std::string truncateUtf8(const std::string& text, size_t maxChars){
+        std::string truncateUtf8(const std::string &text, const size_t maxChars) {
             size_t i = 0;
             size_t count = 0;
             while (i < text.size() && count < maxChars) {
-                const auto c = static_cast<unsigned char>(text[i]);
-                if (c < 0x80) {
+                if (const auto c = static_cast<unsigned char>(text[i]); c < 0x80) {
                     i += 1;
                 } else if ((c & 0xE0) == 0xC0) {
                     i += 2;
@@ -164,7 +162,7 @@ namespace LittleMeowBot {
                 } else if ((c & 0xF8) == 0xF0) {
                     i += 4;
                 } else {
-                    i += 1;  // 非法字节，跳过
+                    i += 1; // 非法字节，跳过
                 }
                 ++count;
             }
@@ -173,12 +171,12 @@ namespace LittleMeowBot {
         }
 
         /// @brief 截断记录 content(JSON) 的 text 字段，保留 JSON 结构
-        std::string truncateRecordText(const std::string& content, size_t maxChars){
+        std::string truncateRecordText(const std::string &content, const size_t maxChars) {
             Json::Value record;
-            Json::CharReaderBuilder readerBuilder;
+            const Json::CharReaderBuilder readerBuilder;
             std::string errs;
-            std::unique_ptr<Json::CharReader> reader(readerBuilder.newCharReader());
-            if (!reader->parse(content.data(), content.data() + content.size(), &record, &errs)
+            if (const std::unique_ptr<Json::CharReader> reader(readerBuilder.newCharReader()); !reader->parse(
+                    content.data(), content.data() + content.size(), &record, &errs)
                 || !record.isObject()) {
                 return truncateUtf8(content, maxChars);
             }
@@ -193,9 +191,8 @@ namespace LittleMeowBot {
 
         /// @brief 构建聊天记录上下文（窗口内，旧 → 新）：
         /// 最新 8 条原样保留，更早的每条 text 截断到 500 字
-        std::string buildChatContextText(const ChatRecordManager& chatRecords){
+        std::string buildChatContextText(const ChatRecordManager &chatRecords) {
             constexpr size_t kRecentFullCount = 8;
-            constexpr size_t kOldRecordMaxChars = 500;
 
             const auto records = chatRecords.getRecords(); // 旧 → 新
             const size_t olderCount = records.size() > kRecentFullCount
@@ -206,11 +203,12 @@ namespace LittleMeowBot {
             if (olderCount > 0) {
                 std::string olderText = "[";
                 for (size_t i = 0; i < olderCount; ++i) {
-                    if (i > 0) olderText += ",";
+                    constexpr size_t kOldRecordMaxChars = 500;
+                    if (i > 0) olderText += ',';
                     olderText += truncateRecordText(
                         records[i]["content"].asString(), kOldRecordMaxChars);
                 }
-                olderText += "]";
+                olderText += ']';
                 context += "【更早对话】\n" + olderText + "\n\n";
             }
 
@@ -257,11 +255,9 @@ namespace LittleMeowBot {
         }
 
         /// @brief Agent 模式执行（带 tools）
-        drogon::Task<std::optional<ReplyDecision> > executeWithAgent(
-            Json::Value messages,
-            const LLMApiConfig &apiConfig,
-            const LLMModelParams &params,
-            uint64_t groupId) {
+        drogon::Task<std::optional<ReplyDecision> >
+        executeWithAgent(Json::Value messages, const LLMApiConfig &apiConfig, const LLMModelParams &params,
+                         uint64_t groupId) {
             auto &registry = ToolRegistry::instance();
             Json::Value tools = registry.getAllTools();
 
@@ -297,7 +293,7 @@ namespace LittleMeowBot {
                 bool networkError = false;
                 try {
                     resp = co_await client->sendRequestCoro(req, 90.0);
-                } catch (const std::exception& e) {
+                } catch (const std::exception &e) {
                     Log::error("[Executor] LLM请求异常: {}", e.what());
                     networkError = true;
                 }
@@ -316,8 +312,8 @@ namespace LittleMeowBot {
 
                 if (resp->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
                     int status = static_cast<int>(resp->getStatusCode());
-                    std::string body = std::string(resp->getBody()).substr(0, 500);
-                    Log::error("[Executor] LLM失败: status={} body={}", status, body);
+                    const std::string respBody = std::string(resp->getBody()).substr(0, 500);
+                    Log::error("[Executor] LLM失败: status={} body={}", status, respBody);
 
                     // 重试（503/429/500）
                     if ((status == 503 || status == 429 || status == 500) && iter < 3) {

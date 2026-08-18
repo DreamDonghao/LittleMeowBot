@@ -1,11 +1,5 @@
 /// <reference types="vite/client" />
 
-declare module '*.vue' {
-    import type {DefineComponent} from 'vue'
-    const component: DefineComponent<{}, {}, any>
-    export default component
-}
-
 export interface QQConfig {
     accessToken: string
     selfQQNumber: number
@@ -77,14 +71,4 @@ export interface ApiResponse {
     success: boolean
     error?: string
     data?: any
-}
-
-export interface CustomTool {
-    id: number
-    name: string
-    description: string
-    parameters: string  // JSON Schema 字符串
-    executorType: 'python' | 'http'
-    executorConfig: string  // JSON 配置字符串
-    enabled: boolean
 }

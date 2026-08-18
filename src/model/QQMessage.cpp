@@ -67,11 +67,11 @@ namespace LittleMeowBot {
         }
         for (const auto& item : (*m_qqMessageJson)["message"]) {
             if (item["type"] == "at") {
-                if (std::stoul(item["data"]["qq"].asString()) == getSelfQQNumber()) {
+                if (parseUInt64(item["data"]["qq"].asString()) == getSelfQQNumber()) {
                     m_isAtMe = true;
                 }
             } else if (item["type"] == "reply") {
-                m_replyTo = std::stoull(item["data"]["id"].asString());
+                m_replyTo = parseUInt64(item["data"]["id"].asString());
             }
         }
     }
@@ -82,7 +82,6 @@ namespace LittleMeowBot {
     Json::UInt64 QQMessage::getSenderQQNumber() const{ return (*m_qqMessageJson)["sender"]["user_id"].asUInt64(); }
     Json::String QQMessage::getSenderQQName() const{ return (*m_qqMessageJson)["sender"]["nickname"].asString(); }
     Json::UInt64 QQMessage::getMessageId() const{ return (*m_qqMessageJson)["message_id"].asUInt64(); }
-    uint64_t QQMessage::getReplyTo() const{ return m_replyTo; }
 
     drogon::Task<> QQMessage::formatMessage(){
         const uint64_t senderQQ = getSenderQQNumber();
@@ -97,7 +96,7 @@ namespace LittleMeowBot {
             if (item["type"] == "text") {
                 textContent += item["data"]["text"].asString();
             } else if (item["type"] == "at") {
-                const uint64_t atQQ = std::stoull(item["data"]["qq"].asString());
+                const uint64_t atQQ = parseUInt64(item["data"]["qq"].asString());
                 textContent += "@[" + std::string(getQQName(atQQ)) + ":" + std::to_string(atQQ) + "]";
             } else if (item["type"] == "face") {
                 textContent += item["data"]["raw"]["faceText"].asString();
@@ -132,10 +131,6 @@ namespace LittleMeowBot {
         writerBuilder["indentation"] = "";
         writerBuilder["emitUTF8"] = true;
         m_formatMessage = Json::writeString(writerBuilder, msgJson);
-
-        // 缓存消息
-        m_messageCache[msgId] = m_formatMessage;
-        Database::instance().cacheMessage(msgId, m_formatMessage);
         co_return;
     }
 
@@ -160,18 +155,5 @@ namespace LittleMeowBot {
             nameToQQ[name] = qq;
         }
         return nameToQQ;
-    }
-
-    void QQMessage::addMessageCache(const Json::UInt64 messageId, Json::String message){
-        if (constexpr size_t MAX_CACHE_SIZE = 100;
-            m_messageCache.size() >= MAX_CACHE_SIZE) {
-            size_t toRemove = MAX_CACHE_SIZE / 2;
-            auto it = m_messageCache.begin();
-            while (toRemove-- > 0 && it != m_messageCache.end()) {
-                it = m_messageCache.erase(it);
-            }
-        }
-        m_messageCache[messageId] = std::move(message);
-        Database::instance().cacheMessage(messageId, m_messageCache[messageId]);
     }
 }

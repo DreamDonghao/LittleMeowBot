@@ -3,6 +3,7 @@
 
 #include <model/ChatRecordManager.hpp>
 #include <config/Config.hpp>
+
 namespace LittleMeowBot {
     ChatRecordManager::ChatRecordManager(uint64_t groupId) : m_groupId(groupId){}
 
@@ -19,17 +20,9 @@ namespace LittleMeowBot {
     }
 
     std::deque<Json::Value> ChatRecordManager::getRecords() const{
-        std::deque<Json::Value> result;
         const uint64_t watermark = Database::instance().getMemoryWatermark(m_groupId);
         const auto records = Database::instance().getChatRecordsSince(
             m_groupId, watermark, Config::instance().windowTriggerCount);
-        for (const auto& record : records) {
-            result.push_back(record);
-        }
-        return result;
-    }
-
-    size_t ChatRecordManager::getRecordCount() const{
-        return Database::instance().getChatRecordCount(m_groupId);
+        return {records.begin(), records.end()};
     }
 }

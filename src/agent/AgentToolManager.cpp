@@ -6,11 +6,13 @@
 #include <agent/AgentToolManager.hpp>
 #include <config/Config.hpp>
 #include <fstream>
+#include <memory>
 #include <random>
 #include <filesystem>
 #include <chrono>
 #include <mutex>
 #include <set>
+#include <tuple>
 
 #include "service/MessageService.hpp"
 #include "service/RAGFlowClient.hpp"
@@ -436,7 +438,7 @@ namespace LittleMeowBot {
                     body["res_id"] = emoji["res_id"].asString();
                     body["md5"] = emoji["md5"].asString();
                     body["desc"] = newName;
-                    auto req = drogon::HttpRequest::newHttpJsonRequest(body);
+                    const auto req = drogon::HttpRequest::newHttpJsonRequest(body);
                     req->setMethod(drogon::Post);
                     req->setPath("/set_custom_face_desc");
                     req->addHeader("Authorization", "Bearer " + config.accessToken);
@@ -488,7 +490,7 @@ namespace LittleMeowBot {
 
                     Json::Value body;
                     body["res_id"] = emoji["res_id"].asString();
-                    auto req = drogon::HttpRequest::newHttpJsonRequest(body);
+                    const auto req = drogon::HttpRequest::newHttpJsonRequest(body);
                     req->setMethod(drogon::Post);
                     req->setPath("/delete_custom_face");
                     req->addHeader("Authorization", "Bearer " + config.accessToken);
@@ -698,10 +700,22 @@ namespace LittleMeowBot {
         writerBuilder["indentation"] = "";
         std::string inputJson = Json::writeString(writerBuilder, args);
 
-        // 创建临时脚本文件
+        // 创建临时脚本文件（析构时自动删除）
+        struct TempFile{
+            std::string path;
+            explicit TempFile(std::string p) : path(std::move(p)){}
+            TempFile(const TempFile&) = delete;
+            TempFile& operator=(const TempFile&) = delete;
+            ~TempFile(){
+                std::error_code ec;
+                std::filesystem::remove(path, ec);
+            }
+        };
+
         std::random_device rd;
-        std::string tmpScript = "/tmp/tool_" + std::to_string(rd()) + ".py";
-        std::string tmpInput = "/tmp/tool_input_" + std::to_string(rd()) + ".json";
+        const auto tmpDir = std::filesystem::temp_directory_path();
+        TempFile tmpScript((tmpDir / ("tool_" + std::to_string(rd()) + ".py")).string());
+        TempFile tmpInput((tmpDir / ("tool_input_" + std::to_string(rd()) + ".json")).string());
 
         // 写入脚本 - 去除开头可能的多余空白，保留内部缩进
         std::string cleanScript = scriptContent;
@@ -712,11 +726,11 @@ namespace LittleMeowBot {
         }
 
         {
-            std::ofstream scriptFile(tmpScript);
+            std::ofstream scriptFile(tmpScript.path);
             scriptFile << cleanScript;
         }
         {
-            std::ofstream inputFile(tmpInput);
+            std::ofstream inputFile(tmpInput.path);
             inputFile << inputJson;
         }
 
@@ -724,27 +738,25 @@ namespace LittleMeowBot {
         spdlog::debug("Python脚本内容:\n{}", cleanScript);
 
         // 执行: pythonPath script.py input.json
-        std::string cmd = pythonPath + " " + tmpScript + " " + tmpInput + " 2>&1";
+        std::string cmd = pythonPath + " " + tmpScript.path + " " + tmpInput.path + " 2>&1";
         spdlog::debug("执行Python工具: {}", cmd);
 
         std::array<char, 4096> buffer{};
         std::string result;
 
-        FILE* pipe = popen(cmd.c_str(), "r");
+        // RAII 管理管道：出错路径自动 pclose
+        struct PipeCloser{
+            void operator()(FILE* f) const noexcept{ if (f) std::ignore = pclose(f); }
+        };
+        std::unique_ptr<FILE, PipeCloser> pipe(popen(cmd.c_str(), "r"));
         if (!pipe) {
-            std::filesystem::remove(tmpScript);
-            std::filesystem::remove(tmpInput);
             co_return std::string("执行脚本失败");
         }
 
-        while (fgets(buffer.data(), buffer.size(), pipe)) {
+        while (fgets(buffer.data(), buffer.size(), pipe.get())) {
             result += buffer.data();
         }
-        int exitCode = pclose(pipe);
-
-        // 清理临时文件
-        std::filesystem::remove(tmpScript);
-        std::filesystem::remove(tmpInput);
+        const int exitCode = pclose(pipe.release());
 
         if (exitCode != 0) {
             spdlog::warn("Python工具执行返回非零: {}, 输出: {}", exitCode, result);

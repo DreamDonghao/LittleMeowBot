@@ -28,7 +28,7 @@ const loadAdmins = async (): Promise<void> => {
     } else {
       admins.value = []
     }
-  } catch (e) {
+  } catch {
     showToast!('网络错误，请检查后端服务', true)
     admins.value = []
   } finally {
