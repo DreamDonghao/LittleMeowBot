@@ -5,7 +5,7 @@
 #include <spdlog/spdlog.h>
 #include <config/Config.hpp>
 #include <algorithm>
-#include <drogon/utils/Utilities.h>
+#include <charconv>
 
 using namespace LittleMeowBot;
 using namespace drogon;
@@ -140,9 +140,11 @@ Task<> AdminController::getUsage(
 ) const{
     int days = 30;
     if (const std::string p = req->getParameter("days"); !p.empty()) {
-        try {
-            days = std::stoi(p);
-        } catch (...) {}
+        // 与 stoi 行为一致：跳过前导空白，解析失败时保留默认值
+        const auto* begin = p.data();
+        const auto* end = p.data() + p.size();
+        while (begin < end && (*begin == ' ' || *begin == '\t')) ++begin;
+        std::from_chars(begin, end, days);
     }
     days = std::clamp(days, 1, 365);
 
@@ -422,9 +424,9 @@ Task<> AdminController::getChatRecords(
     auto result = Database::instance().getChatRecordsWithIds(gid, limit);
 
     // 反转顺序，最新的在底部
-    Json::Value reversed;
-    for (int i = result.size() - 1; i >= 0; i--) {
-        reversed.append(result[i]);
+    Json::Value reversed(Json::arrayValue);
+    for (Json::ArrayIndex i = result.size(); i > 0; --i) {
+        reversed.append(result[i - 1]);
     }
 
     callback(HttpResponse::newHttpJsonResponse(reversed));

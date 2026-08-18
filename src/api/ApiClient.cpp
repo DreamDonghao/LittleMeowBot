@@ -10,12 +10,7 @@
 namespace LittleMeowBot {
     namespace {
         /// @brief 构建模型请求体
-        Json::Value buildModelReq(
-            const Json::Value& messages,
-            const std::string& model,
-            float temperature,
-            float top_p,
-            int max_tokens){
+        Json::Value buildModelReq(const Json::Value& messages,const std::string& model,float temperature,float top_p,int max_tokens){
             Json::Value body;
             body["model"] = model;
             body["temperature"] = temperature;

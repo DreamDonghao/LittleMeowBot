@@ -64,7 +64,7 @@ const loadUsage = async (): Promise<void> => {
     byModel.value = data.by_model || []
     byDay.value = data.by_day || []
     recent.value = data.recent || []
-  } catch (e) {
+  } catch {
     showToast!('网络错误，请检查后端服务', true)
   } finally {
     loading.value = false

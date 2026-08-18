@@ -10,7 +10,6 @@
 #include <json/value.h>
 #include <deque>
 
-
 namespace LittleMeowBot {
     /// @brief 聊天记录管理类
     /// @details 管理单个群组的聊天记录，使用 SQLite 存储。
@@ -23,7 +22,7 @@ namespace LittleMeowBot {
 
         /// @brief 获取群号
         /// @return 群号
-        uint64_t getGroupId() const;
+        [[nodiscard]] uint64_t getGroupId() const;
 
         /// @brief 添加用户消息记录
         /// @param content 消息内容
@@ -36,10 +35,6 @@ namespace LittleMeowBot {
         /// @brief 获取上下文窗口内的聊天记录（水位线之后的最新记录，旧→新）
         /// @return 聊天记录队列
         [[nodiscard]] std::deque<Json::Value> getRecords() const;
-
-        /// @brief 获取聊天记录数量
-        /// @return 记录数量
-        [[nodiscard]] size_t getRecordCount() const;
 
     private:
         uint64_t m_groupId; ///< 群号

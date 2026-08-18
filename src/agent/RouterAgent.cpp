@@ -17,7 +17,7 @@ namespace LittleMeowBot {
         /// @brief 刷屏检测
         [[nodiscard]] bool checkSpam(const QQMessage& message){
             std::string rawMsg = message.getRawMessage();
-            std::erase_if(rawMsg, [](char c) { return std::isspace(c); });
+            std::erase_if(rawMsg, [](const char c) { return std::isspace(static_cast<unsigned char>(c)); });
 
             if (rawMsg.empty()) return true;
             if (rawMsg.length() <= 2) return true;
@@ -89,8 +89,7 @@ namespace LittleMeowBot {
         std::string jsonStr = content.substr(start, end - start + 1);
 
         Json::Value root;
-        Json::Reader reader;
-        if (!reader.parse(jsonStr, root)) {
+        if (Json::Reader reader; !reader.parse(jsonStr, root)) {
             Log::error("[Router] JSON解析失败: {}", jsonStr);
             return std::nullopt;
         }
@@ -198,12 +197,10 @@ namespace LittleMeowBot {
             co_return std::nullopt;
         }
     }
-}
 
-    namespace {
         /// @brief 构造硬规则决策结果
-        RouterDecision makeDecision(RouterDecision::Action action, std::string reason,
-                                    const int maxLength = 25, const bool priority = false){
+        RouterDecision makeDecision(const RouterDecision::Action action, std::string reason,
+                                    int maxLength = 25, bool priority = false){
             RouterDecision decision;
             decision.action = action;
             decision.shouldReply = action == RouterDecision::Action::REPLY;
@@ -214,9 +211,7 @@ namespace LittleMeowBot {
         }
     }
 
-    drogon::Task<RouterDecision>
-
-    route(
+    drogon::Task<RouterDecision> route(
         const ChatRecordManager &chatRecords,
         const MemoryManager &memory,
         const QQMessage &message)  {

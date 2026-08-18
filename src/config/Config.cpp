@@ -11,6 +11,25 @@ namespace LittleMeowBot {
         return config;
     }
 
+    void Config::loadLLMConfig(const std::string_view name, LLMApiConfig& apiConfig, LLMModelParams* modelParams){
+        const auto cfg = Database::instance().getLLMConfig(std::string(name));
+        if (cfg.isNull()) return;
+
+        apiConfig.apiKey = cfg["apiKey"].asString();
+        apiConfig.baseUrl = cfg["baseUrl"].asString();
+        apiConfig.path = cfg["path"].asString();
+        apiConfig.model = cfg["model"].asString();
+        if (cfg.isMember("reasoningEffort")) {
+            apiConfig.reasoningEffort = cfg["reasoningEffort"].asString();
+        }
+
+        if (modelParams) {
+            modelParams->maxTokens = cfg["maxTokens"].asInt();
+            modelParams->temperature = cfg["temperature"].asFloat();
+            modelParams->topP = cfg["topP"].asFloat();
+        }
+    }
+
     void Config::loadFromDatabase(){
         loadLLMConfig("router", router, &routerParams);
         loadLLMConfig("executor", executor, &executorParams);

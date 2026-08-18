@@ -100,7 +100,7 @@ namespace LittleMeowBot {
         // 获取当前时间
         std::string timeStr = currentDateTime();
 
-        // 构造JSON格式的消息（用于缓存）
+        // 构造JSON格式的消息
         Json::Value msgJson;
         msgJson["time"] = timeStr;
         msgJson["sender"]["name"] = config.botName + "(我)";
@@ -113,8 +113,6 @@ namespace LittleMeowBot {
         writerBuilder["indentation"] = "";
         writerBuilder["emitUTF8"] = true;
         std::string formattedMsg = Json::writeString(writerBuilder, msgJson);
-
-        QQMessage::addMessageCache(messageId, formattedMsg);
 
         // 更新聊天记录（保存JSON格式）
         chatRecords.addAssistantRecord(formattedMsg);

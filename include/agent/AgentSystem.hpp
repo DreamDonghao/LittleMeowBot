@@ -9,7 +9,6 @@
 ///          - Router REPLY → Executor 生成回复
 
 #pragma once
-#include "AgentToolManager.hpp"
 #include <model/ChatRecordManager.hpp>
 #include <model/MemoryManager.hpp>
 #include <model/QQMessage.hpp>
@@ -22,9 +21,9 @@
 namespace LittleMeowBot {
     /// @brief Agent 系统单例类
     /// @details 协调两层代理流程，提供统一的消息处理接口
-    class AgentSystem{
+    class AgentSystem {
     public:
-        static AgentSystem& instance();
+        static AgentSystem &instance();
 
         /// @brief 初始化 Agent System（注册工具）
         void initialize();
@@ -34,13 +33,14 @@ namespace LittleMeowBot {
         /// @param memory 长期记忆管理器
         /// @param message QQ 消息
         /// @return 回复内容（如果需要回复）
-        drogon::Task<std::optional<std::string>> process(
-            const ChatRecordManager& chatRecords,
-            const MemoryManager& memory,
-            const QQMessage& message);
+        drogon::Task<std::optional<std::string> > process(
+            const ChatRecordManager &chatRecords,
+            const MemoryManager &memory,
+            const QQMessage &message);
 
     private:
         AgentSystem() = default;
+
         bool m_initialized = false;
 
         // 正在处理中的群聊（防止同时处理多条消息）
@@ -48,7 +48,9 @@ namespace LittleMeowBot {
         std::mutex m_processingMutex;
 
         bool isProcessing(uint64_t groupId);
+
         void markProcessing(uint64_t groupId);
+
         void unmarkProcessing(uint64_t groupId);
     };
 }

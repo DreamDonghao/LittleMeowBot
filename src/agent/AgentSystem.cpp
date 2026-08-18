@@ -66,8 +66,7 @@ namespace LittleMeowBot {
         // ========== Layer 2: Executor Agent（执行回复）==========
         Log::info("[Executor] 执行回复...");
 
-        auto reply = co_await execute(
-            chatRecords, memory, decision);
+        const auto reply = co_await execute(chatRecords, memory, decision);
 
         if (!reply || !reply->shouldReply || reply->content.empty()) {
             Log::error("[Executor] 执行失败或无回复");

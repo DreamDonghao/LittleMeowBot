@@ -4,8 +4,8 @@
 /// @date 2026-04-02
 /// @details 提供完整的数据库管理功能：
 ///          - 群组配置：启用群列表、群名称、消息统计
-///          - 聊天记录：消息缓存、历史记录查询
-///          - 记忆系统：长期记忆存储
+///          - 聊天记录：历史记录查询
+///          - 记忆系统：短期记忆存储
 ///          - 配置管理：LLM配置、知识库配置、QQ Bot配置
 ///          - 自定义工具：工具注册、脚本存储
 ///          使用读写锁保证线程安全，支持运行时迁移
@@ -53,8 +53,6 @@ namespace LittleMeowBot {
         void addChatRecord(uint64_t groupId, const std::string& role, const std::string& content) const;
         std::vector<Json::Value> getChatRecords(uint64_t groupId, int limit = 50) const;
         std::vector<Json::Value> getChatRecordsWithIds(uint64_t groupId, int limit = 50) const;
-        size_t getChatRecordCount(uint64_t groupId) const;
-        void clearOldRecords(uint64_t groupId, int keepLast = 12) const;
 
         /// @brief 获取水位线之后的最新记录（旧→新），limit<=0 表示不限
         std::vector<Json::Value> getChatRecordsSince(uint64_t groupId, uint64_t watermarkId, int limit = 0) const;
@@ -65,28 +63,21 @@ namespace LittleMeowBot {
         //                      长期记忆操作
         // ============================================================
 
-        std::string getShortTermMemory(uint64_t groupId);
+        std::string getShortTermMemory(uint64_t groupId) const;
         void updateShortTermMemory(uint64_t groupId, const std::string& memory) const;
         /// @brief 获取群记忆水位线（最后已提取的聊天记录 id，无记录时为 0）
-        uint64_t getMemoryWatermark(uint64_t groupId);
+        uint64_t getMemoryWatermark(uint64_t groupId) const;
         /// @brief 原子更新记忆与水位线（单条 upsert 语句，崩溃安全）
         void updateShortTermMemoryWithWatermark(uint64_t groupId, const std::string& memory, uint64_t watermarkId) const;
-
-        // ============================================================
-        //                      消息缓存操作
-        // ============================================================
-
-        void cacheMessage(uint64_t messageId, const std::string& formattedText);
-        std::optional<std::string> getCachedMessage(uint64_t messageId);
 
         // ============================================================
         //                      提示词操作
         // ============================================================
 
-        std::string getPrompt(const std::string& key, const std::string& defaultValue = "");
+        std::string getPrompt(const std::string& key, const std::string& defaultValue = "") const;
         void setPrompt(const std::string& key, const std::string& content, const std::string& description = "");
-        bool hasPrompt(const std::string& key);
-        std::unordered_map<std::string, std::string> getAllPrompts();
+        bool hasPrompt(const std::string& key) const;
+        std::unordered_map<std::string, std::string> getAllPrompts() const;
 
         // ============================================================
         //                      启用群聊操作
@@ -96,7 +87,6 @@ namespace LittleMeowBot {
         void enableGroup(uint64_t groupId) const;
         void disableGroup(uint64_t groupId) const;
         std::vector<uint64_t> getEnabledGroups() const;
-        std::vector<std::pair<uint64_t, std::string>> getEnabledGroupsWithNames() const;
 
         /// @brief 获取所有有聊天记录的群（用于聊天记录页面）
         std::vector<std::tuple<uint64_t, std::string, int>> getGroupsWithChatRecords() const;
@@ -117,14 +107,14 @@ namespace LittleMeowBot {
         void clearGroupChatRecords(uint64_t groupId) const;
 
         void updateGroupName(uint64_t groupId, const std::string& name) const;
-        std::string getGroupName(uint64_t groupId);
+        std::string getGroupName(uint64_t groupId) const;
 
         // ============================================================
         //                      管理员操作
         // ============================================================
 
-        bool isAdmin(uint64_t qqNumber);
-        void addAdmin(uint64_t qqNumber);
+        bool isAdmin(uint64_t qqNumber) const;
+        void addAdmin(uint64_t qqNumber) const;
         void removeAdmin(uint64_t qqNumber) const;
         std::vector<uint64_t> getAdmins() const;
 
@@ -143,7 +133,6 @@ namespace LittleMeowBot {
 
         Json::Value getKBConfig() const;
         void saveKBConfig(const Json::Value& config) const;
-        bool hasKBConfig() const;
 
         // ============================================================
         //                      QQ Bot 配置操作
@@ -151,7 +140,6 @@ namespace LittleMeowBot {
 
         Json::Value getQQConfig() const;
         void saveQQConfig(const Json::Value& config) const;
-        bool hasQQConfig() const;
 
         // ============================================================
         //                      记忆配置操作
@@ -159,7 +147,6 @@ namespace LittleMeowBot {
 
         Json::Value getMemoryConfig() const;
         void saveMemoryConfig(const Json::Value& config) const;
-        bool hasMemoryConfig() const;
 
         // ============================================================
         //                      用量统计操作
@@ -230,6 +217,8 @@ namespace LittleMeowBot {
 
         void createTables();
         void migrateDatabase() const;
+        /// @brief 从数据库加载自定义工具（onlyEnabled 时仅加载启用的）
+        std::vector<CustomTool> loadCustomTools(bool onlyEnabled) const;
         void initDefaultLLMConfigs() const;
         void initDefaultKBConfig() const;
         void initDefaultMemoryConfig() const;

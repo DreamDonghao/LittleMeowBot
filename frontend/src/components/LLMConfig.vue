@@ -8,7 +8,7 @@ import type {ApiResponse, LLMConfig} from '../vite-env.d'
 
 const showToast = inject<(msg: string, isError?: boolean) => void>('showToast')
 
-const llmNames: Ref<string[]> = ref(['router', 'executor', 'executorThinking', 'memory', 'image'])
+const llmNames = ['router', 'executor', 'executorThinking', 'memory', 'image']
 const llmLabels: Record<string, string> = {
   router: 'Router',
   executor: 'Executor',

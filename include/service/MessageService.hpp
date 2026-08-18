@@ -15,7 +15,6 @@
 #include <json/value.h>
 #include <string>
 
-
 /// @brief 消息服务 - 封装 QQ 消息发送逻辑，对接 OneBot API
 namespace LittleMeowBot::MessageService {
     /// @brief 将文本中的@格式转换为 CQ 码

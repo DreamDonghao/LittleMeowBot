@@ -28,7 +28,7 @@ const loadEmojis = async (): Promise<void> => {
     if (emojis.value.length === 0) {
       showToast!('收藏表情为空，或 QQ 客户端不在线', true)
     }
-  } catch (e) {
+  } catch {
     showToast!('网络错误，请检查后端服务', true)
     emojis.value = []
   } finally {
@@ -67,7 +67,7 @@ const saveDesc = async (emoji: Emoji): Promise<void> => {
     } else {
       showToast!(data.error || '修改失败', true)
     }
-  } catch (e) {
+  } catch {
     showToast!('网络错误，请检查后端服务', true)
   } finally {
     saving.value = false

@@ -35,33 +35,6 @@ namespace LittleMeowBot {
         spdlog::info("工具注册成功: {} (分类: {})", tool.name, categoryToString(category));
     }
 
-    Json::Value ToolRegistry::getToolsByCategory(ToolCategory category) const {
-        Json::Value tools;
-
-        for (const auto &toolMap = getToolMap(category);
-             const auto &tool: toolMap | std::views::values) {
-            Json::Value toolDef;
-            toolDef["type"] = "function";
-            toolDef["function"]["name"] = tool.name;
-            toolDef["function"]["description"] = tool.description;
-            Json::Value params = tool.parameters.isNull()
-                                     ? Json::Value(Json::objectValue)
-                                     : tool.parameters;
-            if (!params.isNull()) {
-                params["type"] = "object";
-                if (!params.isMember("properties")) {
-                    params["properties"] = Json::Value(Json::objectValue);
-                }
-                if (!params.isMember("required")) {
-                    params["required"] = Json::Value(Json::arrayValue);
-                }
-            }
-            toolDef["function"]["parameters"] = params;
-            tools.append(toolDef);
-        }
-        return tools;
-    }
-
     Json::Value ToolRegistry::getAllTools() const {
         Json::Value tools;
 
@@ -134,35 +107,6 @@ namespace LittleMeowBot {
         return tools;
     }
 
-    Json::Value ToolRegistry::getExecutorTools() const {
-        return getAllTools();
-    }
-
-    Json::Value ToolRegistry::getPlannerInfoTools() const {
-        Json::Value tools;
-        for (const auto &tool: m_infoTools | std::views::values) {
-            Json::Value toolDef;
-            toolDef["type"] = "function";
-            toolDef["function"]["name"] = tool.name;
-            toolDef["function"]["description"] = tool.description;
-            Json::Value params = tool.parameters.isNull()
-                                     ? Json::Value(Json::objectValue)
-                                     : tool.parameters;
-            if (!params.isNull()) {
-                params["type"] = "object";
-                if (!params.isMember("properties")) {
-                    params["properties"] = Json::Value(Json::objectValue);
-                }
-                if (!params.isMember("required")) {
-                    params["required"] = Json::Value(Json::arrayValue);
-                }
-            }
-            toolDef["function"]["parameters"] = params;
-            tools.append(toolDef);
-        }
-        return tools;
-    }
-
     drogon::Task<std::string> ToolRegistry::executeTool(const std::string &name, const Json::Value &args,
                                                         uint64_t groupId) const {
         // 设置上下文
@@ -191,14 +135,6 @@ namespace LittleMeowBot {
                m_actionTools.contains(name);
     }
 
-    bool ToolRegistry::isTerminalTool(const std::string &name) const {
-        return m_terminalTools.contains(name);
-    }
-
-    bool ToolRegistry::isInfoTool(const std::string &name) const {
-        return m_infoTools.contains(name);
-    }
-
     void ToolRegistry::unregisterTool(const std::string &name) {
         m_terminalTools.erase(name);
         m_infoTools.erase(name);
@@ -217,23 +153,6 @@ namespace LittleMeowBot {
         if (!std::ranges::contains(m_customToolNames, name)) {
             m_customToolNames.push_back(name);
         }
-    }
-
-    ToolCategory ToolRegistry::getCategory(const std::string &name) const {
-        if (m_terminalTools.contains(name)) return ToolCategory::TERMINAL;
-        if (m_infoTools.contains(name)) return ToolCategory::INFORMATION;
-        if (m_actionTools.contains(name)) return ToolCategory::ACTION;
-        return ToolCategory::ACTION; // 默认
-    }
-
-    std::vector<std::string> ToolRegistry::getToolNames() const {
-        std::vector<std::string> names;
-
-        for (const auto &name: m_terminalTools | std::views::keys) names.push_back(name);
-        for (const auto &name: m_infoTools | std::views::keys) names.push_back(name);
-        for (const auto &name: m_actionTools | std::views::keys) names.push_back(name);
-
-        return names;
     }
 
     std::string ToolRegistry::getToolsDescription() const {
@@ -258,15 +177,6 @@ namespace LittleMeowBot {
         }
 
         return desc;
-    }
-
-    const std::unordered_map<std::string, Tool> &ToolRegistry::getToolMap(const ToolCategory category) const {
-        switch (category) {
-            case ToolCategory::TERMINAL: return m_terminalTools;
-            case ToolCategory::INFORMATION: return m_infoTools;
-            case ToolCategory::ACTION: return m_actionTools;
-            default: return m_actionTools;
-        }
     }
 
     std::string ToolRegistry::categoryToString(ToolCategory category) {

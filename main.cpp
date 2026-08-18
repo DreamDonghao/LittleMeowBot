@@ -26,7 +26,7 @@ int main(){
         auto& database = Database::instance();
         database.initialize("data/little_meow_bot.db");
 
-        auto& config = LittleMeowBot::Config::instance();
+        auto& config = Config::instance();
         config.loadFromDatabase();
 
         // 初始化 QQ 昵称

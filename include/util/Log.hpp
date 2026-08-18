@@ -29,33 +29,33 @@ namespace LittleMeowBot {
 
         template <typename... Args>
         static void debug(const std::string_view f, const Args&... args){
-            logImpl(Level::debug, std::vformat(std::string(f), std::make_format_args(args...)));
+            logImpl(Level::debug, std::vformat(f, std::make_format_args(args...)));
         }
 
         template <typename... Args>
         static void info(const std::string_view f, const Args&... args){
-            logImpl(Level::info, std::vformat(std::string(f), std::make_format_args(args...)));
+            logImpl(Level::info, std::vformat(f, std::make_format_args(args...)));
         }
 
         template <typename... Args>
         static void warn(const std::string_view f, const Args&... args){
-            logImpl(Level::warn, std::vformat(std::string(f), std::make_format_args(args...)));
+            logImpl(Level::warn, std::vformat(f, std::make_format_args(args...)));
         }
 
         template <typename... Args>
         static void error(const std::string_view f, const Args&... args){
-            logImpl(Level::err, std::vformat(std::string(f), std::make_format_args(args...)));
+            logImpl(Level::err, std::vformat(f, std::make_format_args(args...)));
         }
 
         template <typename... Args>
         static void fatal(const std::string_view f, const Args&... args){
-            logImpl(Level::critical, std::vformat(std::string(f), std::make_format_args(args...)));
+            logImpl(Level::critical, std::vformat(f, std::make_format_args(args...)));
         }
 
     private:
         static std::shared_ptr<spdlog::logger> s_logger;
 
-        static void logImpl(Level level, std::string msg){
+        static void logImpl(Level level, const std::string_view msg){
             if (!s_logger) return;
             s_logger->log(level, msg);
         }
