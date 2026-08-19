@@ -8,17 +8,8 @@ set(BUILD_SHARED_LIBS OFF)
 
 find_package(Drogon CONFIG REQUIRED)
 # 若 Drogon 没有 SQLite3 应用独立的包
-if(NOT TARGET SQLite3_lib)
+if(NOT TARGET SQLite3 AND NOT TARGET SQLite3::SQLite3 AND NOT TARGET SQLite3_lib)
     find_package(SQLite3 REQUIRED)
-    if(TARGET SQLite3::SQLite3)
-        add_library(SQLite3_lib ALIAS SQLite3::SQLite3)
-    else()
-        # 如果找不到目标，则使用变量
-        add_library(SQLite3_lib UNKNOWN IMPORTED)
-        set_target_properties(SQLite3_lib PROPERTIES
-                IMPORTED_LOCATION ${SQLITE3_LIBRARIES}
-                INTERFACE_INCLUDE_DIRECTORIES ${SQLITE3_INCLUDE_DIRS})
-    endif()
 endif()
 find_package(spdlog REQUIRED)
 find_package(fmt CONFIG REQUIRED)
