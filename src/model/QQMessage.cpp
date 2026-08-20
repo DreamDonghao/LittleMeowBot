@@ -4,68 +4,66 @@
 #include <model/QQMessage.hpp>
 #include <api/ApiClient.hpp>
 #include <util/tool.h>
+#include <util/HttpUtil.hpp>
 #include <spdlog/spdlog.h>
 #include <fstream>
 #include <config/Config.hpp>
+#include <utility>
 
 namespace LittleMeowBot {
-    drogon::Task<std::string> getImageDescribe(const std::string& imageUrl){
-        const auto& config = Config::instance();
-        const auto client = drogon::HttpClient::newHttpClient(config.image.baseUrl);
-        Json::Value body;
-        body["model"] = config.image.model;
-        body["messages"] = parseJson(fmt::format(
-            R"([{{"role":"user","content":[
+    namespace {
+        drogon::Task<std::string> getImageDescribe(const std::string &imageUrl) {
+            const auto &config = Config::instance();
+            Json::Value body;
+            body["model"] = config.image.model;
+            body["messages"] = parseJson(fmt::format(
+                R"([{{"role":"user","content":[
                     {{"type":"image_url","image_url":{{"url":"{}"}}}},
                     {{"type":"text","text":"用不到150字描述这张图片"}}
-    ]}}])",
-            imageUrl));
-        body["temperature"] = 0.7;
-        body["max_tokens"] = 300;
-        body["top_p"] = 0.92;
+            ]}}])", imageUrl));
+            body["temperature"] = 0.7;
+            body["max_tokens"] = 300;
+            body["top_p"] = 0.92;
 
-        const auto req = drogon::HttpRequest::newHttpJsonRequest(body);
-        req->setMethod(drogon::Post);
-        req->setPath(config.image.path);
-        req->addHeader("Authorization", "Bearer " + config.image.apiKey);
+            const auto resp = co_await HttpUtil::send("[Image]", config.image.baseUrl, config.image.path,
+                                                      drogon::Post, body, config.image.apiKey, 90.0);
+            if (!resp) {
+                co_return "无法识别图片";
+            }
+            if ((*resp)->getStatusCode() != drogon::k200OK) {
+                spdlog::error("[Image] 图像描述请求失败: status={}",
+                              static_cast<int>((*resp)->getStatusCode()));
+                co_return "无法识别图片";
+            }
+            const auto json = (*resp)->getJsonObject();
+            if (!json || !json->isMember("choices")) {
+                spdlog::error("[Image] 图像描述响应格式错误");
+                co_return "图片识别失败";
+            }
+            const auto &choices = (*json)["choices"];
+            const auto &content = choices[0]["message"]["content"].asString();
 
-        const auto resp = co_await client->sendRequestCoro(req, 90.0);
-        if (resp->getStatusCode() != drogon::k200OK) {
-            spdlog::error("图像描述请求失败: status={}",static_cast<int>( resp->getStatusCode()));
-            co_return "无法识别图片";
+            ApiClient::logUsage(*json, config.image.model);
+
+            co_return content;
         }
-        const auto json = resp->getJsonObject();
-        if (!json || !json->isMember("choices")) {
-            spdlog::error("图像描述响应格式错误");
-            co_return "图片识别失败";
-        }
-        const auto& choices = (*json)["choices"];
-        const auto& content = choices[0]["message"]["content"].asString();
-
-        ApiClient::logUsage(*json, config.image.model);
-
-        co_return content;
     }
 
-    QQMessage::QQMessage(const Json::Value& qqMessageJson){
-        setMessageJson(qqMessageJson);
-    }
-
-    void QQMessage::setMessageJson(const Json::Value& qqMessageJson){
-        m_qqMessageJson = &qqMessageJson;
+    QQMessage::QQMessage(Json::Value qqMessageJson)
+        : m_qqMessageJson(std::move(qqMessageJson)) {
         const Json::UInt64 qqNumber = getSenderQQNumber();
         const Json::UInt64 selfQQ = getSelfQQNumber();
         if (m_customQQNameMap.contains(qqNumber)) {
             m_QQNameMap[qqNumber] = m_customQQNameMap[qqNumber];
         } else {
             std::string name = getSenderQQName();
-            if (const std::string& botName = Config::instance().botName;
+            if (const std::string &botName = Config::instance().botName;
                 name.find(botName) != std::string::npos && qqNumber != selfQQ) {
                 name += "(昵称也为" + botName + "，但不是我)";
             }
             m_QQNameMap[qqNumber] = name;
         }
-        for (const auto& item : (*m_qqMessageJson)["message"]) {
+        for (const auto &item: m_qqMessageJson["message"]) {
             if (item["type"] == "at") {
                 if (parseUInt64(item["data"]["qq"].asString()) == getSelfQQNumber()) {
                     m_isAtMe = true;
@@ -76,23 +74,28 @@ namespace LittleMeowBot {
         }
     }
 
-    bool QQMessage::atMe() const{ return m_isAtMe; }
-    Json::UInt64 QQMessage::getGroupId() const{ return (*m_qqMessageJson)["group_id"].asUInt64(); }
-    Json::UInt64 QQMessage::getSelfQQNumber() const{ return (*m_qqMessageJson)["self_id"].asUInt64(); }
-    Json::UInt64 QQMessage::getSenderQQNumber() const{ return (*m_qqMessageJson)["sender"]["user_id"].asUInt64(); }
-    Json::String QQMessage::getSenderQQName() const{ return (*m_qqMessageJson)["sender"]["nickname"].asString(); }
-    Json::UInt64 QQMessage::getMessageId() const{ return (*m_qqMessageJson)["message_id"].asUInt64(); }
+    bool QQMessage::atMe() const { return m_isAtMe; }
 
-    drogon::Task<> QQMessage::formatMessage(){
+    Json::UInt64 QQMessage::getGroupId() const { return m_qqMessageJson["group_id"].asUInt64(); }
+
+    Json::UInt64 QQMessage::getSelfQQNumber() const { return m_qqMessageJson["self_id"].asUInt64(); }
+
+    Json::UInt64 QQMessage::getSenderQQNumber() const { return m_qqMessageJson["sender"]["user_id"].asUInt64(); }
+
+    Json::String QQMessage::getSenderQQName() const { return m_qqMessageJson["sender"]["nickname"].asString(); }
+
+    Json::UInt64 QQMessage::getMessageId() const { return m_qqMessageJson["message_id"].asUInt64(); }
+
+    drogon::Task<> QQMessage::formatMessage() {
         const uint64_t senderQQ = getSenderQQNumber();
         const uint64_t msgId = getMessageId();
-        const std::string senderName = std::string(getQQName(senderQQ));
+        const auto senderName = std::string(getQQName(senderQQ));
         const std::string timeStr = currentDateTime();
 
         // 构建消息内容
         std::string textContent;
         Json::Value images(Json::arrayValue);
-        for (const auto& item : (*m_qqMessageJson)["message"]) {
+        for (const auto &item: m_qqMessageJson["message"]) {
             if (item["type"] == "text") {
                 textContent += item["data"]["text"].asString();
             } else if (item["type"] == "at") {
@@ -134,24 +137,25 @@ namespace LittleMeowBot {
         co_return;
     }
 
-    Json::String QQMessage::getFormatMessage() const{ return m_formatMessage; }
-    std::string QQMessage::getRawMessage() const{ return (*m_qqMessageJson)["raw_message"].asString(); }
+    Json::String QQMessage::getFormatMessage() const { return m_formatMessage; }
 
-    void QQMessage::setCustomQQName(const Json::UInt64 qqNumber, const Json::String& qqName){
+    std::string QQMessage::getRawMessage() const { return m_qqMessageJson["raw_message"].asString(); }
+
+    void QQMessage::setCustomQQName(const Json::UInt64 qqNumber, const Json::String &qqName) {
         m_customQQNameMap[qqNumber] = qqName;
         m_QQNameMap[qqNumber] = qqName;
     }
 
-    Json::String QQMessage::getQQName(const Json::UInt64 qqNumber){
+    Json::String QQMessage::getQQName(const Json::UInt64 qqNumber) {
         if (m_QQNameMap.contains(qqNumber)) {
             return m_QQNameMap[qqNumber];
         }
         return "未知";
     }
 
-    std::unordered_map<std::string, uint64_t> QQMessage::getNameToQQMap(){
+    std::unordered_map<std::string, uint64_t> QQMessage::getNameToQQMap() {
         std::unordered_map<std::string, uint64_t> nameToQQ;
-        for (const auto& [qq, name] : m_QQNameMap) {
+        for (const auto &[qq, name]: m_QQNameMap) {
             nameToQQ[name] = qq;
         }
         return nameToQQ;

@@ -19,7 +19,7 @@ namespace LittleMeowBot {
     public:
         /// @brief 构造函数，从 JSON 解析消息
         /// @param qqMessageJson OneBot 消息 JSON
-        explicit QQMessage(const Json::Value& qqMessageJson);
+        explicit QQMessage(Json::Value  qqMessageJson);
 
         /// @brief 检查是否 @ 了机器人
         /// @return 是否 @ 了机器人
@@ -76,7 +76,7 @@ namespace LittleMeowBot {
         /// @return 发送者昵称
         [[nodiscard]] Json::String getSenderQQName() const;
 
-        const Json::Value* m_qqMessageJson{}; ///< OneBot 消息 JSON 指针
+        const Json::Value m_qqMessageJson{}; ///< OneBot 消息 JSON 指针
         Json::String m_formatMessage;         ///< 格式化后的消息（JSON格式）
         uint64_t m_replyTo{0};                ///< 引用的消息ID
         bool m_isAtMe{false};                 ///< 是否 @ 了机器人

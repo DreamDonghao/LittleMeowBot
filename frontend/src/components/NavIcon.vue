@@ -7,8 +7,13 @@ defineProps<{ name: string }>()
 </script>
 
 <template>
+  <!-- 首页 -->
+  <svg v-if="name === 'home'" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+    <polyline points="9 22 9 12 15 12 15 22"/>
+  </svg>
   <!-- LLM配置 -->
-  <svg v-if="name === 'llm'" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+  <svg v-else-if="name === 'llm'" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
     <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
   </svg>
   <!-- 提示词 -->
@@ -37,10 +42,6 @@ defineProps<{ name: string }>()
     <path d="M17 8h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2v4l-4-4H9a2 2 0 0 1-2-2v-1"/>
     <path d="M15 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2v4l4-4"/>
   </svg>
-  <!-- 聊天记录 -->
-  <svg v-else-if="name === 'chat'" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-  </svg>
   <!-- 知识库 -->
   <svg v-else-if="name === 'kb'" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
     <circle cx="12" cy="12" r="10"/>
@@ -56,6 +57,12 @@ defineProps<{ name: string }>()
   <svg v-else-if="name === 'qq'" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
     <path
         d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+  </svg>
+  <!-- 关于 -->
+  <svg v-else-if="name === 'info'" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="10"/>
+    <line x1="12" x2="12" y1="16" y2="12"/>
+    <line x1="12" x2="12.01" y1="8" y2="8"/>
   </svg>
   <!-- 自定义工具 -->
   <svg v-else-if="name === 'tool'" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">

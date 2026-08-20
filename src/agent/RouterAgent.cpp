@@ -5,8 +5,8 @@
 #include <api/ApiClient.hpp>
 #include <config/Config.hpp>
 #include <service/PromptService.hpp>
+#include <util/HttpUtil.hpp>
 #include <spdlog/spdlog.h>
-#include <util/Log.hpp>
 #include <fmt/core.h>
 #include <regex>
 #include <ranges>
@@ -44,7 +44,7 @@ namespace LittleMeowBot {
 
         const auto &records = chatRecords.getRecords();
         const size_t windowSize = keep + (records.size() % slide);
-        const size_t startIdx = records.size() > windowSize ? records.size() - windowSize : 0;
+        const size_t startIdx = std::ssize(records) > windowSize ? std::ssize(records) - windowSize : 0;
 
         std::string context = "【聊天记录】（最后一条是当前消息）\n";
         bool spokeInWindow = false;
@@ -82,7 +82,7 @@ namespace LittleMeowBot {
         size_t start = content.find('{');
         size_t end = content.rfind('}');
         if (start == std::string::npos || end == std::string::npos) {
-            Log::error("[Router] 未找到JSON: {}", content);
+            spdlog::error("[Router] 未找到JSON: {}", content);
             return std::nullopt;
         }
 
@@ -90,7 +90,7 @@ namespace LittleMeowBot {
 
         Json::Value root;
         if (Json::Reader reader; !reader.parse(jsonStr, root)) {
-            Log::error("[Router] JSON解析失败: {}", jsonStr);
+            spdlog::error("[Router] JSON解析失败: {}", jsonStr);
             return std::nullopt;
         }
 
@@ -157,9 +157,6 @@ namespace LittleMeowBot {
 
         const Json::Value messages = buildPrompt(chatRecords, memory);
 
-        Log::debug("[Router] LLM请求: model={}", config.router.model);
-
-        const auto client = drogon::HttpClient::newHttpClient(config.router.baseUrl);
         Json::Value body;
         body["model"] = config.router.model;
         body["messages"] = messages;
@@ -170,32 +167,25 @@ namespace LittleMeowBot {
             body["reasoning_effort"] = config.router.reasoningEffort;
         }
 
-        const auto req = drogon::HttpRequest::newHttpJsonRequest(body);
-        req->setMethod(drogon::Post);
-        req->setPath(config.router.path);
-        req->addHeader("Authorization", "Bearer " + config.router.apiKey);
-        req->addHeader("Content-Type", "application/json");
-
-        try {
-            const auto resp = co_await client->sendRequestCoro(req, 90.0);
-            const auto json = resp->getJsonObject();
-
-            if (resp->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
-                Log::error("[Router] LLM请求失败: status={}",
-                           static_cast<int>(resp->getStatusCode()));
-                co_return std::nullopt;
-            }
-
-            ApiClient::logUsage(*json, config.router.model);
-
-            const std::string content = (*json)["choices"][0]["message"]["content"].asString();
-            Log::info("[Router] LLM响应: {}", content);
-
-            co_return parseResponse(content);
-        } catch (const std::exception& e) {
-            Log::error("[Router] LLM请求异常: {}", e.what());
+        const auto resp = co_await HttpUtil::send("[Router]", config.router.baseUrl, config.router.path,
+                                                  drogon::Post, body, config.router.apiKey, 90.0);
+        if (!resp) {
             co_return std::nullopt;
         }
+
+        const auto json = (*resp)->getJsonObject();
+        if ((*resp)->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
+            spdlog::error("[Router] LLM请求失败: status={}",
+                       static_cast<int>((*resp)->getStatusCode()));
+            co_return std::nullopt;
+        }
+
+        ApiClient::logUsage(*json, config.router.model);
+
+        const std::string content = (*json)["choices"][0]["message"]["content"].asString();
+        spdlog::info("[Router] LLM响应: {}", content);
+
+        co_return parseResponse(content);
     }
 
         /// @brief 构造硬规则决策结果
@@ -219,19 +209,19 @@ namespace LittleMeowBot {
 
         // 1.1 @提及检测 → 高优先级回复
         if (message.atMe()) {
-            Log::info("[Router] @提及 → 高优先级回复");
+            spdlog::info("[Router] @提及 → 高优先级回复");
             co_return makeDecision(RouterDecision::Action::REPLY, "用户@提及", 100, true);
         }
 
         // 1.2 刷屏检测 → 跳过
         if (checkSpam(message)) {
-            Log::info("[Router] 刷屏消息 → 跳过");
+            spdlog::info("[Router] 刷屏消息 → 跳过");
             co_return makeDecision(RouterDecision::Action::SKIP, "刷屏/纯表情");
         }
 
         // 1.3 自身消息检测 → 跳过
         if (message.getSelfQQNumber() == message.getSenderQQNumber()) {
-            Log::info("[Router] 自身消息 → 跳过");
+            spdlog::info("[Router] 自身消息 → 跳过");
             co_return makeDecision(RouterDecision::Action::SKIP, "机器人自己发送的消息");
         }
 
@@ -240,11 +230,11 @@ namespace LittleMeowBot {
 
         if (!llmDecision) {
             // LLM 失败时默认回复（保守策略）
-            Log::warn("[Router] LLM 失败，默认回复");
+            spdlog::warn("[Router] LLM 失败，默认回复");
             co_return makeDecision(RouterDecision::Action::REPLY, "LLM调用失败，保守回复");
         }
 
-        Log::info("[Router] 决策: {} ({})",
+        spdlog::info("[Router] 决策: {} ({})",
                   llmDecision->action, llmDecision->reason);
 
         co_return llmDecision.value();

@@ -3,22 +3,23 @@
  * @file App.vue
  * @brief 主应用组件 - 管理后台入口
  */
-import {onMounted, provide, reactive, ref, type Ref} from 'vue'
+import {computed, onMounted, provide, reactive, ref, type Ref} from 'vue'
 import {useToast} from './composables/useToast'
 import type {QQConfig as QQConfigType} from './vite-env.d'
 
 import NavIcon from './components/NavIcon.vue'
+import Dashboard from './components/Dashboard.vue'
 import LLMConfig from './components/LLMConfig.vue'
 import PromptEditor from './components/PromptEditor.vue'
 import EmojiManager from './components/EmojiManager.vue'
 import AdminManager from './components/AdminManager.vue'
 import GroupManager from './components/GroupManager.vue'
-import ChatRecords from './components/ChatRecords.vue'
 import KBConfig from './components/KBConfig.vue'
 import MemoryConfig from './components/MemoryConfig.vue'
 import QQConfigVue from './components/QQConfig.vue'
 import CustomTools from './components/CustomTools.vue'
 import UsageStats from './components/UsageStats.vue'
+import About from './components/About.vue'
 
 interface NavItem {
   key: string
@@ -27,21 +28,49 @@ interface NavItem {
 }
 
 // 导航配置
-const navItems: NavItem[] = [
+const systemNavItems: NavItem[] = [
   {key: 'llm', label: 'LLM配置', icon: 'llm'},
+  {key: 'qqConfig', label: 'OneBot 配置', icon: 'qq'},
   {key: 'prompts', label: '提示词', icon: 'prompts'},
   {key: 'customTools', label: '自定义工具', icon: 'tool'},
+  {key: 'kb', label: '知识库配置', icon: 'kb'},
+  {key: 'memoryConfig', label: '记忆与上下文', icon: 'memory'}
+]
+
+const dailyNavItems: NavItem[] = [
+  {key: 'dashboard', label: '首页', icon: 'home'},
   {key: 'emojis', label: '表情库', icon: 'emojis'},
   {key: 'admins', label: '管理员', icon: 'admins'},
   {key: 'groups', label: '群管理', icon: 'groups'},
-  {key: 'chatRecords', label: '聊天记录', icon: 'chat'},
-  {key: 'kb', label: '知识库配置', icon: 'kb'},
-  {key: 'memoryConfig', label: '记忆与上下文', icon: 'memory'},
-  {key: 'qqConfig', label: 'OneBot 配置', icon: 'qq'},
   {key: 'usage', label: '用量统计', icon: 'memory'}
 ]
 
-const currentView: Ref<string> = ref('llm')
+const currentView: Ref<string> = ref('dashboard')
+
+// 主题切换
+const theme: Ref<'light' | 'dark'> = ref('light')
+
+const applyTheme = (): void => {
+  document.documentElement.setAttribute('data-theme', theme.value)
+  localStorage.setItem('theme', theme.value)
+}
+
+const initTheme = (): void => {
+  const saved = localStorage.getItem('theme')
+  if (saved === 'light' || saved === 'dark') {
+    theme.value = saved
+  } else {
+    theme.value = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  }
+  applyTheme()
+}
+
+const toggleTheme = (): void => {
+  theme.value = theme.value === 'dark' ? 'light' : 'dark'
+  applyTheme()
+}
+
+initTheme()
 
 // 全局 Toast
 const {toast, toastError, showToast} = useToast()
@@ -53,6 +82,14 @@ const qqConfig = reactive<QQConfigType>({
   qqHttpHost: '',
   botName: '小喵'
 })
+
+// Bot 头像（QQ 公开头像 CDN，失败时回退为线条图标）
+const avatarUrl = computed<string>(() => {
+  return qqConfig.selfQQNumber > 0
+    ? `https://q1.qlogo.cn/g?b=qq&nk=${qqConfig.selfQQNumber}&s=100`
+    : ''
+})
+const avatarFailed: Ref<boolean> = ref(false)
 
 // WebSocket
 const wsConnected: Ref<boolean> = ref(false)
@@ -94,7 +131,14 @@ onMounted(async () => {
     <div class="sidebar">
       <div class="sidebar-header">
         <div class="sidebar-logo">
-          <div class="logo-icon">🐱</div>
+          <div class="logo-icon">
+            <img v-if="avatarUrl && !avatarFailed" :alt="qqConfig.botName" :src="avatarUrl"
+                 @error="avatarFailed = true">
+            <svg v-else fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
+                 stroke-width="2" viewBox="0 0 24 24">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+          </div>
           <div>
             <div class="sidebar-title">LittleMeowBot</div>
             <div class="sidebar-subtitle">管理后台</div>
@@ -104,9 +148,8 @@ onMounted(async () => {
 
       <nav class="sidebar-nav">
         <div class="nav-section">
-          <div class="nav-section-title">配置管理</div>
           <div
-              v-for="item in navItems"
+              v-for="item in dailyNavItems"
               :key="item.key"
               :class="{ active: currentView === item.key }"
               class="nav-item"
@@ -116,22 +159,73 @@ onMounted(async () => {
             {{ item.label }}
           </div>
         </div>
+
+        <div class="nav-divider"></div>
+
+        <div class="nav-section">
+          <div
+              v-for="item in systemNavItems"
+              :key="item.key"
+              :class="{ active: currentView === item.key }"
+              class="nav-item"
+              @click="currentView = item.key"
+          >
+            <NavIcon :name="item.icon"/>
+            {{ item.label }}
+          </div>
+        </div>
+
+        <div class="nav-divider"></div>
+
+        <div class="nav-section">
+          <div
+              :class="{ active: currentView === 'about' }"
+              class="nav-item"
+              @click="currentView = 'about'"
+          >
+            <NavIcon name="info"/>
+            关于
+          </div>
+        </div>
       </nav>
+
+      <div class="sidebar-footer">
+        <button class="theme-toggle" type="button" @click="toggleTheme">
+          <!-- 太阳 -->
+          <svg v-if="theme === 'dark'" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="5"/>
+            <line x1="12" x2="12" y1="1" y2="3"/>
+            <line x1="12" x2="12" y1="21" y2="23"/>
+            <line x1="4.22" x2="5.64" y1="4.22" y2="5.64"/>
+            <line x1="18.36" x2="19.78" y1="18.36" y2="19.78"/>
+            <line x1="1" x2="3" y1="12" y2="12"/>
+            <line x1="21" x2="23" y1="12" y2="12"/>
+            <line x1="4.22" x2="5.64" y1="19.78" y2="18.36"/>
+            <line x1="18.36" x2="19.78" y1="5.64" y2="4.22"/>
+          </svg>
+          <!-- 月亮 -->
+          <svg v-else fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+          {{ theme === 'dark' ? '浅色模式' : '深色模式' }}
+        </button>
+      </div>
     </div>
 
     <!-- 主内容区 -->
     <div class="main">
-      <LLMConfig v-if="currentView === 'llm'"/>
+      <Dashboard v-if="currentView === 'dashboard'"/>
+      <LLMConfig v-else-if="currentView === 'llm'"/>
       <PromptEditor v-else-if="currentView === 'prompts'"/>
       <CustomTools v-else-if="currentView === 'customTools'"/>
       <EmojiManager v-else-if="currentView === 'emojis'"/>
       <AdminManager v-else-if="currentView === 'admins'"/>
       <GroupManager v-else-if="currentView === 'groups'"/>
-      <ChatRecords v-else-if="currentView === 'chatRecords'"/>
       <KBConfig v-else-if="currentView === 'kb'"/>
       <MemoryConfig v-else-if="currentView === 'memoryConfig'"/>
       <QQConfigVue v-else-if="currentView === 'qqConfig'"/>
       <UsageStats v-else-if="currentView === 'usage'"/>
+      <About v-else-if="currentView === 'about'"/>
     </div>
   </div>
 

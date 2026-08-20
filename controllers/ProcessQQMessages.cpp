@@ -1,7 +1,6 @@
 #include "ProcessQQMessages.h"
 #include <regex>
 #include <agent/AgentSystem.hpp>
-#include <config/Config.hpp>
 #include <handler/CommandHandler.hpp>
 #include <model/ChatRecordManager.hpp>
 #include <model/GroupConfigManager.hpp>
@@ -12,15 +11,34 @@
 #include <service/WebSocketManager.hpp>
 #include <storage/Database.hpp>
 #include <spdlog/spdlog.h>
-#include <util/Log.hpp>
 
 using namespace LittleMeowBot;
 using namespace drogon;
 
-Task<> ProcessQQMessages::receiveMessages(
-    const HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+namespace {
+    /// @brief 拆分表情包 CQ 码和文字，分开发送（表情包先，文字后）
+    /// @param content 代理生成的回复内容
+    /// @return {表情包部分, 文字部分}
+    [[nodiscard]] std::pair<std::string, std::string> splitCqAndText(const std::string &content) {
+        thread_local const std::regex cqPattern(R"(\[CQ:mface,[^\]]*\]|\[CQ:image,[^\]]*sub_type=1[^\]]*\])");
+
+        std::string cqPart;
+        for (auto it = std::sregex_iterator(content.begin(), content.end(), cqPattern); it != std::sregex_iterator();
+             ++it) {
+            cqPart += it->str();
+        }
+        std::string textPart = std::regex_replace(content, cqPattern, "");
+        if (const size_t b = textPart.find_first_not_of(" \t\n\r"); b != std::string::npos) {
+            textPart = textPart.substr(b, textPart.find_last_not_of(" \t\n\r") - b + 1);
+        } else {
+            textPart.clear();
+        }
+        return {cqPart, textPart};
+    }
+} // namespace
+
+Task<> ProcessQQMessages::receiveMessages(const HttpRequestPtr req,
+                                          std::function<void(const HttpResponsePtr &)> callback) {
     const auto json = req->getJsonObject();
     if (!json || !json->isObject()) {
         auto resp = HttpResponse::newHttpResponse();
@@ -29,7 +47,6 @@ Task<> ProcessQQMessages::receiveMessages(
         callback(resp);
         co_return;
     }
-
     // 检查 post_type 字段
     if (!json->isMember("post_type") || (*json)["post_type"].asString() != "message") {
         Json::Value resp;
@@ -37,62 +54,52 @@ Task<> ProcessQQMessages::receiveMessages(
         callback(HttpResponse::newHttpJsonResponse(resp));
         co_return;
     }
-
     // 返回响应
     Json::Value respJson;
     respJson["status"] = "ok";
     callback(HttpResponse::newHttpJsonResponse(respJson));
 
-    auto &config = Config::instance();
+
     auto &groupConfigMgr = GroupConfigManager::instance();
 
     QQMessage qqMessage(*json);
     uint64_t groupId = qqMessage.getGroupId(); ///< 当前消息的群号
+    // 确保群配置存在
+    if (!groupConfigMgr.contains(groupId)) {
+        groupConfigMgr.addConfig(groupId);
+    }
+    // 格式化消息
+    co_await qqMessage.formatMessage();
 
     // 检查是否是命令消息（@ 且以 / 开头）- 不受群启用状态影响
-    if (auto &commandHandler = CommandHandler::instance();
-        commandHandler.isCommand(qqMessage)
-    ) {
+    if (isCommand(qqMessage)) {
         spdlog::info("收到命令消息: {}", qqMessage.getRawMessage());
 
-        // 确保群配置存在
-        if (!groupConfigMgr.contains(groupId)) {
-            groupConfigMgr.addConfig(groupId);
-        }
-
         ChatRecordManager chatRecords(groupId);
-        co_await qqMessage.formatMessage();
 
-        std::string cmdResponse = co_await commandHandler.handleCommand(qqMessage, chatRecords);
+        std::string cmdResponse = co_await handleCommand(qqMessage, chatRecords);
         co_await MessageService::sendGroupMsg(groupId, cmdResponse, chatRecords);
         co_return;
     }
 
     // 只处理启用的群（从数据库读取）
-    if (auto &database = Database::instance();
-        !database.isGroupEnabled(groupId)
-    ) {
+    if (auto &database = Database::instance(); !database.isGroupEnabled(groupId)) {
         co_return;
-    }
-
-    // 确保群配置存在
-    if (!groupConfigMgr.contains(groupId)) {
-        groupConfigMgr.addConfig(groupId);
     }
 
     // 创建聊天记录和记忆管理器
     ChatRecordManager chatRecords(groupId);
     MemoryManager memory(groupId);
 
-    // 格式化消息
-    co_await qqMessage.formatMessage();
+    auto &webSocketManager = WebSocketManager::instance();
+
     // 记录新的聊天消息
     if (qqMessage.getSelfQQNumber() == qqMessage.getSenderQQNumber()) {
         chatRecords.addAssistantRecord(qqMessage.getFormatMessage());
-        WebSocketManager::instance().pushMessage(groupId, "assistant", qqMessage.getFormatMessage());
+        webSocketManager.pushMessage(groupId, "assistant", qqMessage.getFormatMessage());
     } else {
         chatRecords.addUserRecord(qqMessage.getFormatMessage());
-        WebSocketManager::instance().pushMessage(groupId, "user", qqMessage.getFormatMessage());
+        webSocketManager.pushMessage(groupId, "user", qqMessage.getFormatMessage());
     }
 
     // 处理消息回复 - 使用多层代理架构
@@ -105,21 +112,7 @@ Task<> ProcessQQMessages::receiveMessages(
             spdlog::info("多层代理决定回复");
 
             // 拆分表情包和文字，分开发送（表情包先，文字后）
-            const std::string &content = result.value();
-            static thread_local const std::regex cqPattern(
-                R"(\[CQ:mface,[^\]]*\]|\[CQ:image,[^\]]*sub_type=1[^\]]*\])");
-
-            std::string cqPart;
-            for (auto it = std::sregex_iterator(content.begin(), content.end(), cqPattern);
-                 it != std::sregex_iterator(); ++it) {
-                cqPart += it->str();
-            }
-            std::string textPart = std::regex_replace(content, cqPattern, "");
-            if (const size_t b = textPart.find_first_not_of(" \t\n\r"); b != std::string::npos) {
-                textPart = textPart.substr(b, textPart.find_last_not_of(" \t\n\r") - b + 1);
-            } else {
-                textPart.clear();
-            }
+            const auto [cqPart, textPart] = splitCqAndText(result.value());
 
             if (!cqPart.empty()) {
                 co_await MessageService::sendGroupMsg(groupId, cqPart, chatRecords);
@@ -130,19 +123,19 @@ Task<> ProcessQQMessages::receiveMessages(
         } else {
             spdlog::info("多层代理决定不回复");
         }
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         spdlog::error("消息处理异常: {}", e.what());
     }
 
     // 更新统计
     groupConfigMgr.incrementMessageCount(groupId, qqMessage.getFormatMessage().size());
     auto [allMesCount, allCharCount] = groupConfigMgr.getConfig(groupId);
-    Log::info("群聊统计数据 {} :接收总消息数{}条,接收总字符(字节)数{}个", groupId, allMesCount, allCharCount);
+    spdlog::info("群聊统计数据 {} :接收总消息数{}条,接收总字符(字节)数{}个", groupId, allMesCount, allCharCount);
 
     // 记忆提取与窗口滑动 - 窗口超限时触发（失败自愈：下条消息重试）
     try {
         co_await MemoryService::appendAndMergeMemory(groupId);
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         spdlog::error("群 {} 记忆提取异常: {}", groupId, e.what());
     }
 }

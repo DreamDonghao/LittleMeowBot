@@ -4,6 +4,7 @@
 #include <service/ToolRegistry.hpp>
 #include <spdlog/spdlog.h>
 #include <config/Config.hpp>
+#include <util/HttpUtil.hpp>
 #include <algorithm>
 #include <charconv>
 
@@ -177,7 +178,6 @@ Task<> AdminController::updateEmojiDesc(
     }
 
     const auto& config = Config::instance();
-    const auto client = drogon::HttpClient::newHttpClient(config.qqHttpHost);
 
     Json::Value body;
     body["emoji_id"] = json->isMember("emoji_id") ? (*json)["emoji_id"].asString() : "0";
@@ -185,27 +185,20 @@ Task<> AdminController::updateEmojiDesc(
     body["md5"] = json->isMember("md5") ? (*json)["md5"].asString() : "";
     body["desc"] = (*json)["desc"].asString();
 
-    const auto httpReq = drogon::HttpRequest::newHttpJsonRequest(body);
-    httpReq->setMethod(drogon::Post);
-    httpReq->setPath("/set_custom_face_desc");
-    httpReq->addHeader("Authorization", "Bearer " + config.accessToken);
-
-    drogon::HttpResponsePtr resp;
-    try {
-        resp = co_await client->sendRequestCoro(httpReq, 30.0);
-    } catch (const std::exception& e) {
-        spdlog::error("[Admin] 修改表情描述网络异常: {}", e.what());
+    const auto resp = co_await HttpUtil::send("[Admin]", config.qqHttpHost, "/set_custom_face_desc",
+                                              drogon::Post, body, config.accessToken, 30.0);
+    if (!resp) {
         Json::Value err;
         err["error"] = "修改表情描述失败，请确认 QQ 客户端在线";
         callback(HttpResponse::newHttpJsonResponse(err));
         co_return;
     }
-    const auto respJson = resp->getJsonObject();
+    const auto respJson = (*resp)->getJsonObject();
 
-    if (resp->getStatusCode() != drogon::k200OK || !respJson
+    if ((*resp)->getStatusCode() != drogon::k200OK || !respJson
         || respJson->get("status", "failed").asString() != "ok") {
         spdlog::error("[Admin] 修改表情描述失败: status={}",
-                      static_cast<int>(resp->getStatusCode()));
+                      static_cast<int>((*resp)->getStatusCode()));
         Json::Value err;
         err["error"] = "修改表情描述失败，请确认 QQ 客户端在线";
         callback(HttpResponse::newHttpJsonResponse(err));

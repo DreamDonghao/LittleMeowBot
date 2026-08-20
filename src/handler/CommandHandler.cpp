@@ -12,13 +12,9 @@
 #include <drogon/HttpClient.h>
 #include <model/GroupConfigManager.hpp>
 #include <util/tool.h>
+#include <util/HttpUtil.hpp>
 namespace LittleMeowBot {
-    CommandHandler& CommandHandler::instance(){
-        static CommandHandler handler;
-        return handler;
-    }
-
-    bool CommandHandler::isCommand(const QQMessage& message) const{
+    bool isCommand(const QQMessage& message) {
         if (!message.atMe()) return false;
         std::string rawMsg = message.getRawMessage();
 
@@ -40,9 +36,9 @@ namespace LittleMeowBot {
         return pos < rawMsg.length() && rawMsg[pos] == '/';
     }
 
-    drogon::Task<std::string> CommandHandler::handleCommand(
+    drogon::Task<std::string> handleCommand(
         const QQMessage& message,
-        ChatRecordManager& chatRecords) const{
+        ChatRecordManager& chatRecords) {
         std::string rawMsg = message.getRawMessage();
         uint64_t groupId = message.getGroupId();
         uint64_t senderQQ = message.getSenderQQNumber();
@@ -188,23 +184,15 @@ namespace LittleMeowBot {
             }
 
             const auto& config = Config::instance();
-            const auto client = drogon::HttpClient::newHttpClient(config.qqHttpHost);
             Json::Value body;
             body["res_id"] = emoji["res_id"].asString();
-            const auto req = drogon::HttpRequest::newHttpJsonRequest(body);
-            req->setMethod(drogon::Post);
-            req->setPath("/delete_custom_face");
-            req->addHeader("Authorization", "Bearer " + config.accessToken);
-
-            drogon::HttpResponsePtr resp;
-            try {
-                resp = co_await client->sendRequestCoro(req, 30.0);
-            } catch (const std::exception& e) {
-                response = "删除失败: QQ 客户端连接异常";
-                co_return response;
+            const auto resp = co_await HttpUtil::send("[Sticker]", config.qqHttpHost, "/delete_custom_face",
+                                                      drogon::Post, body, config.accessToken, 30.0);
+            if (!resp) {
+                co_return "删除失败: QQ 客户端连接异常";
             }
-            const auto json = resp->getJsonObject();
-            if (resp->getStatusCode() == drogon::k200OK && json
+            const auto json = (*resp)->getJsonObject();
+            if ((*resp)->getStatusCode() == drogon::k200OK && json
                 && json->get("status", "failed").asString() == "ok") {
                 AgentToolManager::invalidateFavoriteEmojiCache();
                 response = fmt::format("已从收藏表情中删除: {}", emoji["name"].asString());

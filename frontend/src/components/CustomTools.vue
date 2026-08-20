@@ -320,7 +320,7 @@ const showReadme = (tool: CustomTool): void => {
   if (tool.readme) {
     currentReadme.value = marked(tool.readme) as string
   } else {
-    currentReadme.value = '<p style="color: #9ca3af;">暂无说明文档</p>'
+    currentReadme.value = '<p style="color: var(--text-light);">暂无说明文档</p>'
   }
   showReadmeDialog.value = true
 }
@@ -617,12 +617,12 @@ pip install requests numpy  # 安装需要的包</pre>
 
 <style scoped>
 .status-enabled {
-  color: #22c55e;
+  color: var(--success);
   font-weight: 500;
 }
 
 .status-disabled {
-  color: #ef4444;
+  color: var(--danger);
   font-weight: 500;
 }
 
@@ -640,7 +640,7 @@ pip install requests numpy  # 安装需要的包</pre>
 }
 
 .tag-http {
-  background: #22c55e;
+  background: var(--success-btn);
   color: white;
 }
 
@@ -670,12 +670,13 @@ pip install requests numpy  # 安装需要的包</pre>
 }
 
 .dialog {
-  background: white;
-  border-radius: 8px;
+  background: var(--card-bg);
+  border-radius: 12px;
   max-width: 95vw;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border);
 }
 
 .dialog-header {
@@ -683,10 +684,10 @@ pip install requests numpy  # 安装需要的包</pre>
   justify-content: space-between;
   align-items: center;
   padding: 14px 20px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
-  background: white;
+  background: var(--card-bg);
   z-index: 1;
 }
 
@@ -701,12 +702,12 @@ pip install requests numpy  # 安装需要的包</pre>
   border: none;
   font-size: 22px;
   cursor: pointer;
-  color: #9ca3af;
+  color: var(--text-light);
   line-height: 1;
 }
 
 .dialog-close:hover {
-  color: #374151;
+  color: var(--text-primary);
 }
 
 .dialog-body {
@@ -719,7 +720,7 @@ pip install requests numpy  # 安装需要的包</pre>
 }
 
 .tool-row:hover {
-  background-color: #f3f4f6;
+  background-color: var(--row-hover);
 }
 
 .readme-content {
@@ -731,7 +732,7 @@ pip install requests numpy  # 安装需要的包</pre>
 .readme-content h1, .readme-content h2, .readme-content h3 {
   margin-top: 0;
   margin-bottom: 12px;
-  color: #1f2937;
+  color: var(--text-primary);
 }
 
 .readme-content h1 { font-size: 20px; }
@@ -748,7 +749,8 @@ pip install requests numpy  # 安装需要的包</pre>
 }
 
 .readme-content code {
-  background: #f3f4f6;
+  background: var(--code-bg);
+  color: var(--code-text);
   padding: 2px 6px;
   border-radius: 4px;
   font-family: 'Consolas', 'Monaco', monospace;
@@ -756,8 +758,8 @@ pip install requests numpy  # 安装需要的包</pre>
 }
 
 .readme-content pre {
-  background: #1f2937;
-  color: #e5e7eb;
+  background: var(--code-bg);
+  color: var(--code-text);
   padding: 12px 16px;
   border-radius: 6px;
   overflow-x: auto;
@@ -771,7 +773,7 @@ pip install requests numpy  # 安装需要的包</pre>
 }
 
 .readme-content a {
-  color: #2563eb;
+  color: var(--primary);
   text-decoration: none;
 }
 
@@ -780,10 +782,10 @@ pip install requests numpy  # 安装需要的包</pre>
 }
 
 .readme-content blockquote {
-  border-left: 4px solid #d1d5db;
+  border-left: 4px solid var(--border-strong);
   margin: 0 0 12px 0;
   padding-left: 16px;
-  color: #6b7280;
+  color: var(--text-secondary);
 }
 
 .form-row {
@@ -807,12 +809,12 @@ pip install requests numpy  # 安装需要的包</pre>
   display: block;
   font-size: 13px;
   font-weight: 500;
-  color: #374151;
+  color: var(--text-primary);
   margin-bottom: 4px;
 }
 
 .form-hint {
-  color: #9ca3af;
+  color: var(--text-light);
   font-size: 12px;
   margin-top: 4px;
   display: block;
@@ -833,14 +835,14 @@ pip install requests numpy  # 安装需要的包</pre>
 .config-example {
   margin-top: 12px;
   padding: 12px;
-  background: #f3f4f6;
+  background: var(--bg-secondary);
   border-radius: 6px;
   font-size: 12px;
 }
 
 .config-example pre {
-  background: #1f2937;
-  color: #e5e7eb;
+  background: var(--code-bg);
+  color: var(--code-text);
   padding: 8px 12px;
   border-radius: 4px;
   font-size: 11px;
@@ -850,20 +852,20 @@ pip install requests numpy  # 安装需要的包</pre>
 
 .config-example p {
   margin: 8px 0 0 0;
-  color: #6b7280;
+  color: var(--text-secondary);
 }
 
 .import-example {
   margin-top: 12px;
   padding: 12px;
-  background: #f3f4f6;
+  background: var(--bg-secondary);
   border-radius: 6px;
   font-size: 12px;
 }
 
 .import-example pre {
-  background: #1f2937;
-  color: #e5e7eb;
+  background: var(--code-bg);
+  color: var(--code-text);
   padding: 8px 12px;
   border-radius: 4px;
   font-size: 11px;
@@ -873,8 +875,8 @@ pip install requests numpy  # 安装需要的包</pre>
 
 .test-section {
   margin-top: 16px;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
   overflow: hidden;
 }
 
@@ -883,14 +885,14 @@ pip install requests numpy  # 安装需要的包</pre>
   justify-content: space-between;
   align-items: center;
   padding: 10px 12px;
-  background: #f3f4f6;
-  border-bottom: 1px solid #e5e7eb;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
 }
 
 .test-title {
   font-size: 13px;
   font-weight: 600;
-  color: #374151;
+  color: var(--text-primary);
 }
 
 .test-content {
@@ -904,15 +906,15 @@ pip install requests numpy  # 安装需要的包</pre>
 .test-output label {
   display: block;
   font-size: 12px;
-  color: #6b7280;
+  color: var(--text-secondary);
   margin-bottom: 4px;
 }
 
 .result-box {
   margin: 0;
   padding: 8px 10px;
-  background: #1f2937;
-  color: #e5e7eb;
+  background: var(--code-bg);
+  color: var(--code-text);
   border-radius: 4px;
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 12px;
@@ -925,11 +927,11 @@ pip install requests numpy  # 安装需要的包</pre>
 
 .dialog-footer {
   padding: 12px 20px;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--border);
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  background: #f9fafb;
+  background: var(--bg-secondary);
   position: sticky;
   bottom: 0;
 }

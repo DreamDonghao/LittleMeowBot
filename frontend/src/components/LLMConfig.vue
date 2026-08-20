@@ -23,6 +23,7 @@ const llmConfig = reactive<LLMConfig>({
   maxTokens: 100, temperature: 0.7, topP: 0.9, reasoningEffort: ''
 })
 const saving: Ref<boolean> = ref(false)
+const showApiKey: Ref<boolean> = ref(false)
 
 // 首次加载所有配置
 watch(selectedLLM, async (name: string) => {
@@ -80,7 +81,12 @@ const saveLLMConfig = async (): Promise<void> => {
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">API Key</label>
-          <input v-model="llmConfig.apiKey" class="form-input" placeholder="sk-..." type="password">
+          <div class="api-key-row">
+            <input v-model="llmConfig.apiKey" class="form-input" placeholder="sk-..." :type="showApiKey ? 'text' : 'password'">
+            <button class="btn btn-secondary btn-sm api-key-toggle" type="button" @click="showApiKey = !showApiKey">
+              {{ showApiKey ? '● 隐藏' : '○ 显示' }}
+            </button>
+          </div>
         </div>
         <div class="form-group">
           <label class="form-label">Base URL</label>
@@ -129,3 +135,20 @@ const saveLLMConfig = async (): Promise<void> => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.api-key-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.api-key-row .form-input {
+  flex: 1;
+}
+
+.api-key-toggle {
+  flex-shrink: 0;
+  min-width: 64px;
+}
+</style>

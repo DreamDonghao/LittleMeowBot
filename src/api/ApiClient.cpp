@@ -3,9 +3,9 @@
 
 #include <api/ApiClient.hpp>
 #include <spdlog/spdlog.h>
-#include <drogon/HttpClient.h>
 #include <config/Config.hpp>
 #include <storage/Database.hpp>
+#include <util/HttpUtil.hpp>
 
 namespace LittleMeowBot {
     namespace {
@@ -30,25 +30,15 @@ namespace LittleMeowBot {
             float temperature,
             float top_p,
             int max_tokens){
-            const auto client = drogon::HttpClient::newHttpClient(base_url);
             const Json::Value body = buildModelReq(messages, model, temperature, top_p, max_tokens);
-            const auto req = drogon::HttpRequest::newHttpJsonRequest(body);
-            req->setMethod(drogon::Post);
-            req->setPath(path);
-            req->addHeader("Authorization", "Bearer " + api_key);
-            req->addHeader("Content-Type", "application/json");
-
-            drogon::HttpResponsePtr resp;
-            try {
-                resp = co_await client->sendRequestCoro(req, 90.0);
-            } catch (const std::exception& e) {
-                spdlog::error("LLM 请求网络异常: {}", e.what());
+            const auto resp = co_await HttpUtil::send("[LLM]", base_url, path, drogon::Post, body, api_key, 90.0);
+            if (!resp) {
                 co_return std::nullopt;
             }
-            const auto json = resp->getJsonObject();
+            const auto json = (*resp)->getJsonObject();
 
-            if (resp->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
-                spdlog::error("LLM 请求出错: status={}", static_cast<int>(resp->getStatusCode()));
+            if ((*resp)->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
+                spdlog::error("[LLM] 请求出错: status={}", static_cast<int>((*resp)->getStatusCode()));
                 co_return std::nullopt;
             }
 

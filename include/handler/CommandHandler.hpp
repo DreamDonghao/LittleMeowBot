@@ -7,17 +7,9 @@
 #include <string>
 
 namespace LittleMeowBot {
-    class CommandHandler{
-    public:
-        static CommandHandler& instance();
+    [[nodiscard]] bool isCommand(const QQMessage &message);
 
-        [[nodiscard]] bool isCommand(const QQMessage& message) const;
-
-        drogon::Task<std::string> handleCommand(
-            const QQMessage& message,
-            ChatRecordManager& chatRecords) const;
-
-    private:
-        CommandHandler() = default;
-    };
+    drogon::Task<std::string> handleCommand(
+        const QQMessage &message,
+        ChatRecordManager &chatRecords);
 }

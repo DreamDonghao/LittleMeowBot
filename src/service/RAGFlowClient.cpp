@@ -5,6 +5,7 @@
 #include <spdlog/spdlog.h>
 #include <fmt/core.h>
 #include <config/Config.hpp>
+#include <util/HttpUtil.hpp>
 
 namespace LittleMeowBot {
     namespace {
@@ -34,32 +35,24 @@ namespace LittleMeowBot {
             co_return std::nullopt;
         }
 
-        const auto client = drogon::HttpClient::newHttpClient(baseUrl);
-
         Json::Value body;
         body["dataset_ids"].append(knowledgeDatasetId);
         body["question"] = question;
         body["top_k"] = topK;
 
-        const auto req = drogon::HttpRequest::newHttpJsonRequest(body);
-        req->setMethod(drogon::Post);
-        req->setPath("/api/v1/retrieval");
-        req->addHeader("Authorization", "Bearer " + apiKey);
-
-        drogon::HttpResponsePtr resp;
-        try {
-            resp = co_await client->sendRequestCoro(req, 30.0);
-        } catch (const std::exception& e) {
-            spdlog::error("RAGFlow 知识库检索网络异常: {}", e.what());
+        const auto resp = co_await HttpUtil::send("[RAGFlow]", baseUrl, "/api/v1/retrieval",
+                                                  drogon::Post, body, apiKey, 30.0);
+        if (!resp) {
             co_return std::nullopt;
         }
 
-        if (resp->getStatusCode() != drogon::k200OK) {
-            spdlog::error("RAGFlow 请求失败: status={}", static_cast<int>(resp->getStatusCode()));
+        if ((*resp)->getStatusCode() != drogon::k200OK) {
+            spdlog::error("[RAGFlow] 知识库检索失败: status={}",
+                          static_cast<int>((*resp)->getStatusCode()));
             co_return std::nullopt;
         }
 
-        const auto json = resp->getJsonObject();
+        const auto json = (*resp)->getJsonObject();
         if (!json) {
             spdlog::error("RAGFlow 响应解析失败");
             co_return std::nullopt;
@@ -93,32 +86,24 @@ namespace LittleMeowBot {
             co_return std::nullopt;
         }
 
-        const auto client = drogon::HttpClient::newHttpClient(baseUrl);
-
         Json::Value body;
         body["dataset_ids"].append(memoryDatasetId);
         body["question"] = question;
         body["top_k"] = topK;
 
-        const auto req = drogon::HttpRequest::newHttpJsonRequest(body);
-        req->setMethod(drogon::Post);
-        req->setPath("/api/v1/retrieval");
-        req->addHeader("Authorization", "Bearer " + apiKey);
-
-        drogon::HttpResponsePtr resp;
-        try {
-            resp = co_await client->sendRequestCoro(req, 30.0);
-        } catch (const std::exception& e) {
-            spdlog::error("RAGFlow 记忆库检索网络异常: {}", e.what());
+        const auto resp = co_await HttpUtil::send("[RAGFlow]", baseUrl, "/api/v1/retrieval",
+                                                  drogon::Post, body, apiKey, 30.0);
+        if (!resp) {
             co_return std::nullopt;
         }
 
-        if (resp->getStatusCode() != drogon::k200OK) {
-            spdlog::error("RAGFlow 记忆库请求失败: status={}",static_cast<int>(resp->getStatusCode()));
+        if ((*resp)->getStatusCode() != drogon::k200OK) {
+            spdlog::error("[RAGFlow] 记忆库请求失败: status={}",
+                          static_cast<int>((*resp)->getStatusCode()));
             co_return std::nullopt;
         }
 
-        const auto json = resp->getJsonObject();
+        const auto json = (*resp)->getJsonObject();
         if (!json) {
             co_return std::nullopt;
         }
@@ -150,30 +135,23 @@ namespace LittleMeowBot {
             co_return false;
         }
 
-        const auto client = drogon::HttpClient::newHttpClient(baseUrl);
-
         Json::Value body;
         body["content"] = content;
 
-        const auto req = drogon::HttpRequest::newHttpJsonRequest(body);
-        req->setMethod(drogon::Post);
-        req->setPath(fmt::format("/api/v1/datasets/{}/documents/{}/chunks",
-                                 memoryDatasetId, memoryDocumentId));
-        req->addHeader("Authorization", "Bearer " + apiKey);
-
-        drogon::HttpResponsePtr resp;
-        try {
-            resp = co_await client->sendRequestCoro(req, 30.0);
-        } catch (const std::exception& e) {
-            spdlog::error("RAGFlow 添加记忆网络异常: {}", e.what());
+        const auto resp = co_await HttpUtil::send("[RAGFlow]", baseUrl,
+                                                  fmt::format("/api/v1/datasets/{}/documents/{}/chunks",
+                                                              memoryDatasetId, memoryDocumentId),
+                                                  drogon::Post, body, apiKey, 30.0);
+        if (!resp) {
             co_return false;
         }
-        if (resp->getStatusCode() != drogon::k200OK) {
-            spdlog::error("RAGFlow 添加记忆失败: status={}", static_cast<int>(resp->getStatusCode()));
+        if ((*resp)->getStatusCode() != drogon::k200OK) {
+            spdlog::error("[RAGFlow] 添加记忆失败: status={}",
+                          static_cast<int>((*resp)->getStatusCode()));
             co_return false;
         }
 
-        const auto respJson = resp->getJsonObject();
+        const auto respJson = (*resp)->getJsonObject();
         if (respJson && respJson->isMember("code")) {
             int code = (*respJson)["code"].asInt();
             if (code != 0) {

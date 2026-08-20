@@ -61,12 +61,6 @@ namespace LittleMeowBot {
 
         static Config& instance();
 
-        /// @brief 从数据库加载单个 LLM 配置
-        /// @param name 配置名（router/executor/executorThinking/image）
-        /// @param apiConfig 输出的 API 配置
-        /// @param modelParams 模型参数（可为 nullptr，表示不加载）
-        void loadLLMConfig(std::string_view name, LLMApiConfig& apiConfig, LLMModelParams* modelParams = nullptr);
-
         void loadFromDatabase();
 
     private:

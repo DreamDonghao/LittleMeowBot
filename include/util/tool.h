@@ -9,6 +9,7 @@
 
 #pragma once
 #include <drogon/drogon.h>
+#include <spdlog/spdlog.h>
 #include <charconv>
 #include <optional>
 #include <string_view>
@@ -25,7 +26,7 @@
 
     if (const char* end = begin + jsonStr.size(); !reader->parse(begin, end, &root, &errs)) {
         // 出错时打印并返回空对象
-        std::cerr << "JSON解析失败: " << errs << "\n";
+        spdlog::warn("JSON解析失败: {}", errs);
         return Json::Value{};
     }
     return root;

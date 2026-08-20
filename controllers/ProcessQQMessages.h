@@ -32,8 +32,8 @@ namespace LittleMeowBot {
         ///          4. 记录聊天记录
         ///          5. 调用 Agent 系统生成回复
         ///          6. 触发记忆生成（如果达到阈值）
-        drogon::Task<> receiveMessages(
+        static drogon::Task<> receiveMessages(
             drogon::HttpRequestPtr req,
-            std::function<void(const drogon::HttpResponsePtr &)> callback) const;
+            std::function<void(const drogon::HttpResponsePtr &)> callback);
     };
 } // namespace LittleMeowBot

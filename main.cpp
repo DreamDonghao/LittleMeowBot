@@ -3,6 +3,7 @@
 /// @author donghao
 /// @date 2026-04-02
 /// @details 初始化并启动 QQ 群聊机器人服务：
+///          - 日志系统初始化：控制台 + 滚动文件（Logger::init）
 ///          - 数据库初始化：SQLite 持久化存储
 ///          - 配置加载：从数据库读取 LLM、知识库、QQ Bot 配置
 ///          - Agent 系统初始化：注册内置工具和自定义工具
@@ -10,23 +11,24 @@
 ///          支持通过输入 "quit" 命令优雅退出
 
 #include <iostream>
+#include <iterator>
 #include <drogon/drogon.h>
 #include <spdlog/spdlog.h>
-#include <util/Log.hpp>
+#include <util/Logger.hpp>
 #include <storage/Database.hpp>
 #include <config/Config.hpp>
 #include <agent/AgentSystem.hpp>
 #include <model/QQMessage.hpp>
 
-int main(){
+int main() {
     using namespace LittleMeowBot;
     try {
         // 系统初始化
-        Log::init(true, "logs/bot.log", true);
-        auto& database = Database::instance();
+        Logger::init();
+        auto &database = Database::instance();
         database.initialize("data/little_meow_bot.db");
 
-        auto& config = Config::instance();
+        auto &config = Config::instance();
         config.loadFromDatabase();
 
         // 初始化 QQ 昵称
@@ -35,7 +37,8 @@ int main(){
         // 初始化 Agent 系统
         AgentSystem::instance().initialize();
 
-        Log::info("系统初始化完成 - 启用群: {}, 管理员: {}", database.getEnabledGroups().size(), database.getAdmins().size());
+        spdlog::info("系统初始化完成 - 启用群: {}, 管理员: {}", std::ssize(database.getEnabledGroups()),
+                  std::ssize(database.getAdmins()));
 
         // 启动服务
         // 启动 quit 线程
@@ -51,22 +54,22 @@ int main(){
 
         drogon::app().addListener("0.0.0.0", 7778);
         drogon::app().setDocumentRoot("public");
-        Log::info("HTTP服务启动，端口: 7778");
-        Log::info("管理后台: http://localhost:7778/index.html");
+        spdlog::info("HTTP服务启动，端口: 7778");
+        spdlog::info("管理后台: http://localhost:7778/index.html");
 
         drogon::app().run();
 
         database.close();
-        Log::info("系统正常退出");
-    } catch (const std::exception& e) {
-        Log::fatal("程序崩溃: {}", e.what());
-        Log::shutdown();
+        spdlog::info("系统正常退出");
+    } catch (const std::exception &e) {
+        spdlog::critical("程序崩溃: {}", e.what());
+        Logger::shutdown();
         return 1;
     } catch (...) {
-        Log::fatal("程序崩溃: 未知错误");
-        Log::shutdown();
+        spdlog::critical("程序崩溃: 未知错误");
+        Logger::shutdown();
         return 1;
     }
-    Log::shutdown();
+    Logger::shutdown();
     return 0;
 }

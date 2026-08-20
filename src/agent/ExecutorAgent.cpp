@@ -4,16 +4,16 @@
 #include <agent/ExecutorAgent.hpp>
 #include <agent/AgentToolManager.hpp>
 #include <api/ApiClient.hpp>
-#include <util/Log.hpp>
+#include <spdlog/spdlog.h>
 #include <service/ToolRegistry.hpp>
 #include <service/PromptService.hpp>
 #include <fmt/core.h>
 #include <chrono>
 #include <memory>
 #include <regex>
-#include <drogon/HttpClient.h>
 #include <drogon/HttpAppFramework.h>
 #include <config/Config.hpp>
+#include <util/HttpUtil.hpp>
 
 namespace LittleMeowBot {
     namespace {
@@ -85,9 +85,8 @@ namespace LittleMeowBot {
                 thinkingMessages.append(messages[i]);
             }
 
-            Log::debug("[Executor] 思考模型: {}", config.executorThinking.model);
+            spdlog::debug("[Executor] 思考模型: {}", config.executorThinking.model);
 
-            auto client = drogon::HttpClient::newHttpClient(config.executorThinking.baseUrl);
             Json::Value body;
             body["model"] = config.executorThinking.model;
             body["messages"] = thinkingMessages;
@@ -98,40 +97,34 @@ namespace LittleMeowBot {
                 body["reasoning_effort"] = config.executorThinking.reasoningEffort;
             }
 
-            auto req = drogon::HttpRequest::newHttpJsonRequest(body);
-            req->setMethod(drogon::Post);
-            req->setPath(config.executorThinking.path);
-            req->addHeader("Authorization", "Bearer " + config.executorThinking.apiKey);
-            req->addHeader("Content-Type", "application/json");
-
-            try {
-                auto resp = co_await client->sendRequestCoro(req, 90.0);
-                auto json = resp->getJsonObject();
-
-                if (resp->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
-                    const std::string respBody = std::string(resp->getBody()).substr(0, 500);
-                    Log::error("[Executor] 思考模型失败: status={} body={}",
-                               static_cast<int>(resp->getStatusCode()), respBody);
-                    co_return std::nullopt;
-                }
-
-                ApiClient::logUsage(*json, config.executorThinking.model);
-
-                const auto &message = (*json)["choices"][0]["message"];
-                std::string content;
-
-                // DeepSeek Reasoner 的 reasoning_content 字段
-                if (message.isMember("reasoning_content") && !message["reasoning_content"].isNull()) {
-                    content = message["reasoning_content"].asString();
-                } else if (message.isMember("content") && !message["content"].isNull()) {
-                    content = message["content"].asString();
-                }
-
-                co_return content;
-            } catch (const std::exception &e) {
-                Log::error("[Executor] 思考模型请求异常: {}", e.what());
+            const auto resp = co_await HttpUtil::send("[Executor]", config.executorThinking.baseUrl,
+                                                      config.executorThinking.path, drogon::Post, body,
+                                                      config.executorThinking.apiKey, 90.0);
+            if (!resp) {
                 co_return std::nullopt;
             }
+
+            const auto json = (*resp)->getJsonObject();
+            if ((*resp)->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
+                const std::string respBody = std::string((*resp)->getBody()).substr(0, 500);
+                spdlog::error("[Executor] 思考模型失败: status={} body={}",
+                           static_cast<int>((*resp)->getStatusCode()), respBody);
+                co_return std::nullopt;
+            }
+
+            ApiClient::logUsage(*json, config.executorThinking.model);
+
+            const auto &message = (*json)["choices"][0]["message"];
+            std::string content;
+
+            // DeepSeek Reasoner 的 reasoning_content 字段
+            if (message.isMember("reasoning_content") && !message["reasoning_content"].isNull()) {
+                content = message["reasoning_content"].asString();
+            } else if (message.isMember("content") && !message["content"].isNull()) {
+                content = message["content"].asString();
+            }
+
+            co_return content;
         }
 
 
@@ -262,12 +255,11 @@ namespace LittleMeowBot {
             Json::Value tools = registry.getAllTools();
 
             if (tools.empty()) {
-                Log::error("[Executor] 未注册工具");
+                spdlog::error("[Executor] 未注册工具");
                 co_return std::nullopt;
             }
 
-            Log::debug("[Executor] LLM: {}", apiConfig.model);
-            auto client = drogon::HttpClient::newHttpClient(apiConfig.baseUrl);
+            spdlog::debug("[Executor] LLM: {}", apiConfig.model);
 
             std::string accumulatedCQCodes; // 跨轮累积CQ码，reply时自动拼入
 
@@ -283,40 +275,27 @@ namespace LittleMeowBot {
                     body["reasoning_effort"] = apiConfig.reasoningEffort;
                 }
 
-                auto req = drogon::HttpRequest::newHttpJsonRequest(body);
-                req->setMethod(drogon::Post);
-                req->setPath(apiConfig.path);
-                req->addHeader("Authorization", "Bearer " + apiConfig.apiKey);
-                req->addHeader("Content-Type", "application/json");
-
-                std::shared_ptr<drogon::HttpResponse> resp;
-                bool networkError = false;
-                try {
-                    resp = co_await client->sendRequestCoro(req, 90.0);
-                } catch (const std::exception &e) {
-                    Log::error("[Executor] LLM请求异常: {}", e.what());
-                    networkError = true;
-                }
-
-                if (networkError) {
+                const auto resp = co_await HttpUtil::send("[Executor]", apiConfig.baseUrl, apiConfig.path,
+                                                          drogon::Post, body, apiConfig.apiKey, 90.0);
+                if (!resp) {
                     if (iter < 3) {
-                        Log::warn("[Executor] 网络异常重试...");
+                        spdlog::warn("[Executor] 网络异常重试...");
                         using namespace std::chrono_literals;
                         co_await drogon::sleepCoro(drogon::app().getLoop(), 1s);
                         continue;
                     }
                     co_return std::nullopt;
                 }
-                auto json = resp->getJsonObject();
+                const auto json = (*resp)->getJsonObject();
 
-                if (resp->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
-                    int status = static_cast<int>(resp->getStatusCode());
-                    const std::string respBody = std::string(resp->getBody()).substr(0, 500);
-                    Log::error("[Executor] LLM失败: status={} body={}", status, respBody);
+                if ((*resp)->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
+                    int status = static_cast<int>((*resp)->getStatusCode());
+                    const std::string respBody = std::string((*resp)->getBody()).substr(0, 500);
+                    spdlog::error("[Executor] LLM失败: status={} body={}", status, respBody);
 
                     // 重试（503/429/500）
                     if ((status == 503 || status == 429 || status == 500) && iter < 3) {
-                        Log::warn("[Executor] 重试...");
+                        spdlog::warn("[Executor] 重试...");
                         using namespace std::chrono_literals;
                         co_await drogon::sleepCoro(drogon::app().getLoop(), 1s);
                         continue;
@@ -358,7 +337,7 @@ namespace LittleMeowBot {
                         std::string id = tc["id"].asString();
                         std::string argsStr = tc["function"]["arguments"].asString();
 
-                        Log::info("[Executor] 工具: {}", name);
+                        spdlog::info("[Executor] 工具: {}", name);
 
                         if (name == "no_reply") {
                             decision.shouldReply = false;
@@ -389,7 +368,7 @@ namespace LittleMeowBot {
                             Json::Reader().parse(argsStr, args);
 
                             std::string result = co_await registry.executeTool(name, args, groupId);
-                            Log::debug("[Executor] 工具结果: {}", result);
+                            spdlog::debug("[Executor] 工具结果: {}", result);
 
                             // 记录CQ码工具的结果
                             if (name == "send_sticker" || name == "send_face" || name == "send_image") {
@@ -421,7 +400,7 @@ namespace LittleMeowBot {
                 co_return decision;
             }
 
-            Log::error("[Executor] 达到最大迭代次数");
+            spdlog::error("[Executor] 达到最大迭代次数");
             co_return std::nullopt;
         }
 
@@ -430,22 +409,22 @@ namespace LittleMeowBot {
             Json::Value messages, const uint64_t groupId, const int maxLength) {
             const auto &config = Config::instance();
 
-            Log::info("[Executor] 思考模式 - Step 1: 分析");
+            spdlog::info("[Executor] 思考模式 - Step 1: 分析");
 
             // Step 1: 思考模型分析
             const std::optional<std::string> thinkingResult = co_await executeThinking(messages, maxLength);
 
             if (!thinkingResult || thinkingResult->empty()) {
-                Log::warn("[Executor] 思考模型返回空，fallback");
+                spdlog::warn("[Executor] 思考模型返回空，fallback");
                 co_return co_await executeWithAgent(
                     messages, config.executor, config.executorParams, groupId);
             }
 
-            Log::debug("[Executor] 思考结果: {}...",
+            spdlog::debug("[Executor] 思考结果: {}...",
                        thinkingResult->substr(0, std::min<size_t>(100, thinkingResult->length())));
 
             // Step 2: 注入思考结果，执行工具调用
-            Log::info("[Executor] 思考模式 - Step 2: 执行");
+            spdlog::info("[Executor] 思考模式 - Step 2: 执行");
 
             Json::Value thinkingMsg;
             thinkingMsg["role"] = "assistant";
@@ -511,7 +490,7 @@ namespace LittleMeowBot {
         const ChatRecordManager &chatRecords,
         const MemoryManager &memory,
         const RouterDecision &decision) {
-        Log::info("[Executor] 开始执行 | thinking={} | priority={} | maxLength={}",
+        spdlog::info("[Executor] 开始执行 | thinking={} | priority={} | maxLength={}",
                   decision.enableThinking, decision.isPriority, decision.maxLength);
 
         const auto &config = Config::instance();

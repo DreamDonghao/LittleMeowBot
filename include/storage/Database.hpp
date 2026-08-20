@@ -17,7 +17,6 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
-#include <optional>
 
 namespace LittleMeowBot {
     /// @brief 群组配置结构

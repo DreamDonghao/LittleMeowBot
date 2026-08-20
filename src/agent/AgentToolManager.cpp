@@ -10,6 +10,8 @@
 
 #include <agent/AgentToolManager.hpp>
 #include <config/Config.hpp>
+#include <util/HttpUtil.hpp>
+#include <util/tool.h>
 #include <fstream>
 #include <memory>
 #include <random>
@@ -277,32 +279,16 @@ namespace LittleMeowBot {
 
                     const auto& config = Config::instance();
 
-                    // 每个请求独立 client，避免超时后复用坏连接
-                    const auto newClient = [&config] {
-                        return drogon::HttpClient::newHttpClient(config.qqHttpHost);
-                    };
-
                     // Step 1: 尝试 get_image 拿容器内路径（商城表情会失败/超时）
                     std::string containerPath;
                     {
                         Json::Value getBody;
                         getBody["file"] = file;
-                        auto getReq = drogon::HttpRequest::newHttpJsonRequest(getBody);
-                        getReq->setMethod(drogon::Post);
-                        getReq->setPath("/get_image");
-                        getReq->addHeader("Authorization", "Bearer " + config.accessToken);
-
-                        drogon::HttpResponsePtr getResp;
-                        bool getError = false;
-                        try {
-                            getResp = co_await newClient()->sendRequestCoro(getReq, 15.0);
-                        } catch (const std::exception& e) {
-                            spdlog::warn("[Sticker] get_image 异常: {}", e.what());
-                            getError = true;
-                        }
-                        if (!getError) {
-                            const auto getJson = getResp->getJsonObject();
-                            if (getResp->getStatusCode() == drogon::k200OK && getJson
+                        const auto getResp = co_await HttpUtil::send("[Sticker]", config.qqHttpHost, "/get_image",
+                                                                     drogon::Post, getBody, config.accessToken, 15.0);
+                        if (getResp) {
+                            const auto getJson = (*getResp)->getJsonObject();
+                            if ((*getResp)->getStatusCode() == drogon::k200OK && getJson
                                 && getJson->get("status", "failed").asString() == "ok"
                                 && getJson->isMember("data")) {
                                 containerPath = (*getJson)["data"]["file"].asString();
@@ -317,22 +303,11 @@ namespace LittleMeowBot {
                         }
                         Json::Value dlBody;
                         dlBody["url"] = url;
-                        auto dlReq = drogon::HttpRequest::newHttpJsonRequest(dlBody);
-                        dlReq->setMethod(drogon::Post);
-                        dlReq->setPath("/download_file");
-                        dlReq->addHeader("Authorization", "Bearer " + config.accessToken);
-
-                        drogon::HttpResponsePtr dlResp;
-                        bool dlError = false;
-                        try {
-                            dlResp = co_await newClient()->sendRequestCoro(dlReq, 30.0);
-                        } catch (const std::exception& e) {
-                            spdlog::warn("[Sticker] download_file 异常: {}", e.what());
-                            dlError = true;
-                        }
-                        if (!dlError) {
-                            const auto dlJson = dlResp->getJsonObject();
-                            if (dlResp->getStatusCode() == drogon::k200OK && dlJson
+                        const auto dlResp = co_await HttpUtil::send("[Sticker]", config.qqHttpHost, "/download_file",
+                                                                    drogon::Post, dlBody, config.accessToken, 30.0);
+                        if (dlResp) {
+                            const auto dlJson = (*dlResp)->getJsonObject();
+                            if ((*dlResp)->getStatusCode() == drogon::k200OK && dlJson
                                 && dlJson->get("status", "failed").asString() == "ok"
                                 && dlJson->isMember("data")) {
                                 containerPath = (*dlJson)["data"]["file"].asString();
@@ -355,14 +330,14 @@ namespace LittleMeowBot {
                     // Step 4: add_custom_face 保存为收藏表情
                     Json::Value addBody;
                     addBody["file"] = containerPath;
-                    auto addReq = drogon::HttpRequest::newHttpJsonRequest(addBody);
-                    addReq->setMethod(drogon::Post);
-                    addReq->setPath("/add_custom_face");
-                    addReq->addHeader("Authorization", "Bearer " + config.accessToken);
-
-                    auto addResp = co_await newClient()->sendRequestCoro(addReq, 30.0);
-                    auto addJson = addResp->getJsonObject();
-                    if (addResp->getStatusCode() != drogon::k200OK || !addJson
+                    const auto addResp = co_await HttpUtil::send("[Sticker]", config.qqHttpHost, "/add_custom_face",
+                                                                 drogon::Post, addBody, config.accessToken, 30.0);
+                    if (!addResp) {
+                        spdlog::error("[Sticker] 保存收藏表情失败: {}", containerPath);
+                        co_return std::string("保存为收藏表情失败");
+                    }
+                    const auto addJson = (*addResp)->getJsonObject();
+                    if ((*addResp)->getStatusCode() != drogon::k200OK || !addJson
                         || addJson->get("status", "failed").asString() != "ok") {
                         spdlog::error("[Sticker] 保存收藏表情失败: {}", containerPath);
                         co_return std::string("保存为收藏表情失败");
@@ -385,16 +360,18 @@ namespace LittleMeowBot {
                         descBody["res_id"] = newItem["res_id"].asString();
                         descBody["md5"] = newItem["md5"].asString();
                         descBody["desc"] = name;
-                        auto descReq = drogon::HttpRequest::newHttpJsonRequest(descBody);
-                        descReq->setMethod(drogon::Post);
-                        descReq->setPath("/set_custom_face_desc");
-                        descReq->addHeader("Authorization", "Bearer " + config.accessToken);
-
-                        auto descResp = co_await newClient()->sendRequestCoro(descReq, 30.0);
-                        auto descJson = descResp->getJsonObject();
-                        if (descResp->getStatusCode() == drogon::k200OK && descJson
-                            && descJson->get("status", "failed").asString() == "ok") {
-                            invalidateFavoriteEmojiCache();
+                        const auto descResp = co_await HttpUtil::send("[Sticker]", config.qqHttpHost,
+                                                                      "/set_custom_face_desc", drogon::Post,
+                                                                      descBody, config.accessToken, 30.0);
+                        if (descResp) {
+                            const auto descJson = (*descResp)->getJsonObject();
+                            if ((*descResp)->getStatusCode() == drogon::k200OK && descJson
+                                && descJson->get("status", "failed").asString() == "ok") {
+                                invalidateFavoriteEmojiCache();
+                            } else {
+                                spdlog::warn("[Sticker] 设置表情描述失败: {}",
+                                             newItem["res_id"].asString());
+                            }
                         } else {
                             spdlog::warn("[Sticker] 设置表情描述失败: {}",
                                          newItem["res_id"].asString());
@@ -434,7 +411,6 @@ namespace LittleMeowBot {
                     }
 
                     const auto& config = Config::instance();
-                    const auto client = drogon::HttpClient::newHttpClient(config.qqHttpHost);
 
                     Json::Value body;
                     body["emoji_id"] = emoji["emoji_id"].asString().empty()
@@ -443,20 +419,14 @@ namespace LittleMeowBot {
                     body["res_id"] = emoji["res_id"].asString();
                     body["md5"] = emoji["md5"].asString();
                     body["desc"] = newName;
-                    const auto req = drogon::HttpRequest::newHttpJsonRequest(body);
-                    req->setMethod(drogon::Post);
-                    req->setPath("/set_custom_face_desc");
-                    req->addHeader("Authorization", "Bearer " + config.accessToken);
-
-                    drogon::HttpResponsePtr resp;
-                    try {
-                        resp = co_await client->sendRequestCoro(req, 30.0);
-                    } catch (const std::exception& e) {
-                        spdlog::error("[Sticker] 改名请求网络异常: {}", e.what());
+                    const auto resp = co_await HttpUtil::send("[Sticker]", config.qqHttpHost,
+                                                              "/set_custom_face_desc", drogon::Post,
+                                                              body, config.accessToken, 30.0);
+                    if (!resp) {
                         co_return std::string("改名失败: QQ 客户端连接异常");
                     }
-                    const auto json = resp->getJsonObject();
-                    if (resp->getStatusCode() != drogon::k200OK || !json
+                    const auto json = (*resp)->getJsonObject();
+                    if ((*resp)->getStatusCode() != drogon::k200OK || !json
                         || json->get("status", "failed").asString() != "ok") {
                         spdlog::error("[Sticker] 修改表情描述失败: {}", emoji["res_id"].asString());
                         co_return std::string("改名失败");
@@ -491,24 +461,17 @@ namespace LittleMeowBot {
                     }
 
                     const auto& config = Config::instance();
-                    const auto client = drogon::HttpClient::newHttpClient(config.qqHttpHost);
 
                     Json::Value body;
                     body["res_id"] = emoji["res_id"].asString();
-                    const auto req = drogon::HttpRequest::newHttpJsonRequest(body);
-                    req->setMethod(drogon::Post);
-                    req->setPath("/delete_custom_face");
-                    req->addHeader("Authorization", "Bearer " + config.accessToken);
-
-                    drogon::HttpResponsePtr resp;
-                    try {
-                        resp = co_await client->sendRequestCoro(req, 30.0);
-                    } catch (const std::exception& e) {
-                        spdlog::error("[Sticker] 删除请求网络异常: {}", e.what());
+                    const auto resp = co_await HttpUtil::send("[Sticker]", config.qqHttpHost,
+                                                              "/delete_custom_face", drogon::Post,
+                                                              body, config.accessToken, 30.0);
+                    if (!resp) {
                         co_return std::string("删除失败: QQ 客户端连接异常");
                     }
-                    const auto json = resp->getJsonObject();
-                    if (resp->getStatusCode() != drogon::k200OK || !json
+                    const auto json = (*resp)->getJsonObject();
+                    if ((*resp)->getStatusCode() != drogon::k200OK || !json
                         || json->get("status", "failed").asString() != "ok") {
                         spdlog::error("[Sticker] 删除收藏表情失败: {}", emoji["res_id"].asString());
                         co_return std::string("删除失败");
@@ -562,7 +525,7 @@ namespace LittleMeowBot {
                     const uint64_t groupId = currentToolContext().groupId;
                     if (groupId == 0) co_return std::string("禁言失败: 无法获取群号");
 
-                    uint64_t userId = args.isMember("qq") ? std::stoull(args["qq"].asString()) : 0;
+                    uint64_t userId = args.isMember("qq") ? parseUInt64(args["qq"].asString()) : 0;
                     uint64_t duration = args.isMember("duration") ? args["duration"].asUInt64() : 600;
 
                     if (userId == 0) co_return std::string("禁言失败: 请提供有效的QQ号");
@@ -591,7 +554,7 @@ namespace LittleMeowBot {
                     const uint64_t groupId = currentToolContext().groupId;
                     if (groupId == 0) co_return std::string("拍一拍失败: 无法获取群号");
 
-                    uint64_t userId = args.isMember("qq") ? std::stoull(args["qq"].asString()) : 0;
+                    uint64_t userId = args.isMember("qq") ? parseUInt64(args["qq"].asString()) : 0;
                     if (userId == 0) co_return std::string("拍一拍失败: 请提供有效的QQ号");
 
                     const bool success = co_await MessageService::setGroupPoke(groupId, userId);
@@ -615,7 +578,7 @@ namespace LittleMeowBot {
                 "撤回消息。当用户要求撤回某条消息时使用。聊天记录格式为JSON：{\"message_id\":\"12345\",\"reply_to\":\"67890\"}。若用户想撤回引用的消息，用 reply_to 字段的值；若想撤回某条消息本身，用 message_id 字段的值。",
                 .parameters = recallParams,
                 .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
-                    uint64_t messageId = args.isMember("message_id") ? std::stoull(args["message_id"].asString()) : 0;
+                    uint64_t messageId = args.isMember("message_id") ? parseUInt64(args["message_id"].asString()) : 0;
                     if (messageId == 0) co_return std::string("撤回失败: 请提供有效的消息ID");
 
                     const bool success = co_await MessageService::deleteMessage(messageId);
@@ -807,29 +770,17 @@ namespace LittleMeowBot {
         std::string hostPort = pathStart == std::string::npos ? rest : rest.substr(0, pathStart);
         std::string path = pathStart == std::string::npos ? "/" : rest.substr(pathStart);
 
-        // 创建 HTTP 客户端
+        // 创建 HTTP 客户端并发送（GET 无 body，其余把 args 作为 JSON body）
         std::string baseUrl = proto + "://" + hostPort;
-        auto client = drogon::HttpClient::newHttpClient(baseUrl);
-
-        // 创建请求
-        auto req = drogon::HttpRequest::newHttpRequest();
-        req->setMethod(method == "GET" ? drogon::Get : drogon::Post);
-        req->setPath(path);
-
-        // 将 args 作为 JSON body 发送
-        if (method != "GET" && !args.isNull()) {
-            Json::StreamWriterBuilder writerBuilder;
-            req->setBody(Json::writeString(writerBuilder, args));
-            req->addHeader("Content-Type", "application/json");
+        const bool isGet = (method == "GET");
+        const auto resp = co_await HttpUtil::send("[HttpTool]", baseUrl, path,
+                                                  isGet ? drogon::Get : drogon::Post,
+                                                  isGet ? Json::Value(Json::nullValue) : args,
+                                                  "", 30.0);
+        if (!resp) {
+            co_return std::string("HTTP请求失败");
         }
-
-        try {
-            auto resp = co_await client->sendRequestCoro(req, 30.0);
-            co_return std::string(resp->getBody());
-        } catch (const std::exception& e) {
-            spdlog::error("HTTP工具执行失败: {}", e.what());
-            co_return std::string("HTTP请求失败: ") + e.what();
-        }
+        co_return std::string((*resp)->getBody());
     }
 
     namespace {
@@ -858,23 +809,20 @@ namespace LittleMeowBot {
         }
 
         const auto& config = Config::instance();
-        const auto client = drogon::HttpClient::newHttpClient(config.qqHttpHost);
 
         Json::Value body;
         body["count"] = 200;
-        const auto req = drogon::HttpRequest::newHttpJsonRequest(body);
-        req->setMethod(drogon::Post);
-        req->setPath("/fetch_custom_face_detail");
-        req->addHeader("Authorization", "Bearer " + config.accessToken);
 
         Json::Value result(Json::arrayValue);
-        try {
-            const auto resp = co_await client->sendRequestCoro(req, 30.0);
-            const auto json = resp->getJsonObject();
-            if (resp->getStatusCode() != drogon::k200OK || !json
+        const auto resp = co_await HttpUtil::send("[Sticker]", config.qqHttpHost,
+                                                  "/fetch_custom_face_detail", drogon::Post,
+                                                  body, config.accessToken, 30.0);
+        if (resp) {
+            const auto json = (*resp)->getJsonObject();
+            if ((*resp)->getStatusCode() != drogon::k200OK || !json
                 || json->get("status", "failed").asString() != "ok") {
                 spdlog::error("[Sticker] 获取收藏表情失败: status={}",
-                              static_cast<int>(resp->getStatusCode()));
+                              static_cast<int>((*resp)->getStatusCode()));
                 co_return result;
             }
 
@@ -899,10 +847,9 @@ namespace LittleMeowBot {
                 result.append(emoji);
                 idx++;
             }
-        } catch (const std::exception& e) {
-            spdlog::error("[Sticker] 获取收藏表情异常: {}", e.what());
         }
 
+        // 网络异常（resp 为空）时缓存空结果，避免高频重试
         {
             std::lock_guard lock(g_favEmojiCacheMutex);
             g_favEmojiCache = result;

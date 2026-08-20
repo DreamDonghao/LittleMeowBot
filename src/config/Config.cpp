@@ -6,29 +6,36 @@
 #include <spdlog/spdlog.h>
 
 namespace LittleMeowBot {
+    namespace {
+        /// @brief 从数据库加载单个 LLM 配置
+        /// @param name 配置名（router/executor/executorThinking/image）
+        /// @param apiConfig 输出的 API 配置
+        /// @param modelParams 模型参数（可为 nullptr，表示不加载）
+        void loadLLMConfig(const std::string_view name, LLMApiConfig& apiConfig, LLMModelParams* modelParams = nullptr){
+            const auto cfg = Database::instance().getLLMConfig(std::string(name));
+            if (cfg.isNull()) return;
+
+            apiConfig.apiKey = cfg["apiKey"].asString();
+            apiConfig.baseUrl = cfg["baseUrl"].asString();
+            apiConfig.path = cfg["path"].asString();
+            apiConfig.model = cfg["model"].asString();
+            if (cfg.isMember("reasoningEffort")) {
+                apiConfig.reasoningEffort = cfg["reasoningEffort"].asString();
+            }
+
+            if (modelParams) {
+                modelParams->maxTokens = cfg["maxTokens"].asInt();
+                modelParams->temperature = cfg["temperature"].asFloat();
+                modelParams->topP = cfg["topP"].asFloat();
+            }
+        }
+    }
     Config& Config::instance(){
         static Config config{};
         return config;
     }
 
-    void Config::loadLLMConfig(const std::string_view name, LLMApiConfig& apiConfig, LLMModelParams* modelParams){
-        const auto cfg = Database::instance().getLLMConfig(std::string(name));
-        if (cfg.isNull()) return;
 
-        apiConfig.apiKey = cfg["apiKey"].asString();
-        apiConfig.baseUrl = cfg["baseUrl"].asString();
-        apiConfig.path = cfg["path"].asString();
-        apiConfig.model = cfg["model"].asString();
-        if (cfg.isMember("reasoningEffort")) {
-            apiConfig.reasoningEffort = cfg["reasoningEffort"].asString();
-        }
-
-        if (modelParams) {
-            modelParams->maxTokens = cfg["maxTokens"].asInt();
-            modelParams->temperature = cfg["temperature"].asFloat();
-            modelParams->topP = cfg["topP"].asFloat();
-        }
-    }
 
     void Config::loadFromDatabase(){
         loadLLMConfig("router", router, &routerParams);

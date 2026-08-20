@@ -9,12 +9,10 @@
 
 #pragma once
 #include <drogon/WebSocketConnection.h>
-#include <json/json.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <mutex>
 #include <memory>
-#include <vector>
 #include <string>
 
 namespace LittleMeowBot {
@@ -52,10 +50,6 @@ namespace LittleMeowBot {
 
     private:
         WebSocketManager() = default;
-
-        /// @brief 获取当前时间戳字符串
-        /// @return 格式化的时间戳（YYYY-MM-DD HH:MM:SS）
-        std::string getCurrentTimestamp() const;
 
         std::unordered_set<drogon::WebSocketConnectionPtr> m_connections;  ///< 所有连接
         std::unordered_map<uint64_t, std::unordered_set<drogon::WebSocketConnectionPtr>> m_subscriptions; ///< 群订阅映射

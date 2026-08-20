@@ -47,9 +47,9 @@ namespace LittleMeowBot {
         std::unordered_set<uint64_t> m_processingGroups;
         std::mutex m_processingMutex;
 
-        bool isProcessing(uint64_t groupId);
-
-        void markProcessing(uint64_t groupId);
+        /// @brief 尝试标记群为处理中（原子操作）
+        /// @return 成功获得该群的处理权返回 true，否则返回 false
+        bool tryMarkProcessing(uint64_t groupId);
 
         void unmarkProcessing(uint64_t groupId);
     };
