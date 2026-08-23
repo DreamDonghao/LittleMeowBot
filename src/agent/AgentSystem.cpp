@@ -36,20 +36,26 @@ namespace LittleMeowBot {
         }
 
         const uint64_t groupId = message.getGroupId();
-        // 同一群的消息串行处理：非@消息在处理中时跳过（防止积压），
-        // @消息则排队等待，确保不会被跳过
-        while (!tryMarkProcessing(groupId)) {
-            if (!message.atMe()) {
+
+        auto generation = tryStartProcessing(groupId);
+        if (generation == 0) {
+            // @消息：取消当前非@消息的处理，排队等待
+            if (message.atMe()) {
+                cancelProcessing(groupId);
+                do {
+                    co_await drogon::sleepCoro(drogon::app().getLoop(), std::chrono::milliseconds(50));
+                    generation = tryStartProcessing(groupId);
+                } while (generation == 0);
+            } else {
                 spdlog::debug("群 {} 正在处理中，跳过", groupId);
                 co_return std::nullopt;
             }
-            co_await drogon::sleepCoro(drogon::app().getLoop(), std::chrono::milliseconds(50));
         }
 
         struct ProcessingGuard {
             AgentSystem *sys;
             uint64_t gid;
-            ~ProcessingGuard() { sys->unmarkProcessing(gid); }
+            ~ProcessingGuard() { sys->finishProcessing(gid); }
         } guard{.sys = this, .gid = groupId};
 
         spdlog::info("======== 群 {} 开始处理消息 ========", groupId);
@@ -63,6 +69,12 @@ namespace LittleMeowBot {
         spdlog::info("[Router] 群 {} 结果: {} | shouldReply={} | thinking={} | maxLength={}",
                   groupId, decision.action, decision.shouldReply, decision.enableThinking, decision.maxLength);
 
+        // 检查处理代际是否被 @消息取消
+        if (!isCurrentGeneration(groupId, generation)) {
+            spdlog::info("[Router] 群 {} 处理被 @消息中断", groupId);
+            co_return std::nullopt;
+        }
+
         // Router 决定不回复
         if (!decision.shouldReply) {
             spdlog::info("[Router] 群 {} 决定不回复: {}", groupId, decision.reason);
@@ -74,6 +86,12 @@ namespace LittleMeowBot {
 
         const auto reply = co_await execute(chatRecords, memory, decision);
 
+        // 检查处理代际是否被 @消息取消
+        if (!isCurrentGeneration(groupId, generation)) {
+            spdlog::info("[Executor] 群 {} 处理被 @消息中断", groupId);
+            co_return std::nullopt;
+        }
+
         if (!reply || !reply->shouldReply || reply->content.empty()) {
             spdlog::error("[Executor] 群 {} 执行失败或无回复", groupId);
             co_return std::nullopt;
@@ -83,16 +101,32 @@ namespace LittleMeowBot {
         co_return cleanReplyContent(reply->content);
     }
 
-    bool AgentSystem::tryMarkProcessing(const uint64_t groupId) {
+    uint64_t AgentSystem::tryStartProcessing(const uint64_t groupId) {
         std::lock_guard lock(m_processingMutex);
-        if (m_processingGroups.contains(groupId)) {
-            return false;
+        auto it = m_processingGroups.find(groupId);
+        if (it != m_processingGroups.end()) {
+            return 0; // 群正在处理中
         }
-        m_processingGroups.insert(groupId);
-        return true;
+        const uint64_t gen = 1;
+        m_processingGroups[groupId] = gen;
+        return gen;
     }
 
-    void AgentSystem::unmarkProcessing(const uint64_t groupId) {
+    void AgentSystem::cancelProcessing(const uint64_t groupId) {
+        std::lock_guard lock(m_processingMutex);
+        auto it = m_processingGroups.find(groupId);
+        if (it != m_processingGroups.end()) {
+            ++it->second; // 递增代际，通知当前处理者中断
+        }
+    }
+
+    bool AgentSystem::isCurrentGeneration(const uint64_t groupId, const uint64_t generation) {
+        std::lock_guard lock(m_processingMutex);
+        auto it = m_processingGroups.find(groupId);
+        return it != m_processingGroups.end() && it->second == generation;
+    }
+
+    void AgentSystem::finishProcessing(const uint64_t groupId) {
         std::lock_guard lock(m_processingMutex);
         m_processingGroups.erase(groupId);
     }
