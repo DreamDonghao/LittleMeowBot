@@ -9,7 +9,7 @@ export default defineConfig({
     plugins: [vue()],
     build: {
         outDir: resolve(projectRoot, 'build/bot/public'),
-        emptyOutDir: false
+        emptyOutDir: true
     },
     server: {
         proxy: {

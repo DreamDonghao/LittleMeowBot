@@ -180,10 +180,10 @@ namespace LittleMeowBot {
             co_return std::nullopt;
         }
 
-        ApiClient::logUsage(*json, config.router.model);
+        ApiClient::logUsage(*json, config.router.model, "router");
 
         const std::string content = (*json)["choices"][0]["message"]["content"].asString();
-        spdlog::info("[Router] LLM响应: {}", content);
+        spdlog::debug("[Router] LLM响应: {}", content);
 
         co_return parseResponse(content);
     }

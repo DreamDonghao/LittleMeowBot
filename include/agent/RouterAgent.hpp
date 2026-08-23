@@ -1,5 +1,5 @@
 /// @file RouterAgent.hpp
-/// @brief Router Agent - 消息路由与规划（合并原 Router + Planner）
+/// @brief Router Agent - 消息路由与规划
 /// @details 负责判断消息是否需要回复，并规划回复策略：
 ///          - 硬规则检查（@提及、刷屏、自身消息）- 无需 LLM
 ///          - LLM 辅助判断（意图分析 + 策略规划）

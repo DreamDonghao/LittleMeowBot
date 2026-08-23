@@ -112,7 +112,7 @@ namespace LittleMeowBot {
                 co_return std::nullopt;
             }
 
-            ApiClient::logUsage(*json, config.executorThinking.model);
+            ApiClient::logUsage(*json, config.executorThinking.model, "executorThinking");
 
             const auto &message = (*json)["choices"][0]["message"];
             std::string content;
@@ -303,7 +303,7 @@ namespace LittleMeowBot {
                     co_return std::nullopt;
                 }
 
-                ApiClient::logUsage(*json, apiConfig.model);
+                ApiClient::logUsage(*json, apiConfig.model, "executor");
 
                 const auto &message = (*json)["choices"][0]["message"];
                 ReplyDecision decision;

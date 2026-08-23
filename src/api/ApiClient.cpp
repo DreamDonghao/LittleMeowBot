@@ -5,6 +5,7 @@
 #include <spdlog/spdlog.h>
 #include <config/Config.hpp>
 #include <storage/Database.hpp>
+#include <service/WebSocketManager.hpp>
 #include <util/HttpUtil.hpp>
 
 namespace LittleMeowBot {
@@ -29,7 +30,8 @@ namespace LittleMeowBot {
             const std::string& model,
             float temperature,
             float top_p,
-            int max_tokens){
+            int max_tokens,
+            const std::string& role){
             const Json::Value body = buildModelReq(messages, model, temperature, top_p, max_tokens);
             const auto resp = co_await HttpUtil::send("[LLM]", base_url, path, drogon::Post, body, api_key, 90.0);
             if (!resp) {
@@ -42,7 +44,7 @@ namespace LittleMeowBot {
                 co_return std::nullopt;
             }
 
-            ApiClient::logUsage(*json, model);
+            ApiClient::logUsage(*json, model, role);
 
             const auto& choices = (*json)["choices"];
             if (!choices.isArray() || choices.empty()) {
@@ -58,7 +60,8 @@ namespace LittleMeowBot {
         const Json::Value& messages,
         const float temperature,
         const float top_p,
-        const int max_tokens){
+        const int max_tokens,
+        const std::string& role){
         const auto& config = Config::instance();
         co_return co_await requestStr(
             messages,
@@ -68,11 +71,12 @@ namespace LittleMeowBot {
             config.executor.model,
             temperature,
             top_p,
-            max_tokens
+            max_tokens,
+            role
         );
     }
 
-    void ApiClient::logUsage(const Json::Value& responseJson, const std::string& model){
+    void ApiClient::logUsage(const Json::Value& responseJson, const std::string& model, const std::string& role){
         if (!responseJson.isMember("usage")) return;
         const auto& usage = responseJson["usage"];
         int promptTokens = usage.get("prompt_tokens", 0).asInt();
@@ -96,19 +100,24 @@ namespace LittleMeowBot {
 
         if (promptTokens > 0) {
             float hitRate = static_cast<float>(cachedTokens) / static_cast<float>(promptTokens) * 100.0f;
-            spdlog::info("[Cache] model={} | prompt={} | completion={} | total={} | cached={} | hit_rate={:.1f}%",
-                model, promptTokens, completionTokens, totalTokens, cachedTokens, hitRate);
+            spdlog::info("[Cache] role={} | model={} | prompt={} | completion={} | total={} | cached={} | hit_rate={:.1f}%",
+                role, model, promptTokens, completionTokens, totalTokens, cachedTokens, hitRate);
         } else if (totalTokens > 0) {
             // 网关偶尔不返回 prompt 分解，用 total - completion 兜底，避免用量统计缺 prompt 数据
             promptTokens = std::max(0, totalTokens - completionTokens);
             Json::StreamWriterBuilder compactWriter;
             compactWriter["indentation"] = "";
-            spdlog::info("[Cache] model={} | prompt={} (no breakdown) | completion={} | total={} | cached=N/A | hit_rate=N/A | usage={}",
-                model, promptTokens, completionTokens, totalTokens,
+            spdlog::info("[Cache] role={} | model={} | prompt={} (no breakdown) | completion={} | total={} | cached=N/A | hit_rate=N/A | usage={}",
+                role, model, promptTokens, completionTokens, totalTokens,
                 Json::writeString(compactWriter, usage));
         }
 
         Database::instance().addUsageRecord(
-            model, promptTokens, completionTokens, totalTokens, cachedTokens);
+            role, model, promptTokens, completionTokens, totalTokens, cachedTokens);
+
+        Json::Value evt;
+        evt["role"] = role;
+        evt["model"] = model;
+        WebSocketManager::instance().broadcastEvent("usage_updated", evt);
     }
 }

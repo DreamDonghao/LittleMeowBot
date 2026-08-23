@@ -9,6 +9,7 @@
 
 #pragma once
 #include <drogon/WebSocketConnection.h>
+#include <json/value.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <mutex>
@@ -47,6 +48,11 @@ namespace LittleMeowBot {
         /// @param role 角色（user/assistant）
         /// @param content 消息内容
         void pushMessage(uint64_t groupId, const std::string& role, const std::string& content);
+
+        /// @brief 广播事件到所有连接
+        /// @param type 事件类型
+        /// @param data 事件数据
+        void broadcastEvent(const std::string& type, const Json::Value& data);
 
     private:
         WebSocketManager() = default;

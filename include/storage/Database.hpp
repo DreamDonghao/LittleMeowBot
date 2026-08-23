@@ -152,9 +152,9 @@ namespace LittleMeowBot {
         // ============================================================
 
         /// @brief 记录一次 LLM 调用用量
-        void addUsageRecord(const std::string& model, int promptTokens, int completionTokens,
-                            int totalTokens, int cachedTokens) const;
-        /// @brief 获取最近 N 天用量汇总（按模型、按天聚合）
+        void addUsageRecord(const std::string& role, const std::string& model, int promptTokens,
+                            int completionTokens, int totalTokens, int cachedTokens) const;
+        /// @brief 获取最近 N 天用量汇总（按角色、按天聚合）
         Json::Value getUsageSummary(int days) const;
         /// @brief 获取最近调用明细
         Json::Value getRecentUsage(int limit) const;

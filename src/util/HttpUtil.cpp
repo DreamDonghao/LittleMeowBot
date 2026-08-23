@@ -51,20 +51,24 @@ namespace LittleMeowBot::HttpUtil {
         const Json::Value &body,
         const std::string &bearerToken,
         const double timeout) {
-        // 请求前记录：方法与完整 URL（便于直接定位地址问题）
-        spdlog::info("{} [HTTP] {} {}{}", tag, methodName(method), baseUrl, path);
+        // 正常请求详情仅记录到 debug，避免每条消息多次请求刷屏
+        spdlog::debug("{} [HTTP] {} {}{}", tag, methodName(method), baseUrl, path);
         if (!body.isNull()) {
-            spdlog::info("{} [HTTP] body={}", tag, truncate(serializeBody(body), kBodyLogMax));
+            spdlog::debug("{} [HTTP] body={}", tag, truncate(serializeBody(body), kBodyLogMax));
         }
         if (!bearerToken.empty()) {
             spdlog::debug("{} [HTTP] Authorization: Bearer {}", tag, maskToken(bearerToken));
         }
 
+        // 失败时才附带完整地址与 body 打日志，确保凭日志即可定位问题
+        const auto bodyLog = body.isNull() ? std::string{} : truncate(serializeBody(body), kBodyLogMax);
+
         drogon::HttpClientPtr client;
         try {
             client = drogon::HttpClient::newHttpClient(baseUrl);
         } catch (const std::exception &e) {
-            spdlog::error("{} [HTTP] 创建客户端失败: {} (baseUrl={})", tag, e.what(), baseUrl);
+            spdlog::error("{} [HTTP] 创建客户端失败: {} ({} {}{}) body={}",
+                          tag, e.what(), methodName(method), baseUrl, path, bodyLog);
             co_return std::nullopt;
         }
 
@@ -77,12 +81,21 @@ namespace LittleMeowBot::HttpUtil {
             req->addHeader("Authorization", "Bearer " + bearerToken);
         }
 
+        drogon::HttpResponsePtr resp;
         try {
-            co_return co_await client->sendRequestCoro(req, timeout);
+            resp = co_await client->sendRequestCoro(req, timeout);
         } catch (const std::exception &e) {
-            spdlog::error("{} [HTTP] 请求异常: {} ({} {}{})",
-                          tag, e.what(), methodName(method), baseUrl, path);
+            spdlog::error("{} [HTTP] 请求异常: {} ({} {}{}) body={}",
+                          tag, e.what(), methodName(method), baseUrl, path, bodyLog);
             co_return std::nullopt;
         }
+
+        // 非 2xx（如 DNS 解析失败、连接被拒等）同样把地址打出来，方便定位
+        if (resp && resp->getStatusCode() >= drogon::k400BadRequest) {
+            spdlog::warn("{} [HTTP] 响应异常: status={} ({} {}{})",
+                         tag, static_cast<int>(resp->getStatusCode()), methodName(method), baseUrl, path);
+        }
+
+        co_return resp;
     }
 } // namespace LittleMeowBot::HttpUtil

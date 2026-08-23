@@ -25,10 +25,12 @@ namespace LittleMeowBot::ApiClient {
         const Json::Value &messages,
         float temperature = 1.35f,
         float top_p = 0.92f,
-        int max_tokens = 1024);
+        int max_tokens = 1024,
+        const std::string &role = "memory");
 
     /// @brief 从 API 响应中提取 usage 信息并输出缓存命中率日志
     /// @param responseJson API 返回的完整 JSON
     /// @param model 模型名
-    void logUsage(const Json::Value &responseJson, const std::string &model);
+    /// @param role 角色名（router/executor/executorThinking/memory/image）
+    void logUsage(const Json::Value &responseJson, const std::string &model, const std::string &role);
 }

@@ -737,18 +737,19 @@ namespace LittleMeowBot {
     //                      用量统计操作
     // ============================================================
 
-    void Database::addUsageRecord(const std::string& model, const int promptTokens,
-                                  const int completionTokens, const int totalTokens,
-                                  const int cachedTokens) const{
+    void Database::addUsageRecord(const std::string& role, const std::string& model,
+                                  const int promptTokens, const int completionTokens,
+                                  const int totalTokens, const int cachedTokens) const{
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db,
-            "INSERT INTO llm_usage (model, prompt_tokens, completion_tokens, total_tokens, cached_tokens) "
-            "VALUES (?, ?, ?, ?, ?)");
-        stmt.bind(1, model);
-        stmt.bind(2, promptTokens);
-        stmt.bind(3, completionTokens);
-        stmt.bind(4, totalTokens);
-        stmt.bind(5, cachedTokens);
+            "INSERT INTO llm_usage (role, model, prompt_tokens, completion_tokens, total_tokens, cached_tokens) "
+            "VALUES (?, ?, ?, ?, ?, ?)");
+        stmt.bind(1, role);
+        stmt.bind(2, model);
+        stmt.bind(3, promptTokens);
+        stmt.bind(4, completionTokens);
+        stmt.bind(5, totalTokens);
+        stmt.bind(6, cachedTokens);
         stmt.exec();
     }
 
@@ -762,7 +763,7 @@ namespace LittleMeowBot {
             Statement stmt(m_db,
                 "SELECT COUNT(*), COALESCE(SUM(prompt_tokens),0), COALESCE(SUM(completion_tokens),0), "
                 "COALESCE(SUM(total_tokens),0), COALESCE(SUM(cached_tokens),0) "
-                "FROM llm_usage WHERE created_at >= datetime('now', ?)");
+                "FROM llm_usage WHERE created_at >= datetime('now', 'localtime', ?)");
             stmt.bind(1, sinceDate);
             if (stmt.step()) {
                 result["total_calls"] = stmt.getInt(0);
@@ -773,34 +774,72 @@ namespace LittleMeowBot {
             }
         }
 
-        // 按模型
+        // 今日汇总（按本地日期）
         {
-            Json::Value byModel(Json::arrayValue);
             Statement stmt(m_db,
-                "SELECT model, COUNT(*), COALESCE(SUM(prompt_tokens),0), COALESCE(SUM(completion_tokens),0), "
+                "SELECT COUNT(*), COALESCE(SUM(prompt_tokens),0), COALESCE(SUM(completion_tokens),0), "
                 "COALESCE(SUM(total_tokens),0), COALESCE(SUM(cached_tokens),0) "
-                "FROM llm_usage WHERE created_at >= datetime('now', ?) "
-                "GROUP BY model ORDER BY SUM(total_tokens) DESC");
+                "FROM llm_usage WHERE date(created_at, 'localtime') = date('now', 'localtime')");
+            if (stmt.step()) {
+                result["today"]["calls"] = stmt.getInt(0);
+                result["today"]["prompt"] = stmt.getInt64(1);
+                result["today"]["completion"] = stmt.getInt64(2);
+                result["today"]["total"] = stmt.getInt64(3);
+                result["today"]["cached"] = stmt.getInt64(4);
+            }
+        }
+
+        // 今日按角色
+        {
+            Json::Value todayByRole(Json::arrayValue);
+            Statement stmt(m_db,
+                "SELECT role, MAX(model), COUNT(*), COALESCE(SUM(prompt_tokens),0), "
+                "COALESCE(SUM(completion_tokens),0), COALESCE(SUM(total_tokens),0), COALESCE(SUM(cached_tokens),0) "
+                "FROM llm_usage WHERE date(created_at, 'localtime') = date('now', 'localtime') "
+                "GROUP BY role ORDER BY SUM(total_tokens) DESC");
+            while (stmt.step()) {
+                Json::Value item;
+                item["role"] = stmt.getText(0);
+                item["model"] = stmt.getText(1);
+                item["calls"] = stmt.getInt(2);
+                item["prompt"] = stmt.getInt64(3);
+                item["completion"] = stmt.getInt64(4);
+                item["total"] = stmt.getInt64(5);
+                item["cached"] = stmt.getInt64(6);
+                todayByRole.append(item);
+            }
+            result["today_by_role"] = todayByRole;
+        }
+
+        // 按角色
+        {
+            Json::Value byRole(Json::arrayValue);
+            Statement stmt(m_db,
+                "SELECT role, MAX(model), COUNT(*), COALESCE(SUM(prompt_tokens),0), "
+                "COALESCE(SUM(completion_tokens),0), COALESCE(SUM(total_tokens),0), COALESCE(SUM(cached_tokens),0) "
+                "FROM llm_usage WHERE created_at >= datetime('now', 'localtime', ?) "
+                "GROUP BY role ORDER BY SUM(total_tokens) DESC");
             stmt.bind(1, sinceDate);
             while (stmt.step()) {
                 Json::Value item;
-                item["model"] = stmt.getText(0);
-                item["calls"] = stmt.getInt(1);
-                item["prompt"] = stmt.getInt64(2);
-                item["completion"] = stmt.getInt64(3);
-                item["total"] = stmt.getInt64(4);
-                item["cached"] = stmt.getInt64(5);
-                byModel.append(item);
+                item["role"] = stmt.getText(0);
+                item["model"] = stmt.getText(1);
+                item["calls"] = stmt.getInt(2);
+                item["prompt"] = stmt.getInt64(3);
+                item["completion"] = stmt.getInt64(4);
+                item["total"] = stmt.getInt64(5);
+                item["cached"] = stmt.getInt64(6);
+                byRole.append(item);
             }
-            result["by_model"] = byModel;
+            result["by_role"] = byRole;
         }
 
         // 按天
         {
             Json::Value byDay(Json::arrayValue);
             Statement stmt(m_db,
-                "SELECT date(created_at) AS day, COUNT(*), COALESCE(SUM(total_tokens),0) "
-                "FROM llm_usage WHERE created_at >= datetime('now', ?) "
+                "SELECT date(created_at, 'localtime') AS day, COUNT(*), COALESCE(SUM(total_tokens),0) "
+                "FROM llm_usage WHERE created_at >= datetime('now', 'localtime', ?) "
                 "GROUP BY day ORDER BY day");
             stmt.bind(1, sinceDate);
             while (stmt.step()) {
@@ -820,17 +859,18 @@ namespace LittleMeowBot {
         std::shared_lock lock(m_mutex);
         Json::Value result(Json::arrayValue);
         Statement stmt(m_db,
-            "SELECT created_at, model, prompt_tokens, completion_tokens, total_tokens, cached_tokens "
+            "SELECT datetime(created_at, 'localtime') AS time, role, model, prompt_tokens, completion_tokens, total_tokens, cached_tokens "
             "FROM llm_usage ORDER BY id DESC LIMIT ?");
         stmt.bind(1, limit);
         while (stmt.step()) {
             Json::Value item;
             item["time"] = stmt.getText(0);
-            item["model"] = stmt.getText(1);
-            item["prompt"] = stmt.getInt(2);
-            item["completion"] = stmt.getInt(3);
-            item["total"] = stmt.getInt(4);
-            item["cached"] = stmt.getInt(5);
+            item["role"] = stmt.getText(1);
+            item["model"] = stmt.getText(2);
+            item["prompt"] = stmt.getInt(3);
+            item["completion"] = stmt.getInt(4);
+            item["total"] = stmt.getInt(5);
+            item["cached"] = stmt.getInt(6);
             result.append(item);
         }
         return result;
@@ -1029,6 +1069,7 @@ namespace LittleMeowBot {
     ))",
             R"(CREATE TABLE IF NOT EXISTS llm_usage (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        role TEXT NOT NULL DEFAULT '',
         model TEXT NOT NULL,
         prompt_tokens INTEGER DEFAULT 0,
         completion_tokens INTEGER DEFAULT 0,
@@ -1118,6 +1159,10 @@ namespace LittleMeowBot {
         if (!columnExists("llm_config", "reasoning_effort")) {
             spdlog::info("数据库迁移: 添加 llm_config.reasoning_effort 列");
             sqlite3_exec(m_db, "ALTER TABLE llm_config ADD COLUMN reasoning_effort TEXT DEFAULT ''", nullptr, nullptr, nullptr);
+        }
+        if (!columnExists("llm_usage", "role")) {
+            spdlog::info("数据库迁移: 添加 llm_usage.role 列");
+            sqlite3_exec(m_db, "ALTER TABLE llm_usage ADD COLUMN role TEXT NOT NULL DEFAULT ''", nullptr, nullptr, nullptr);
         }
 
         // 数据库迁移: long_term_memory → short_term_memory

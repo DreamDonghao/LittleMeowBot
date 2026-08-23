@@ -34,6 +34,8 @@ namespace LittleMeowBot {
         ADD_METHOD_TO(AdminController::updateEmojiDesc, "/admin/api/emoji/desc", drogon::Post);
         // 用量统计
         ADD_METHOD_TO(AdminController::getUsage, "/admin/api/usage", drogon::Get);
+        // 运行信息（启动时间/运行时长）
+        ADD_METHOD_TO(AdminController::getSystemInfo, "/admin/api/system-info", drogon::Get);
         // 管理员
         ADD_METHOD_TO(AdminController::getAdmins, "/admin/api/admins", drogon::Get);
         ADD_METHOD_TO(AdminController::addAdmin, "/admin/api/admin", drogon::Post);
@@ -131,6 +133,13 @@ namespace LittleMeowBot {
         /// @brief 获取 Token 用量统计
         /// @param req query: days（可选，默认30）
         drogon::Task<> getUsage(
+            drogon::HttpRequestPtr req,
+            std::function<void(const drogon::HttpResponsePtr &)> callback) const;
+
+        /// @brief 获取运行信息（启动时间、运行时长）
+        /// @param req HTTP 请求
+        /// @param callback HTTP 响应回调
+        drogon::Task<> getSystemInfo(
             drogon::HttpRequestPtr req,
             std::function<void(const drogon::HttpResponsePtr &)> callback) const;
 

@@ -191,8 +191,12 @@ onMounted(async () => {
 
       <div class="sidebar-footer">
         <button class="theme-toggle" type="button" @click="toggleTheme">
-          <!-- 太阳 -->
+          <!-- 月亮（当前深色模式） -->
           <svg v-if="theme === 'dark'" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+          <!-- 太阳（当前浅色模式） -->
+          <svg v-else fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <circle cx="12" cy="12" r="5"/>
             <line x1="12" x2="12" y1="1" y2="3"/>
             <line x1="12" x2="12" y1="21" y2="23"/>
@@ -203,11 +207,7 @@ onMounted(async () => {
             <line x1="4.22" x2="5.64" y1="19.78" y2="18.36"/>
             <line x1="18.36" x2="19.78" y1="5.64" y2="4.22"/>
           </svg>
-          <!-- 月亮 -->
-          <svg v-else fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-          </svg>
-          {{ theme === 'dark' ? '浅色模式' : '深色模式' }}
+          {{ theme === 'dark' ? '深色模式' : '浅色模式' }}
         </button>
       </div>
     </div>

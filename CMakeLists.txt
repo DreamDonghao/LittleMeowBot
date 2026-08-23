@@ -39,7 +39,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
         Drogon::Drogon
         spdlog::spdlog_header_only
         fmt::fmt
-        SQLite3_lib
+SQLite3_lib
 )
 
 # 前端构建 (Vue3) - 前端源码变化时自动重新构建，输出到 build/bot/public

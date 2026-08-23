@@ -7,9 +7,15 @@
 #include <util/HttpUtil.hpp>
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 
 using namespace LittleMeowBot;
 using namespace drogon;
+
+namespace {
+    // 进程启动时间（文件作用域 static，程序启动时初始化）
+    const auto g_processStartTime = std::chrono::system_clock::now();
+}
 
 // ==================== LLM配置 ====================
 
@@ -151,6 +157,23 @@ Task<> AdminController::getUsage(
 
     Json::Value resp = Database::instance().getUsageSummary(days);
     resp["recent"] = Database::instance().getRecentUsage(50);
+    callback(HttpResponse::newHttpJsonResponse(resp));
+    co_return;
+}
+
+// ==================== 运行信息 ====================
+
+Task<> AdminController::getSystemInfo(
+    HttpRequestPtr req,
+    std::function<void(const HttpResponsePtr&)> callback
+) const{
+    const auto now = std::chrono::system_clock::now();
+    const auto uptimeSeconds = std::chrono::duration_cast<std::chrono::seconds>(now - g_processStartTime).count();
+    const auto startEpoch = std::chrono::duration_cast<std::chrono::seconds>(g_processStartTime.time_since_epoch()).count();
+
+    Json::Value resp;
+    resp["startTime"] = static_cast<Json::Int64>(startEpoch);
+    resp["uptimeSeconds"] = static_cast<Json::Int64>(uptimeSeconds);
     callback(HttpResponse::newHttpJsonResponse(resp));
     co_return;
 }

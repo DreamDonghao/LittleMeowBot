@@ -43,7 +43,7 @@ namespace LittleMeowBot {
             const auto &choices = (*json)["choices"];
             const auto &content = choices[0]["message"]["content"].asString();
 
-            ApiClient::logUsage(*json, config.image.model);
+            ApiClient::logUsage(*json, config.image.model, "image");
 
             co_return content;
         }

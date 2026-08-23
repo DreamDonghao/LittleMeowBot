@@ -77,4 +77,19 @@ namespace LittleMeowBot {
         }
     }
 
+    void WebSocketManager::broadcastEvent(const std::string& type, const Json::Value& data){
+        std::lock_guard lock(m_mutex);
+
+        Json::Value msg;
+        msg["type"] = type;
+        msg["data"] = data;
+
+        Json::StreamWriterBuilder builder;
+        const std::string jsonStr = Json::writeString(builder, msg);
+
+        for (const auto& conn : m_connections) {
+            conn->send(jsonStr);
+        }
+    }
+
 }
