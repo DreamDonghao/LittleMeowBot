@@ -12,6 +12,8 @@
 #pragma once
 #include <api/ApiClient.hpp>
 #include <drogon/utils/coroutine.h>
+#include <cstdint>
+#include <optional>
 #include <spdlog/spdlog.h>
 #include <string>
 
@@ -33,10 +35,11 @@ namespace LittleMeowBot::AgentToolManager {
 
     /// @brief 获取 QQ 收藏表情列表（调用 NapCat fetch_custom_face_detail，带60秒缓存）
     /// @return 归一化后的表情数组，失败时返回空数组
-    drogon::Task<Json::Value> fetchFavoriteEmojis();
+    drogon::Task<Json::Value> fetchFavoriteEmojis(std::optional<uint64_t> groupId = std::nullopt);
 
     /// @brief 在收藏表情列表中按名称查找表情（名称 = desc 或 "表情N"）
-    drogon::Task<Json::Value> findFavoriteEmoji(const std::string &name);
+    drogon::Task<Json::Value> findFavoriteEmoji(
+        const std::string &name, std::optional<uint64_t> groupId = std::nullopt);
 
     /// @brief 使收藏表情缓存失效（修改/删除后调用）
     void invalidateFavoriteEmojiCache();

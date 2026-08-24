@@ -356,6 +356,116 @@ a {
     font-size: 14px;
 }
 
+/* ============ 日志 ============ */
+.log-viewer {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 64px);
+    overflow: hidden;
+}
+
+.log-viewer .page-header {
+    margin-bottom: 10px;
+}
+
+.log-viewer .page-title {
+    font-size: 20px;
+}
+
+.log-viewer .page-subtitle {
+    margin-top: 2px;
+    font-size: 13px;
+}
+
+.log-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+}
+
+.log-toolbar .form-group {
+    margin-bottom: 0;
+}
+
+.log-toolbar .form-label {
+    margin-bottom: 3px;
+    font-size: 12px;
+}
+
+.log-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.log-list-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
+    margin-bottom: 0;
+}
+
+.log-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+    font-size: 12px;
+}
+
+.log-line {
+    display: grid;
+    grid-template-columns: 190px 70px 110px 1fr;
+    gap: 12px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    align-items: start;
+}
+
+.log-line:hover {
+    background: var(--row-hover);
+}
+
+.log-time,
+.log-level,
+.log-group {
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.log-message {
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text-primary);
+}
+
+.log-empty {
+    padding: 40px 16px;
+    text-align: center;
+    color: var(--text-light);
+}
+
+.log-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+}
+
+.level-trace .log-level { color: var(--text-light); }
+.level-debug .log-level { color: var(--text-secondary); }
+.level-info .log-level { color: var(--primary); }
+.level-warn .log-level { color: var(--warning); }
+.level-error .log-level { color: var(--danger); }
+.level-critical .log-level { color: var(--neon-pink); }
+
 /* ============ 卡片 ============ */
 .card {
     background: var(--card-bg);

@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <mutex>
 #include <unordered_set>
+#include <util/Logger.hpp>
 
 namespace LittleMeowBot {
     namespace {
@@ -56,7 +57,8 @@ namespace LittleMeowBot {
         drogon::Task<std::optional<std::string>> maintainMemory(
             const std::string& existingMemory,
             const std::string& chatRecords,
-            int maxTokens){
+            int maxTokens,
+            const uint64_t groupId){
             Json::Value messages;
             Json::Value item;
             item["role"] = "system";
@@ -94,9 +96,9 @@ namespace LittleMeowBot {
                 + "\n\n请直接输出合并后的记忆列表，每行一条，不要解释：";
             messages.append(item);
 
-            auto result = co_await ApiClient::requestLLM(messages, 0.4f, 0.9f, maxTokens);
+            auto result = co_await ApiClient::requestLLM(messages, 0.4f, 0.9f, maxTokens, "memory", groupId);
             if (!result) {
-                spdlog::error("maintainMemory: API 请求失败");
+                Logger::group(groupId).error("maintainMemory: API 请求失败");
                 co_return std::nullopt;
             }
             co_return trim(result.value());
@@ -151,7 +153,8 @@ namespace LittleMeowBot {
         }
 
         /// @brief 筛选值得长期保存的记忆
-        drogon::Task<std::string> selectMemoriesToMigrate(const std::string& shortTermMemory){
+        drogon::Task<std::string> selectMemoriesToMigrate(
+            const std::string& shortTermMemory, const uint64_t groupId) {
             const int migrateCount = Config::instance().memoryMigrateCount;
 
             Json::Value messages;
@@ -182,9 +185,9 @@ namespace LittleMeowBot {
             item["content"] = "请输出值得长期保存的记忆：";
             messages.append(item);
 
-            auto result = co_await ApiClient::requestLLM(messages, 0.3f, 0.9f, 256);
+            auto result = co_await ApiClient::requestLLM(messages, 0.3f, 0.9f, 256, "memory", groupId);
             if (!result) {
-                spdlog::error("selectMemoriesToMigrate: API 请求失败");
+                Logger::group(groupId).error("selectMemoriesToMigrate: API 请求失败");
                 co_return "无";
             }
             co_return result.value();
@@ -233,7 +236,7 @@ namespace LittleMeowBot {
             // 检查 RAGFlow 是否实际可用（不仅 enabled，还需要配置了必要参数）
             const auto& kb = Config::instance().knowledgeBase;
             if (!kb.enabled || kb.memoryDatasetId.empty() || kb.memoryDocumentId.empty()) {
-                spdlog::info("群 {} 短期记忆超限，RAGFlow 未配置或未启用，仅保留 {} 条", groupId, maxLines);
+                Logger::group(groupId).info("短期记忆超限，RAGFlow 未配置或未启用，仅保留 {} 条", maxLines);
                 std::string trimmed = trimToMaxLines(shortTermMemory, maxLines);
                 Database::instance().updateShortTermMemory(groupId, trimmed);
                 co_return trimmed;
@@ -246,10 +249,10 @@ namespace LittleMeowBot {
             }
 
             // 1. 让 LLM 筛选值得长期保存的记忆
-            const std::string toMigrate = co_await selectMemoriesToMigrate(shortTermMemory);
+            const std::string toMigrate = co_await selectMemoriesToMigrate(shortTermMemory, groupId);
 
             if (toMigrate.empty() || toMigrate == "无") {
-                spdlog::info("群 {} 无记忆需要迁移", groupId);
+                Logger::group(groupId).info("无记忆需要迁移");
                 std::string trimmed = trimToMaxLines(shortTermMemory, maxLines);
                 Database::instance().updateShortTermMemory(groupId, trimmed);
                 co_return trimmed;
@@ -264,17 +267,17 @@ namespace LittleMeowBot {
 
                 // 每条记忆单独存储，加上群名前缀
                 if (std::string prefixedMemory = "[" + groupName + "] " + line;
-                    co_await RAGFlowClient::addMemory(prefixedMemory)
+                    co_await RAGFlowClient::addMemory(prefixedMemory, groupId)
                 ) {
-                    spdlog::info("群 {}({}) 迁移记忆: {}", groupId, groupName, line);
+                    Logger::group(groupId).info("迁移记忆 [{}]: {}", groupName, line);
                     successCount++;
                 } else {
-                    spdlog::warn("群 {}({}) 迁移记忆失败: {}", groupId, groupName, line);
+                    Logger::group(groupId).warn("迁移记忆 [{}] 失败: {}", groupName, line);
                 }
             }
 
             if (successCount == 0) {
-                spdlog::warn("群 {} 迁移到 RAGFlow 全部失败，保留短期记忆", groupId);
+                Logger::group(groupId).warn("迁移到 RAGFlow 全部失败，保留短期记忆");
                 std::string trimmed = trimToMaxLines(shortTermMemory, maxLines);
                 Database::instance().updateShortTermMemory(groupId, trimmed);
                 co_return trimmed;
@@ -287,7 +290,7 @@ namespace LittleMeowBot {
             remaining = trimToMaxLines(remaining, maxLines);
             Database::instance().updateShortTermMemory(groupId, remaining);
 
-            spdlog::info("群 {} 迁移完成，成功 {} 条，短期记忆保留 {} 条", groupId, successCount, countLines(remaining));
+            Logger::group(groupId).info("迁移完成，成功 {} 条，短期记忆保留 {} 条", successCount, countLines(remaining));
             co_return remaining;
         }
     }
@@ -315,7 +318,7 @@ namespace LittleMeowBot {
 
         const auto records = db.getChatRecordsSince(groupId, watermark, 0);
         if (records.size() < toDrop) {
-            spdlog::warn("群 {} 窗口记录数与计数不一致，跳过本轮", groupId);
+            Logger::group(groupId).warn("窗口记录数与计数不一致，跳过本轮");
             co_return;
         }
 
@@ -331,13 +334,13 @@ namespace LittleMeowBot {
             const size_t overlapEnd = std::min(records.size(), batchEnd + kOverlapCount);
             const std::string chunkText = formatRecordsText(records, processed, overlapEnd);
 
-            spdlog::info("群 {} 记忆提取: 待删第 {}-{} 条（共 {} 条）", groupId, processed + 1, batchEnd, toDrop);
+            Logger::group(groupId).info("记忆提取: 待删第 {}-{} 条（共 {} 条）", processed + 1, batchEnd, toDrop);
 
             const auto result = co_await maintainMemory(
-                existingMemory, chunkText, config.memoryExtractMaxTokens);
+                existingMemory, chunkText, config.memoryExtractMaxTokens, groupId);
             if (!result) {
                 // API 失败：水位线停在本批之前，下条消息自动重试
-                spdlog::warn("群 {} 记忆提取失败，水位线保持 {}，下条消息将重试", groupId, chunkEndId);
+                Logger::group(groupId).warn("记忆提取失败，水位线保持 {}，下条消息将重试", chunkEndId);
                 break;
             }
             if (!result->empty() && *result != "无") {
@@ -355,13 +358,13 @@ namespace LittleMeowBot {
             co_return;
         }
 
-        spdlog::info("群 {} 窗口已滑动: 滑出 {} 条，水位线 -> {}，记忆 {} 条",
-                     groupId, processed, chunkEndId, countLines(existingMemory));
+        Logger::group(groupId).info("窗口已滑动: 滑出 {} 条，水位线 -> {}，记忆 {} 条",
+                                    processed, chunkEndId, countLines(existingMemory));
 
         // 3. 检查是否需要迁移到长期记忆
         if (countLines(existingMemory) > config.shortTermMemoryMax) {
-            spdlog::info("群 {} 短期记忆超限({}>{})，触发迁移",
-                         groupId, countLines(existingMemory), config.shortTermMemoryMax);
+            Logger::group(groupId).info("短期记忆超限({}>{})，触发迁移",
+                                        countLines(existingMemory), config.shortTermMemoryMax);
             co_await migrateToLongTermMemory(groupId, existingMemory);
         }
 

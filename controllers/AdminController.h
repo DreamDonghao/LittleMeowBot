@@ -8,6 +8,7 @@
 #include <drogon/HttpController.h>
 #include <drogon/utils/coroutine.h>
 #include <service/MessageService.hpp>
+#include <util/LogBuffer.hpp>
 
 namespace LittleMeowBot {
     /// @brief 管理后台 REST API 控制器
@@ -34,8 +35,13 @@ namespace LittleMeowBot {
         ADD_METHOD_TO(AdminController::updateEmojiDesc, "/admin/api/emoji/desc", drogon::Post);
         // 用量统计
         ADD_METHOD_TO(AdminController::getUsage, "/admin/api/usage", drogon::Get);
+        // 运行日志
+        ADD_METHOD_TO(AdminController::getLogs, "/admin/api/logs", drogon::Get);
         // 运行信息（启动时间/运行时长）
         ADD_METHOD_TO(AdminController::getSystemInfo, "/admin/api/system-info", drogon::Get);
+        // 机器人运行状态
+        ADD_METHOD_TO(AdminController::getBotStatus, "/admin/api/bot-status", drogon::Get);
+        ADD_METHOD_TO(AdminController::setBotStatus, "/admin/api/bot-status", drogon::Post);
         // 管理员
         ADD_METHOD_TO(AdminController::getAdmins, "/admin/api/admins", drogon::Get);
         ADD_METHOD_TO(AdminController::addAdmin, "/admin/api/admin", drogon::Post);
@@ -136,10 +142,25 @@ namespace LittleMeowBot {
             drogon::HttpRequestPtr req,
             std::function<void(const drogon::HttpResponsePtr &)> callback) const;
 
+        /// @brief 查询运行日志
+        drogon::Task<> getLogs(
+            drogon::HttpRequestPtr req,
+            std::function<void(const drogon::HttpResponsePtr &)> callback) const;
+
         /// @brief 获取运行信息（启动时间、运行时长）
         /// @param req HTTP 请求
         /// @param callback HTTP 响应回调
         drogon::Task<> getSystemInfo(
+            drogon::HttpRequestPtr req,
+            std::function<void(const drogon::HttpResponsePtr &)> callback) const;
+
+        /// @brief 获取机器人运行状态
+        drogon::Task<> getBotStatus(
+            drogon::HttpRequestPtr req,
+            std::function<void(const drogon::HttpResponsePtr &)> callback) const;
+
+        /// @brief 设置机器人运行状态
+        drogon::Task<> setBotStatus(
             drogon::HttpRequestPtr req,
             std::function<void(const drogon::HttpResponsePtr &)> callback) const;
 

@@ -41,14 +41,27 @@ int main() {
                   std::ssize(database.getAdmins()));
 
         // 启动服务
-        // 启动 quit 线程
-        std::jthread quit([]() {
-            std::string input;
-            while (std::cin >> input) {
-                if (input == "quit") {
+        // 启动控制台命令线程
+        std::jthread commandThread([]() {
+            std::string command;
+            while (std::cin >> command) {
+                if (command == "quit") {
                     drogon::app().quit();
                     return;
                 }
+                if (command == "log-level") {
+                    std::string level;
+                    if (!(std::cin >> level)) {
+                        return;
+                    }
+                    if (Logger::setLevel(level)) {
+                        spdlog::info("日志等级已切换为 {}", level);
+                    } else {
+                        spdlog::warn("无效的日志等级: {}", level);
+                    }
+                    continue;
+                }
+                spdlog::warn("未知命令: {}", command);
             }
         });
 

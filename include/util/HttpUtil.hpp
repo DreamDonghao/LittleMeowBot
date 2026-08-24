@@ -12,6 +12,7 @@
 #include <drogon/utils/coroutine.h>
 #include <drogon/HttpClient.h>
 #include <json/value.h>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -33,5 +34,6 @@ namespace LittleMeowBot::HttpUtil {
         drogon::HttpMethod method,
         const Json::Value &body,
         const std::string &bearerToken,
-        double timeout);
+        double timeout,
+        std::optional<uint64_t> groupId = std::nullopt);
 } // namespace LittleMeowBot::HttpUtil

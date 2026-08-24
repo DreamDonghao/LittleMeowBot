@@ -5,10 +5,49 @@
  */
 import {computed, inject, onMounted, onUnmounted, ref, type Ref} from 'vue'
 import type {LLMConfig, QQConfig} from '../vite-env.d'
+import {useToast} from '../composables/useToast'
 
 const qqConfig = inject<QQConfig>('qqConfig')
 const wsConnected = inject<Ref<boolean>>('wsConnected') as Ref<boolean>
 const ws = inject<{get: () => WebSocket | null}>('ws')
+const {showToast} = useToast()
+
+const botRunning = ref(true)
+const botStatusSaving = ref(false)
+
+const loadBotStatus = async (): Promise<void> => {
+  try {
+    const resp = await fetch('/admin/api/bot-status')
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    const data = await resp.json()
+    botRunning.value = data.running === true
+  } catch {
+    showToast('加载机器人状态失败', true)
+  }
+}
+
+const toggleBotStatus = async (): Promise<void> => {
+  if (!botRunning.value && !window.confirm('确定打开机器人吗？')) return
+  if (botRunning.value && !window.confirm('暂停后机器人将不再处理新的群消息，确定暂停吗？')) return
+
+  botStatusSaving.value = true
+  const nextRunning = !botRunning.value
+  try {
+    const resp = await fetch('/admin/api/bot-status', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({running: nextRunning})
+    })
+    const data = await resp.json()
+    if (!resp.ok || data.success !== true) throw new Error(data.error || `HTTP ${resp.status}`)
+    botRunning.value = data.running === true
+    showToast(botRunning.value ? '机器人已打开' : '机器人已暂停')
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '切换机器人状态失败', true)
+  } finally {
+    botStatusSaving.value = false
+  }
+}
 
 // ---- LLM 模型（固定展示顺序）----
 const llmOrder = ['router', 'executor', 'executorThinking', 'image', 'memory'] as const
@@ -191,6 +230,7 @@ const loadKB = async (): Promise<void> => {
 let wsMessageHandler: ((e: MessageEvent) => void) | null = null
 
 onMounted(() => {
+  loadBotStatus()
   loadLLMModels()
   loadSystemInfo()
   loadUsage()
@@ -232,6 +272,19 @@ onUnmounted(() => {
 
     <!-- 状态条 -->
     <div class="dash-status-bar">
+      <div class="status-item bot-control-item">
+        <span class="status-dot" :class="botRunning ? 'dot-green' : 'dot-gray'"></span>
+        <span>{{ botRunning ? '机器人运行中' : '机器人已暂停' }}</span>
+        <button
+            :class="botRunning ? 'btn-warning' : 'btn-success'"
+            :disabled="botStatusSaving"
+            class="btn btn-sm bot-toggle"
+            type="button"
+            @click="toggleBotStatus"
+        >
+          {{ botStatusSaving ? '处理中...' : (botRunning ? '暂停机器人' : '打开机器人') }}
+        </button>
+      </div>
       <div class="status-item">
         <span class="status-dot" :class="wsConnected ? 'dot-green' : 'dot-red'"></span>
         <span>{{ wsConnected ? 'WebSocket 已连接' : 'WebSocket 未连接' }}</span>
@@ -407,6 +460,15 @@ onUnmounted(() => {
   gap: 8px;
   font-size: 13px;
   color: var(--text-secondary);
+}
+
+.bot-control-item {
+  padding-right: 8px;
+  border-right: 1px solid var(--border);
+}
+
+.bot-toggle {
+  margin-left: 4px;
 }
 
 .status-dot {

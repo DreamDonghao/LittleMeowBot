@@ -64,6 +64,11 @@ defineProps<{ name: string }>()
     <line x1="12" x2="12" y1="16" y2="12"/>
     <line x1="12" x2="12.01" y1="8" y2="8"/>
   </svg>
+  <!-- 日志 -->
+  <svg v-else-if="name === 'logs'" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+    <path d="M8 6h13M8 12h13M8 18h13"/>
+    <path d="M3 6h.01M3 12h.01M3 18h.01"/>
+  </svg>
   <!-- 自定义工具 -->
   <svg v-else-if="name === 'tool'" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
     <path

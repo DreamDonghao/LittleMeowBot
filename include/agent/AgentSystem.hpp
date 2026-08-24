@@ -13,6 +13,7 @@
 #include <model/MemoryManager.hpp>
 #include <model/QQMessage.hpp>
 #include <drogon/utils/coroutine.h>
+#include <atomic>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -24,6 +25,9 @@ namespace LittleMeowBot {
     class AgentSystem {
     public:
         static AgentSystem &instance();
+
+        [[nodiscard]] bool isRunning() const noexcept;
+        void setRunning(bool running) noexcept;
 
         /// @brief 初始化 Agent System（注册工具）
         void initialize();
@@ -42,6 +46,7 @@ namespace LittleMeowBot {
         AgentSystem() = default;
 
         bool m_initialized = false;
+        std::atomic_bool m_running{true};
 
         // 正在处理中的群聊（groupId → generation），用于防止并发处理
         // @消息到达时递增代际，非@消息在关键点检查代际是否被取消

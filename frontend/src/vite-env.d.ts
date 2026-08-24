@@ -72,3 +72,22 @@ export interface ApiResponse {
     error?: string
     data?: any
 }
+
+export interface LogEntry {
+    id: number
+    timestamp: string
+    level: string
+    message: string
+    groupId?: number | null
+}
+
+export interface LogQueryResult {
+    entries: LogEntry[]
+    hasMore: boolean
+    nextAfterId: number
+    nextBeforeId: number
+    oldestId: number
+    newestId: number
+    size: number
+    currentLevel: string
+}

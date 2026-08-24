@@ -19,6 +19,7 @@ import MemoryConfig from './components/MemoryConfig.vue'
 import QQConfigVue from './components/QQConfig.vue'
 import CustomTools from './components/CustomTools.vue'
 import UsageStats from './components/UsageStats.vue'
+import LogViewer from './components/LogViewer.vue'
 import About from './components/About.vue'
 
 interface NavItem {
@@ -42,6 +43,7 @@ const dailyNavItems: NavItem[] = [
   {key: 'emojis', label: '表情库', icon: 'emojis'},
   {key: 'admins', label: '管理员', icon: 'admins'},
   {key: 'groups', label: '群管理', icon: 'groups'},
+  {key: 'logs', label: '运行日志', icon: 'logs'},
   {key: 'usage', label: '用量统计', icon: 'memory'}
 ]
 
@@ -221,6 +223,7 @@ onMounted(async () => {
       <EmojiManager v-else-if="currentView === 'emojis'"/>
       <AdminManager v-else-if="currentView === 'admins'"/>
       <GroupManager v-else-if="currentView === 'groups'"/>
+      <LogViewer v-else-if="currentView === 'logs'"/>
       <KBConfig v-else-if="currentView === 'kb'"/>
       <MemoryConfig v-else-if="currentView === 'memoryConfig'"/>
       <QQConfigVue v-else-if="currentView === 'qqConfig'"/>

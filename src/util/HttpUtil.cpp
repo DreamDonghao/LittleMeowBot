@@ -4,6 +4,8 @@
 #include <util/HttpUtil.hpp>
 #include <spdlog/spdlog.h>
 #include <json/writer.h>
+#include <string>
+#include <utility>
 
 namespace LittleMeowBot::HttpUtil {
     namespace {
@@ -50,14 +52,18 @@ namespace LittleMeowBot::HttpUtil {
         const drogon::HttpMethod method,
         const Json::Value &body,
         const std::string &bearerToken,
-        const double timeout) {
+        const double timeout,
+        std::optional<uint64_t> groupId) {
+        const auto prefix = groupId.has_value()
+                                ? fmt::format("[group_id={}] {}", *groupId, tag)
+                                : std::string(tag);
         // 正常请求详情仅记录到 debug，避免每条消息多次请求刷屏
-        spdlog::debug("{} [HTTP] {} {}{}", tag, methodName(method), baseUrl, path);
+        spdlog::debug("{} [HTTP] {} {}{}", prefix, methodName(method), baseUrl, path);
         if (!body.isNull()) {
-            spdlog::debug("{} [HTTP] body={}", tag, truncate(serializeBody(body), kBodyLogMax));
+            spdlog::debug("{} [HTTP] body={}", prefix, truncate(serializeBody(body), kBodyLogMax));
         }
         if (!bearerToken.empty()) {
-            spdlog::debug("{} [HTTP] Authorization: Bearer {}", tag, maskToken(bearerToken));
+            spdlog::debug("{} [HTTP] Authorization: Bearer {}", prefix, maskToken(bearerToken));
         }
 
         // 失败时才附带完整地址与 body 打日志，确保凭日志即可定位问题
@@ -68,7 +74,7 @@ namespace LittleMeowBot::HttpUtil {
             client = drogon::HttpClient::newHttpClient(baseUrl);
         } catch (const std::exception &e) {
             spdlog::error("{} [HTTP] 创建客户端失败: {} ({} {}{}) body={}",
-                          tag, e.what(), methodName(method), baseUrl, path, bodyLog);
+                          prefix, e.what(), methodName(method), baseUrl, path, bodyLog);
             co_return std::nullopt;
         }
 
@@ -86,14 +92,14 @@ namespace LittleMeowBot::HttpUtil {
             resp = co_await client->sendRequestCoro(req, timeout);
         } catch (const std::exception &e) {
             spdlog::error("{} [HTTP] 请求异常: {} ({} {}{}) body={}",
-                          tag, e.what(), methodName(method), baseUrl, path, bodyLog);
+                          prefix, e.what(), methodName(method), baseUrl, path, bodyLog);
             co_return std::nullopt;
         }
 
         // 非 2xx（如 DNS 解析失败、连接被拒等）同样把地址打出来，方便定位
         if (resp && resp->getStatusCode() >= drogon::k400BadRequest) {
             spdlog::warn("{} [HTTP] 响应异常: status={} ({} {}{})",
-                         tag, static_cast<int>(resp->getStatusCode()), methodName(method), baseUrl, path);
+                         prefix, static_cast<int>(resp->getStatusCode()), methodName(method), baseUrl, path);
         }
 
         co_return resp;

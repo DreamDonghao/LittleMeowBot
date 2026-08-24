@@ -13,6 +13,8 @@
 #include <model/QQMessage.hpp>
 #include <drogon/utils/coroutine.h>
 #include <json/value.h>
+#include <cstdint>
+#include <optional>
 #include <string>
 
 /// @brief 消息服务 - 封装 QQ 消息发送逻辑，对接 OneBot API
@@ -60,5 +62,6 @@ namespace LittleMeowBot::MessageService {
     /// @brief 撤回消息
     /// @param messageId 消息ID
     /// @return 是否成功
-    [[nodiscard]] drogon::Task<bool> deleteMessage(Json::UInt64 messageId);
+    [[nodiscard]] drogon::Task<bool> deleteMessage(
+        Json::UInt64 messageId, std::optional<uint64_t> groupId = std::nullopt);
 }

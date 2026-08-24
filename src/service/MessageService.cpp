@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <config/Config.hpp>
 #include <service/WebSocketManager.hpp>
+#include <util/Logger.hpp>
 
 namespace LittleMeowBot {
     std::string MessageService::convertAtToCQCode(const std::string& text){
@@ -69,26 +70,27 @@ namespace LittleMeowBot {
         body["auto_escape"] = false;
 
         const auto resp = co_await HttpUtil::send("[Msg]", config.qqHttpHost, "/send_group_msg",
-                                                  drogon::Post, body, config.accessToken, 30.0);
+                                                  drogon::Post, body, config.accessToken, 30.0, groupId);
         if (!resp) {
             co_return;
         }
         const auto requestJson = (*resp)->getJsonObject();
 
         if ((*resp)->getStatusCode() != drogon::k200OK || !requestJson) {
-            spdlog::error("[Msg] 发送消息错误: status={}", static_cast<int>((*resp)->getStatusCode()));
+            Logger::group(groupId).error("[Msg] 发送消息错误: status={}",
+                                          static_cast<int>((*resp)->getStatusCode()));
             co_return;
         }
 
         std::string status = requestJson->get("status", "").asString();
         if (status != "ok") {
-            spdlog::error("发送消息错误: status={}, retcode={}, msgLen={}, preview={}",
-                          status, requestJson->get("retcode", -1).asInt(),
-                          processedMessage.size(), processedMessage.substr(0, 200));
+            Logger::group(groupId).error("发送消息错误: status={}, retcode={}, msgLen={}, preview={}",
+                                        status, requestJson->get("retcode", -1).asInt(),
+                                        processedMessage.size(), processedMessage.substr(0, 200));
             co_return;
         }
 
-        uint64_t messageId = (*requestJson)["data"]["message_id"].asUInt64();
+        uint64_t messageId = jsonToUInt64((*requestJson)["data"]["message_id"]);
 
         // 获取当前时间
         std::string timeStr = currentDateTime();
@@ -113,7 +115,7 @@ namespace LittleMeowBot {
         // WebSocket推送（推送原始文本）
         WebSocketManager::instance().pushMessage(groupId, "assistant", processedMessage);
 
-        spdlog::info("成功发送群消息 {} -> {} (message_id={})", groupId, processedMessage, messageId);
+        Logger::group(groupId).info("成功发送群消息: {} (message_id={})", processedMessage, messageId);
     }
 
     drogon::Task<bool> MessageService::setGroupBan(
@@ -128,30 +130,31 @@ namespace LittleMeowBot {
         body["duration"] = duration;
 
         const auto resp = co_await HttpUtil::send("[Ban]", config.qqHttpHost, "/set_group_ban",
-                                                  drogon::Post, body, config.accessToken, 30.0);
+                                                  drogon::Post, body, config.accessToken, 30.0, groupId);
         if (!resp) {
             co_return false;
         }
         const auto requestJson = (*resp)->getJsonObject();
 
         if ((*resp)->getStatusCode() != drogon::k200OK || !requestJson) {
-            spdlog::error("[Ban] 禁言请求失败: http_status={}", static_cast<int>((*resp)->getStatusCode()));
+            Logger::group(groupId).error("[Ban] 禁言请求失败: http_status={}",
+                                          static_cast<int>((*resp)->getStatusCode()));
             co_return false;
         }
 
         // 打印完整响应便于调试
-        spdlog::info("[Ban] 禁言API响应: {}", (*resp)->getBody());
+        Logger::group(groupId).debug("[Ban] 禁言API响应: {}", (*resp)->getBody());
 
         std::string status = requestJson->get("status", "").asString();
         int retcode = requestJson->get("retcode", -1).asInt();
 
         // status=ok 表示操作成功
         if (status == "ok") {
-            spdlog::info("禁言成功: 群{} 用户{} 时长{}秒", groupId, userId, duration);
+            Logger::group(groupId).info("禁言成功: 用户{} 时长{}秒", userId, duration);
             co_return true;
         }
 
-        spdlog::error("禁言失败: status={}, retcode={}", status, retcode);
+        Logger::group(groupId).error("禁言失败: status={}, retcode={}", status, retcode);
         co_return false;
     }
 
@@ -161,7 +164,7 @@ namespace LittleMeowBot {
         const auto resp = co_await HttpUtil::send("[GroupInfo]", config.qqHttpHost,
                                                   fmt::format("/get_group_info?group_id={}", groupId),
                                                   drogon::Get, Json::Value(Json::nullValue),
-                                                  config.accessToken, 30.0);
+                                                  config.accessToken, 30.0, groupId);
         if (!resp) {
             co_return Json::Value(Json::nullValue);
         }
@@ -194,14 +197,15 @@ namespace LittleMeowBot {
         body["user_id"] = userId;
 
         const auto resp = co_await HttpUtil::send("[Poke]", config.qqHttpHost, "/send_poke",
-                                                  drogon::Post, body, config.accessToken, 30.0);
+                                                  drogon::Post, body, config.accessToken, 30.0, groupId);
         if (!resp) {
             co_return false;
         }
         const auto requestJson = (*resp)->getJsonObject();
 
         if ((*resp)->getStatusCode() != drogon::k200OK || !requestJson) {
-            spdlog::error("[Poke] 拍一拍请求失败: http_status={}", static_cast<int>((*resp)->getStatusCode()));
+            Logger::group(groupId).error("[Poke] 拍一拍请求失败: http_status={}",
+                                          static_cast<int>((*resp)->getStatusCode()));
             co_return false;
         }
 
@@ -209,29 +213,37 @@ namespace LittleMeowBot {
 
         // status=ok 表示操作成功
         if (status == "ok") {
-            spdlog::info("拍一拍成功: 群{} 用户{}", groupId, userId);
+            Logger::group(groupId).info("拍一拍成功: 用户{}", userId);
             co_return true;
         }
 
-        spdlog::error("拍一拍失败: status={}, retcode={}", status, requestJson->get("retcode", -1).asInt());
+        Logger::group(groupId).error("拍一拍失败: status={}, retcode={}",
+                                      status, requestJson->get("retcode", -1).asInt());
         co_return false;
     }
 
-    drogon::Task<bool> MessageService::deleteMessage(Json::UInt64 messageId){
+    drogon::Task<bool> MessageService::deleteMessage(
+        Json::UInt64 messageId, std::optional<uint64_t> groupId) {
         const auto& config = Config::instance();
 
         Json::Value body;
         body["message_id"] = messageId;
 
         const auto resp = co_await HttpUtil::send("[Recall]", config.qqHttpHost, "/delete_msg",
-                                                  drogon::Post, body, config.accessToken, 30.0);
+                                                  drogon::Post, body, config.accessToken, 30.0, groupId);
         if (!resp) {
             co_return false;
         }
         const auto requestJson = (*resp)->getJsonObject();
 
         if ((*resp)->getStatusCode() != drogon::k200OK || !requestJson) {
-            spdlog::error("[Recall] 撤回消息请求失败: http_status={}", static_cast<int>((*resp)->getStatusCode()));
+            if (groupId) {
+                Logger::group(*groupId).error("[Recall] 撤回消息请求失败: http_status={}",
+                                              static_cast<int>((*resp)->getStatusCode()));
+            } else {
+                spdlog::error("[Recall] 撤回消息请求失败: http_status={}",
+                              static_cast<int>((*resp)->getStatusCode()));
+            }
             co_return false;
         }
 
@@ -239,11 +251,21 @@ namespace LittleMeowBot {
 
         // status=ok 表示操作成功
         if (status == "ok") {
-            spdlog::info("撤回消息成功: message_id={}", messageId);
+            if (groupId) {
+                Logger::group(*groupId).info("撤回消息成功: message_id={}", messageId);
+            } else {
+                spdlog::info("撤回消息成功: message_id={}", messageId);
+            }
             co_return true;
         }
 
-        spdlog::error("撤回消息失败: status={}, retcode={}", status, requestJson->get("retcode", -1).asInt());
+        if (groupId) {
+            Logger::group(*groupId).error("撤回消息失败: status={}, retcode={}",
+                                          status, requestJson->get("retcode", -1).asInt());
+        } else {
+            spdlog::error("撤回消息失败: status={}, retcode={}",
+                          status, requestJson->get("retcode", -1).asInt());
+        }
         co_return false;
     }
 }

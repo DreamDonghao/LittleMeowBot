@@ -54,6 +54,16 @@
     return tryParseUInt64(s).value_or(fallback);
 }
 
+/// @brief 将 Json::Value 安全转换为 uint64_t（非抛出，兼容数字与字符串类型）
+/// @param v JSON 值（可能来自外部 OneBot 协议，字段类型不稳定）
+/// @param fallback 无法转换时返回的值
+/// @return 数值；字符串按十进制解析，缺失/空/null/负数/浮点一律返回 fallback
+[[nodiscard]] inline uint64_t jsonToUInt64(const Json::Value& v, uint64_t fallback = 0){
+    if (v.isString()) return parseUInt64(v.asString(), fallback);
+    if (!v.isNull() && v.isConvertibleTo(Json::uintValue)) return v.asUInt64();
+    return fallback;
+}
+
 #include <chrono>
 #include <fmt/chrono.h>
 

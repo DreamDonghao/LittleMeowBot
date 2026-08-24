@@ -8,11 +8,12 @@
 #include <spdlog/spdlog.h>
 #include <fstream>
 #include <config/Config.hpp>
+#include <util/Logger.hpp>
 #include <utility>
 
 namespace LittleMeowBot {
     namespace {
-        drogon::Task<std::string> getImageDescribe(const std::string &imageUrl) {
+        drogon::Task<std::string> getImageDescribe(const std::string &imageUrl, const uint64_t groupId) {
             const auto &config = Config::instance();
             Json::Value body;
             body["model"] = config.image.model;
@@ -26,24 +27,25 @@ namespace LittleMeowBot {
             body["top_p"] = 0.92;
 
             const auto resp = co_await HttpUtil::send("[Image]", config.image.baseUrl, config.image.path,
-                                                      drogon::Post, body, config.image.apiKey, 90.0);
+                                                      drogon::Post, body, config.image.apiKey, 90.0,
+                                                      groupId);
             if (!resp) {
                 co_return "无法识别图片";
             }
             if ((*resp)->getStatusCode() != drogon::k200OK) {
-                spdlog::error("[Image] 图像描述请求失败: status={}",
-                              static_cast<int>((*resp)->getStatusCode()));
+                Logger::group(groupId).error("[Image] 图像描述请求失败: status={}",
+                                             static_cast<int>((*resp)->getStatusCode()));
                 co_return "无法识别图片";
             }
             const auto json = (*resp)->getJsonObject();
             if (!json || !json->isMember("choices")) {
-                spdlog::error("[Image] 图像描述响应格式错误");
+                Logger::group(groupId).error("[Image] 图像描述响应格式错误");
                 co_return "图片识别失败";
             }
             const auto &choices = (*json)["choices"];
             const auto &content = choices[0]["message"]["content"].asString();
 
-            ApiClient::logUsage(*json, config.image.model, "image");
+            ApiClient::logUsage(*json, config.image.model, "image", groupId);
 
             co_return content;
         }
@@ -76,15 +78,15 @@ namespace LittleMeowBot {
 
     bool QQMessage::atMe() const { return m_isAtMe; }
 
-    Json::UInt64 QQMessage::getGroupId() const { return m_qqMessageJson["group_id"].asUInt64(); }
+    Json::UInt64 QQMessage::getGroupId() const { return jsonToUInt64(m_qqMessageJson["group_id"]); }
 
-    Json::UInt64 QQMessage::getSelfQQNumber() const { return m_qqMessageJson["self_id"].asUInt64(); }
+    Json::UInt64 QQMessage::getSelfQQNumber() const { return jsonToUInt64(m_qqMessageJson["self_id"]); }
 
-    Json::UInt64 QQMessage::getSenderQQNumber() const { return m_qqMessageJson["sender"]["user_id"].asUInt64(); }
+    Json::UInt64 QQMessage::getSenderQQNumber() const { return jsonToUInt64(m_qqMessageJson["sender"]["user_id"]); }
 
     Json::String QQMessage::getSenderQQName() const { return m_qqMessageJson["sender"]["nickname"].asString(); }
 
-    Json::UInt64 QQMessage::getMessageId() const { return m_qqMessageJson["message_id"].asUInt64(); }
+    Json::UInt64 QQMessage::getMessageId() const { return jsonToUInt64(m_qqMessageJson["message_id"]); }
 
     drogon::Task<> QQMessage::formatMessage() {
         const uint64_t senderQQ = getSenderQQNumber();
@@ -104,7 +106,8 @@ namespace LittleMeowBot {
             } else if (item["type"] == "face") {
                 textContent += item["data"]["raw"]["faceText"].asString();
             } else if (item["type"] == "image") {
-                textContent += "[图片：" + co_await getImageDescribe(item["data"]["url"].asString()) + "]";
+                textContent += "[图片：" + co_await getImageDescribe(
+                    item["data"]["url"].asString(), getGroupId()) + "]";
                 Json::Value imgInfo;
                 imgInfo["file"] = item["data"].get("file", "").asString();
                 imgInfo["url"] = item["data"].get("url", "").asString();

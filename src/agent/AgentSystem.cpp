@@ -12,11 +12,20 @@
 #include <agent/RouterAgent.hpp>
 #include <agent/AgentToolManager.hpp>
 #include <service/PromptService.hpp>
+#include <util/Logger.hpp>
 
 namespace LittleMeowBot {
     AgentSystem &AgentSystem::instance() {
         static AgentSystem system;
         return system;
+    }
+
+    bool AgentSystem::isRunning() const noexcept {
+        return m_running.load(std::memory_order_acquire);
+    }
+
+    void AgentSystem::setRunning(const bool running) noexcept {
+        m_running.store(running, std::memory_order_release);
     }
 
     void AgentSystem::initialize() {
@@ -30,12 +39,15 @@ namespace LittleMeowBot {
         const ChatRecordManager &chatRecords,
         const MemoryManager &memory,
         const QQMessage &message) {
-        if (!m_initialized) {
-            spdlog::error("AgentSystem 未初始化");
+        if (!isRunning()) {
             co_return std::nullopt;
         }
 
         const uint64_t groupId = message.getGroupId();
+        if (!m_initialized) {
+            Logger::group(groupId).error("AgentSystem 未初始化");
+            co_return std::nullopt;
+        }
 
         auto generation = tryStartProcessing(groupId);
         if (generation == 0) {
@@ -47,7 +59,7 @@ namespace LittleMeowBot {
                     generation = tryStartProcessing(groupId);
                 } while (generation == 0);
             } else {
-                spdlog::debug("群 {} 正在处理中，跳过", groupId);
+                Logger::group(groupId).debug("正在处理中，跳过");
                 co_return std::nullopt;
             }
         }
@@ -58,46 +70,46 @@ namespace LittleMeowBot {
             ~ProcessingGuard() { sys->finishProcessing(gid); }
         } guard{.sys = this, .gid = groupId};
 
-        spdlog::info("======== 群 {} 开始处理消息 ========", groupId);
+        Logger::group(groupId).info("======== 开始处理消息 ========");
 
         // ========== Layer 1: Router Agent（判断 + 规划）==========
-        spdlog::info("[Router] 群 {} 分析消息...", groupId);
+        Logger::group(groupId).info("[Router] 分析消息...");
 
         const auto decision = co_await route(
             chatRecords, memory, message);
 
-        spdlog::info("[Router] 群 {} 结果: {} | shouldReply={} | thinking={} | maxLength={}",
-                  groupId, decision.action, decision.shouldReply, decision.enableThinking, decision.maxLength);
+        Logger::group(groupId).info("[Router] 结果: {} | shouldReply={} | thinking={} | maxLength={}",
+                                     decision.action, decision.shouldReply, decision.enableThinking, decision.maxLength);
 
         // 检查处理代际是否被 @消息取消
         if (!isCurrentGeneration(groupId, generation)) {
-            spdlog::info("[Router] 群 {} 处理被 @消息中断", groupId);
+            Logger::group(groupId).info("[Router] 处理被 @消息中断");
             co_return std::nullopt;
         }
 
         // Router 决定不回复
         if (!decision.shouldReply) {
-            spdlog::info("[Router] 群 {} 决定不回复: {}", groupId, decision.reason);
+            Logger::group(groupId).info("[Router] 决定不回复: {}", decision.reason);
             co_return std::nullopt;
         }
 
         // ========== Layer 2: Executor Agent（执行回复）==========
-        spdlog::info("[Executor] 群 {} 执行回复...", groupId);
+        Logger::group(groupId).info("[Executor] 执行回复...");
 
         const auto reply = co_await execute(chatRecords, memory, decision);
 
         // 检查处理代际是否被 @消息取消
         if (!isCurrentGeneration(groupId, generation)) {
-            spdlog::info("[Executor] 群 {} 处理被 @消息中断", groupId);
+            Logger::group(groupId).info("[Executor] 处理被 @消息中断");
             co_return std::nullopt;
         }
 
         if (!reply || !reply->shouldReply || reply->content.empty()) {
-            spdlog::error("[Executor] 群 {} 执行失败或无回复", groupId);
+            Logger::group(groupId).error("[Executor] 执行失败或无回复");
             co_return std::nullopt;
         }
 
-        spdlog::info("======== 群 {} 处理完成 ========", groupId);
+        Logger::group(groupId).info("======== 处理完成 ========");
         co_return cleanReplyContent(reply->content);
     }
 

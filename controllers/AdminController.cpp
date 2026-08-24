@@ -1,13 +1,19 @@
 #include "AdminController.h"
 #include <model/QQMessage.hpp>
+#include <agent/AgentSystem.hpp>
 #include <agent/AgentToolManager.hpp>
 #include <service/ToolRegistry.hpp>
 #include <spdlog/spdlog.h>
 #include <config/Config.hpp>
 #include <util/HttpUtil.hpp>
+#include <util/Logger.hpp>
+#include <util/tool.h>
 #include <algorithm>
 #include <charconv>
 #include <chrono>
+#include <filesystem>
+#include <sstream>
+#include <fstream>
 
 using namespace LittleMeowBot;
 using namespace drogon;
@@ -15,6 +21,11 @@ using namespace drogon;
 namespace {
     // 进程启动时间（文件作用域 static，程序启动时初始化）
     const auto g_processStartTime = std::chrono::system_clock::now();
+
+    uint64_t parseQueryUInt64(const HttpRequestPtr& req, const std::string& name, uint64_t fallback = 0) {
+        const auto value = req->getParameter(name);
+        return value.empty() ? fallback : parseUInt64(value, fallback);
+    }
 }
 
 // ==================== LLM配置 ====================
@@ -139,6 +150,59 @@ Task<> AdminController::savePrompt(
     co_return;
 }
 
+// ==================== 运行日志 ====================
+
+Task<> AdminController::getLogs(
+    HttpRequestPtr req,
+    std::function<void(const HttpResponsePtr&)> callback
+) const {
+    LogQuery query;
+
+    if (const std::string groupIdParam = req->getParameter("groupId"); !groupIdParam.empty()) {
+        if (groupIdParam == "system") {
+            query.systemOnly = true;
+        } else {
+            query.groupId = parseUInt64(groupIdParam);
+        }
+    }
+
+    if (const std::string level = req->getParameter("level"); !level.empty() && level != "all") {
+        query.level = level;
+    }
+
+    query.keyword = req->getParameter("keyword");
+    query.afterId = parseQueryUInt64(req, "afterId");
+    query.beforeId = tryParseUInt64(req->getParameter("beforeId"));
+    query.limit = std::clamp<int>(parseQueryUInt64(req, "limit", 200), 1, 1000);
+
+    const auto result = LogBuffer::instance().query(query);
+
+    Json::Value resp;
+    resp["entries"] = Json::arrayValue;
+    for (const auto& entry : result.entries) {
+        Json::Value item;
+        item["id"] = static_cast<Json::UInt64>(entry.id);
+        item["timestamp"] = entry.timestamp;
+        item["level"] = entry.level;
+        item["message"] = entry.message;
+        if (entry.groupId.has_value()) {
+            item["groupId"] = static_cast<Json::UInt64>(*entry.groupId);
+        } else {
+            item["groupId"] = Json::nullValue;
+        }
+        resp["entries"].append(item);
+    }
+    resp["hasMore"] = result.hasMore;
+    resp["nextAfterId"] = static_cast<Json::UInt64>(result.nextAfterId);
+    resp["nextBeforeId"] = static_cast<Json::UInt64>(result.nextBeforeId);
+    resp["oldestId"] = static_cast<Json::UInt64>(result.oldestId);
+    resp["newestId"] = static_cast<Json::UInt64>(result.newestId);
+    resp["size"] = static_cast<Json::UInt64>(LogBuffer::instance().size());
+    resp["currentLevel"] = Logger::level();
+    callback(HttpResponse::newHttpJsonResponse(resp));
+    co_return;
+}
+
 // ==================== 用量统计 ====================
 
 Task<> AdminController::getUsage(
@@ -174,6 +238,41 @@ Task<> AdminController::getSystemInfo(
     Json::Value resp;
     resp["startTime"] = static_cast<Json::Int64>(startEpoch);
     resp["uptimeSeconds"] = static_cast<Json::Int64>(uptimeSeconds);
+    callback(HttpResponse::newHttpJsonResponse(resp));
+    co_return;
+}
+
+Task<> AdminController::getBotStatus(
+    HttpRequestPtr req,
+    std::function<void(const HttpResponsePtr&)> callback
+) const{
+    Json::Value resp;
+    resp["running"] = AgentSystem::instance().isRunning();
+    callback(HttpResponse::newHttpJsonResponse(resp));
+    co_return;
+}
+
+Task<> AdminController::setBotStatus(
+    HttpRequestPtr req,
+    std::function<void(const HttpResponsePtr&)> callback
+) const{
+    const auto json = req->getJsonObject();
+    if (!json || !json->isMember("running") || !(*json)["running"].isBool()) {
+        Json::Value err;
+        err["success"] = false;
+        err["error"] = "running字段必须为布尔值";
+        callback(HttpResponse::newHttpJsonResponse(err));
+        co_return;
+    }
+
+    const bool running = (*json)["running"].asBool();
+    AgentSystem::instance().setRunning(running);
+    spdlog::warn("管理后台{}机器人", running ? "打开" : "暂停");
+
+    Json::Value resp;
+    resp["success"] = true;
+    resp["running"] = running;
+    resp["message"] = running ? "机器人已打开" : "机器人已暂停";
     callback(HttpResponse::newHttpJsonResponse(resp));
     co_return;
 }

@@ -11,6 +11,7 @@
 #include <service/WebSocketManager.hpp>
 #include <storage/Database.hpp>
 #include <spdlog/spdlog.h>
+#include <util/Logger.hpp>
 
 using namespace LittleMeowBot;
 using namespace drogon;
@@ -59,6 +60,9 @@ Task<> ProcessQQMessages::receiveMessages(const HttpRequestPtr req,
     respJson["status"] = "ok";
     callback(HttpResponse::newHttpJsonResponse(respJson));
 
+    if (!AgentSystem::instance().isRunning()) {
+        co_return;
+    }
 
     auto &groupConfigMgr = GroupConfigManager::instance();
 
@@ -72,8 +76,10 @@ Task<> ProcessQQMessages::receiveMessages(const HttpRequestPtr req,
     co_await qqMessage.formatMessage();
 
     // 检查是否是命令消息（@ 且以 / 开头）- 不受群启用状态影响
+    const auto log = Logger::group(groupId);
+
     if (isCommand(qqMessage)) {
-        spdlog::info("收到命令消息: {}", qqMessage.getRawMessage());
+        log.info("收到命令消息: {}", qqMessage.getRawMessage());
 
         ChatRecordManager chatRecords(groupId);
 
@@ -108,8 +114,8 @@ Task<> ProcessQQMessages::receiveMessages(const HttpRequestPtr req,
     // 使用二层代理处理消息（顶层兜底，任何异常不让其逃逸到框架层）
     try {
         if (auto result = co_await agentSystem.process(chatRecords, memory, qqMessage);
-            result && !result->empty()) {
-            spdlog::info("多层代理决定回复");
+            result && !result->empty() && agentSystem.isRunning()) {
+            log.info("多层代理决定回复");
 
             // 拆分表情包和文字，分开发送（表情包先，文字后）
             const auto [cqPart, textPart] = splitCqAndText(result.value());
@@ -121,21 +127,21 @@ Task<> ProcessQQMessages::receiveMessages(const HttpRequestPtr req,
                 co_await MessageService::sendGroupMsg(groupId, textPart, chatRecords);
             }
         } else {
-            spdlog::info("多层代理决定不回复");
+            log.info("多层代理决定不回复");
         }
     } catch (const std::exception &e) {
-        spdlog::error("消息处理异常: {}", e.what());
+        log.error("消息处理异常: {}", e.what());
     }
 
     // 更新统计
     groupConfigMgr.incrementMessageCount(groupId, qqMessage.getFormatMessage().size());
     auto [allMesCount, allCharCount] = groupConfigMgr.getConfig(groupId);
-    spdlog::info("群聊统计数据 {} :接收总消息数{}条,接收总字符(字节)数{}个", groupId, allMesCount, allCharCount);
+    log.info("群聊统计数据: 接收总消息数{}条,接收总字符(字节)数{}个", allMesCount, allCharCount);
 
     // 记忆提取与窗口滑动 - 窗口超限时触发（失败自愈：下条消息重试）
     try {
         co_await MemoryService::appendAndMergeMemory(groupId);
     } catch (const std::exception &e) {
-        spdlog::error("群 {} 记忆提取异常: {}", groupId, e.what());
+        log.error("记忆提取异常: {}", e.what());
     }
 }

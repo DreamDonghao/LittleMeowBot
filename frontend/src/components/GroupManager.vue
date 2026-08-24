@@ -135,14 +135,13 @@ const selectGroup = async (groupId: number, groupName: string): Promise<void> =>
     if (ws && wsConnected.value) {
       ws.send(JSON.stringify({action: 'subscribe', groupId}))
     }
-
-    // 等待渲染完成后滚动到底部
-    await nextTick()
-    await nextTick()
-    scrollToBottom()
   } finally {
     chatLoading.value = false
   }
+
+  // 等待消息列表渲染完成后滚动到底部
+  await nextTick()
+  scrollToBottom()
 }
 
 // 返回列表

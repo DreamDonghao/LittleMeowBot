@@ -13,20 +13,23 @@
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/async.h>
 #include <util/Logger.hpp>
+#include <util/LogBuffer.hpp>
+#include <util/LogSink.hpp>
 
 namespace LittleMeowBot {
     namespace {
         constexpr std::string_view kLogDir = "logs";
         constexpr std::string_view kLogFile = "logs/bot.log";
-        constexpr size_t kLogFileMaxSize = 10 * 1024 * 1024;  // 单文件 10MB
-        constexpr size_t kLogFileMaxCount = 5;                // 保留 5 个历史文件
+        constexpr size_t kLogFileMaxSize = 10 * 1024 * 1024; // 单文件 10MB
+        constexpr size_t kLogFileMaxCount = 5; // 保留 5 个历史文件
     } // namespace
 
     void Logger::init() {
         const auto consoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
         consoleSink->set_pattern("[%H:%M:%S] [%^%l%$] %v");
 
-        std::vector<spdlog::sink_ptr> sinks{consoleSink};
+        const auto logSink = std::make_shared<LogSink>();
+        std::vector<spdlog::sink_ptr> sinks{consoleSink, logSink};
         try {
             std::filesystem::create_directories(kLogDir);
             const auto fileSink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
@@ -41,12 +44,32 @@ namespace LittleMeowBot {
         const auto logger = std::make_shared<spdlog::async_logger>(
             "main", sinks.begin(), sinks.end(),
             spdlog::thread_pool(), spdlog::async_overflow_policy::block);
-        logger->set_level(spdlog::level::info);
+        logger->set_level(spdlog::level::trace);
         logger->flush_on(spdlog::level::warn);
         spdlog::set_default_logger(logger);
 
-        spdlog::info("日志系统初始化完成 (文件={})", sinks.size() > 1);
+        LogBuffer::instance().loadFromDirectory(kLogDir.data());
+        spdlog::info("日志系统初始化完成 (文件={})", sinks.size() > 2);
     }
+
+    bool Logger::setLevel(const std::string_view levelName) {
+        const auto level = spdlog::level::from_str(std::string(levelName));
+        if (level == spdlog::level::off && levelName != "off") {
+            return false;
+        }
+        spdlog::default_logger()->set_level(level);
+        return true;
+    }
+
+    std::string Logger::level() {
+        const auto level = spdlog::level::to_string_view(spdlog::default_logger()->level());
+        return {level.data(), level.size()};
+    }
+
+    GroupLogger Logger::group(const uint64_t groupId) {
+        return GroupLogger(groupId);
+    }
+
 
     void Logger::shutdown() {
         spdlog::shutdown();

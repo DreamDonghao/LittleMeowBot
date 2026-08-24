@@ -8,6 +8,7 @@
 #include <util/HttpUtil.hpp>
 #include <spdlog/spdlog.h>
 #include <fmt/core.h>
+#include <util/Logger.hpp>
 #include <regex>
 #include <ranges>
 #include <algorithm>
@@ -67,22 +68,23 @@ namespace LittleMeowBot {
         const std::string& botName = Config::instance().botName;
         if (spokeInWindow) {
             context += fmt::format("\n【发言间隔】{} 距上次发言已隔 {} 条消息。\n", botName, silentCount);
-            spdlog::info("[Router] 发言间隔: 距上次发言 {} 条消息", silentCount);
+            Logger::group(chatRecords.getGroupId()).info("[Router] 发言间隔: 距上次发言 {} 条消息", silentCount);
         } else {
             const size_t windowLen = records.size() - startIdx;
             context += fmt::format("\n【发言间隔】聊天记录中看不到 {} 的发言，已沉默至少 {} 条消息。\n", botName, windowLen);
-            spdlog::info("[Router] 发言间隔: 窗口内无发言记录(至少已沉默 {} 条)", windowLen);
+            Logger::group(chatRecords.getGroupId()).info("[Router] 发言间隔: 窗口内无发言记录(至少已沉默 {} 条)", windowLen);
         }
         return context;
     }
 
     /// @brief 解析 LLM 响应
-    [[nodiscard]] std::optional<RouterDecision> parseResponse(const std::string& content){
+    [[nodiscard]] std::optional<RouterDecision> parseResponse(
+        const std::string& content, const uint64_t groupId) {
         // 提取 JSON
         size_t start = content.find('{');
         size_t end = content.rfind('}');
         if (start == std::string::npos || end == std::string::npos) {
-            spdlog::error("[Router] 未找到JSON: {}", content);
+            Logger::group(groupId).error("[Router] 未找到JSON: {}", content);
             return std::nullopt;
         }
 
@@ -90,7 +92,7 @@ namespace LittleMeowBot {
 
         Json::Value root;
         if (Json::Reader reader; !reader.parse(jsonStr, root)) {
-            spdlog::error("[Router] JSON解析失败: {}", jsonStr);
+            Logger::group(groupId).error("[Router] JSON解析失败: {}", jsonStr);
             return std::nullopt;
         }
 
@@ -168,24 +170,25 @@ namespace LittleMeowBot {
         }
 
         const auto resp = co_await HttpUtil::send("[Router]", config.router.baseUrl, config.router.path,
-                                                  drogon::Post, body, config.router.apiKey, 90.0);
+                                                  drogon::Post, body, config.router.apiKey, 90.0,
+                                                  chatRecords.getGroupId());
         if (!resp) {
             co_return std::nullopt;
         }
 
         const auto json = (*resp)->getJsonObject();
         if ((*resp)->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
-            spdlog::error("[Router] LLM请求失败: status={}",
-                       static_cast<int>((*resp)->getStatusCode()));
+            Logger::group(chatRecords.getGroupId()).error("[Router] LLM请求失败: status={}",
+                                                         static_cast<int>((*resp)->getStatusCode()));
             co_return std::nullopt;
         }
 
-        ApiClient::logUsage(*json, config.router.model, "router");
+        ApiClient::logUsage(*json, config.router.model, "router", chatRecords.getGroupId());
 
         const std::string content = (*json)["choices"][0]["message"]["content"].asString();
-        spdlog::debug("[Router] LLM响应: {}", content);
+        Logger::group(chatRecords.getGroupId()).debug("[Router] LLM响应: {}", content);
 
-        co_return parseResponse(content);
+        co_return parseResponse(content, chatRecords.getGroupId());
     }
 
         /// @brief 构造硬规则决策结果
@@ -209,19 +212,19 @@ namespace LittleMeowBot {
 
         // 1.1 @提及检测 → 高优先级回复
         if (message.atMe()) {
-            spdlog::info("[Router] @提及 → 高优先级回复");
+            Logger::group(chatRecords.getGroupId()).info("[Router] @提及 → 高优先级回复");
             co_return makeDecision(RouterDecision::Action::REPLY, "用户@提及", 100, true);
         }
 
         // 1.2 刷屏检测 → 跳过
         if (checkSpam(message)) {
-            spdlog::info("[Router] 刷屏消息 → 跳过");
+            Logger::group(chatRecords.getGroupId()).info("[Router] 刷屏消息 → 跳过");
             co_return makeDecision(RouterDecision::Action::SKIP, "刷屏/纯表情");
         }
 
         // 1.3 自身消息检测 → 跳过
         if (message.getSelfQQNumber() == message.getSenderQQNumber()) {
-            spdlog::info("[Router] 自身消息 → 跳过");
+            Logger::group(chatRecords.getGroupId()).info("[Router] 自身消息 → 跳过");
             co_return makeDecision(RouterDecision::Action::SKIP, "机器人自己发送的消息");
         }
 
@@ -230,12 +233,12 @@ namespace LittleMeowBot {
 
         if (!llmDecision) {
             // LLM 失败时默认回复（保守策略）
-            spdlog::warn("[Router] LLM 失败，默认回复");
+            Logger::group(chatRecords.getGroupId()).warn("[Router] LLM 失败，默认回复");
             co_return makeDecision(RouterDecision::Action::REPLY, "LLM调用失败，保守回复");
         }
 
-        spdlog::info("[Router] 决策: {} ({})",
-                  llmDecision->action, llmDecision->reason);
+        Logger::group(chatRecords.getGroupId()).info("[Router] 决策: {} ({})",
+                                                      llmDecision->action, llmDecision->reason);
 
         co_return llmDecision.value();
     }
