@@ -3,6 +3,7 @@
 
 #include <controllers/LogWebSocket.h>
 #include <service/LogWebSocketManager.hpp>
+#include <util/tool.h>
 #include <spdlog/spdlog.h>
 #include <sstream>
 
@@ -44,7 +45,9 @@ namespace LittleMeowBot {
                 sub.all = false;
                 sub.systemOnly = true;
             } else if (!sub.all) {
-                sub.groupId = msg["groupId"].asUInt64();
+                // groupId 由前端以字符串形式发送（群号可能超过 JS 安全整数范围），
+                // 不能直接 asUInt64()，否则 JSON 字符串会抛 LogicError
+                sub.groupId = jsonToUInt64(msg["groupId"]);
             }
             if (msg.isMember("level") && msg["level"].isString() && msg["level"].asString() != "all") {
                 sub.level = msg["level"].asString();

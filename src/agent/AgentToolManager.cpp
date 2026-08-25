@@ -27,8 +27,8 @@
 #include "service/ToolRegistry.hpp"
 
 namespace LittleMeowBot {
-    void AgentToolManager::registerAllTools(){
-        auto& registry = ToolRegistry::instance();
+    void AgentToolManager::registerAllTools() {
+        auto &registry = ToolRegistry::instance();
 
         // ========== 终端工具 ==========
 
@@ -38,7 +38,7 @@ namespace LittleMeowBot {
                 .name = "no_reply",
                 .description = "决定不回复消息。当：话题已参与过、没人问你、刚说过话、纯表情刷屏时使用。",
                 .parameters = Json::Value(),
-                .handler = [](const Json::Value&) -> drogon::Task<std::string> { co_return "ok"; }
+                .handler = [](const Json::Value &) -> drogon::Task<std::string> { co_return "ok"; }
             }, ToolCategory::TERMINAL
         );
 
@@ -53,7 +53,7 @@ namespace LittleMeowBot {
                 .name = "reply",
                 .description = "回复消息。当：有人开启新的话题、有人问你、有人@你、有人求助时使用。",
                 .parameters = replyParams,
-                .handler = [](const Json::Value&) -> drogon::Task<std::string> { co_return "ok"; }
+                .handler = [](const Json::Value &) -> drogon::Task<std::string> { co_return "ok"; }
             }, ToolCategory::TERMINAL
         );
 
@@ -72,7 +72,7 @@ namespace LittleMeowBot {
                 .description =
                 "引用回复特定消息。当需要回复特定消息、回答特定问题、澄清上下文时使用。聊天记录格式为JSON：{\"message_id\":\"12345\",\"text\":\"...\"}，用 message_id 字段的值作为参数。这是终端工具，调用后直接发送。",
                 .parameters = quoteReplyParams,
-                .handler = [](const Json::Value&) -> drogon::Task<std::string> { co_return "ok"; }
+                .handler = [](const Json::Value &) -> drogon::Task<std::string> { co_return "ok"; }
             }, ToolCategory::TERMINAL
         );
 
@@ -83,7 +83,7 @@ namespace LittleMeowBot {
                 .name = "list_stickers",
                 .description = "获取QQ收藏表情中所有可用的表情名称列表。",
                 .parameters = Json::Value(),
-                .handler = [](const Json::Value&) -> drogon::Task<std::string> {
+                .handler = [](const Json::Value &) -> drogon::Task<std::string> {
                     const auto groupId = currentToolContext().groupId;
                     const Json::Value emojis = co_await fetchFavoriteEmojis(groupId);
                     if (emojis.empty()) {
@@ -91,7 +91,7 @@ namespace LittleMeowBot {
                     }
                     std::string result = "可用表情: ";
                     bool first = true;
-                    for (const auto& emoji : emojis) {
+                    for (const auto &emoji: emojis) {
                         if (!first) result += ", ";
                         result += emoji["name"].asString();
                         first = false;
@@ -112,13 +112,13 @@ namespace LittleMeowBot {
                 .name = "search_knowledge",
                 .description = "从知识库中检索信息。当用户问FAQ、专业知识时使用。",
                 .parameters = knowledgeParams,
-                .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
+                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
                     const std::string query = args.isMember("query") ? args["query"].asString() : "";
-                    if (query.empty()) co_return std::string("请提供检索问题");
-
+                    if (query.empty()) {
+                        co_return std::string("请提供检索问题");
+                    }
                     const auto [groupId, groupName] = currentToolContext();
-                    const auto result =
-                        co_await RAGFlowClient::searchKnowledge(query, 3, groupId);
+                    const auto result = co_await RAGFlowClient::searchKnowledge(query, 3, groupId);
                     co_return result.value_or("知识库检索失败");
                 }
             }, ToolCategory::INFORMATION
@@ -135,13 +135,13 @@ namespace LittleMeowBot {
                 .name = "recall_memory",
                 .description = "从长期记忆库中回忆信息（如果需要可以先获取当前群聊的名称）。当想不起某人喜好、某群习惯、过去的约定时使用。模拟人类回忆过程。",
                 .parameters = memoryParams,
-                .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
+                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
                     const std::string query = args.isMember("query") ? args["query"].asString() : "";
                     if (query.empty()) co_return std::string("请提供回忆关键词");
 
                     const auto [groupId, groupName] = currentToolContext();
                     const auto result =
-                        co_await RAGFlowClient::searchMemory(query, 3, groupId);
+                            co_await RAGFlowClient::searchMemory(query, 3, groupId);
                     if (!result || result->empty()) {
                         co_return "想不起来了，没有找到相关记忆";
                     }
@@ -156,8 +156,8 @@ namespace LittleMeowBot {
                 .name = "get_group_name",
                 .description = "获取当前群聊的名称。当需要知道群名或确认当前群时使用。",
                 .parameters = Json::Value(),
-                .handler = [](const Json::Value&) -> drogon::Task<std::string> {
-                    const auto& [groupId, groupName] = currentToolContext();
+                .handler = [](const Json::Value &) -> drogon::Task<std::string> {
+                    const auto &[groupId, groupName] = currentToolContext();
                     if (groupId == 0) {
                         co_return "无法获取群信息";
                     }
@@ -175,14 +175,14 @@ namespace LittleMeowBot {
         faceParams["type"] = "object";
         faceParams["properties"]["id"]["type"] = "integer";
         faceParams["properties"]["id"]["description"] =
-            "表情ID，常用: 1-发呆, 2-撇嘴, 3-色, 4-发呆, 5-得意, 6-流泪, 7-害羞, 8-闭嘴, 9-睡, 10-大哭, 11-尴尬, 12-发怒, 13-调皮, 14-呲牙, 15-惊讶, 16-难过, 17-酷, 18-冷汗, 19-抓狂, 20-吐, 21-偷笑, 22-可爱, 23-白眼, 24-傲慢, 25-饥饿, 26-困, 27-惊恐, 28-流汗, 29-憨笑, 30-大兵, 31-奋斗, 32-咒骂, 33-疑问, 34-嘘, 35-晕, 36-折磨, 37-衰, 38-骷髅, 39-敲打, 40-再见";
+                "表情ID，常用: 1-发呆, 2-撇嘴, 3-色, 4-发呆, 5-得意, 6-流泪, 7-害羞, 8-闭嘴, 9-睡, 10-大哭, 11-尴尬, 12-发怒, 13-调皮, 14-呲牙, 15-惊讶, 16-难过, 17-酷, 18-冷汗, 19-抓狂, 20-吐, 21-偷笑, 22-可爱, 23-白眼, 24-傲慢, 25-饥饿, 26-困, 27-惊恐, 28-流汗, 29-憨笑, 30-大兵, 31-奋斗, 32-咒骂, 33-疑问, 34-嘘, 35-晕, 36-折磨, 37-衰, 38-骷髅, 39-敲打, 40-再见";
         faceParams["required"].append("id");
         registry.registerTool(
             {
                 .name = "send_face",
                 .description = "获取QQ原生表情的CQ码。返回的CQ码必须复制到reply的content中。",
                 .parameters = faceParams,
-                .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
+                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
                     int id = args.isMember("id") ? args["id"].asInt() : 1;
                     co_return fmt::format("[CQ:face,id={}]", id);
                 }
@@ -200,7 +200,7 @@ namespace LittleMeowBot {
                 .name = "send_image",
                 .description = "获取网络图片的CQ码。提供图片URL。返回的CQ码必须复制到reply的content中。",
                 .parameters = imageParams,
-                .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
+                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
                     std::string url = args.isMember("url") ? args["url"].asString() : "";
                     if (url.empty()) co_return std::string("请提供图片URL");
                     co_return fmt::format("[CQ:image,file={}]", url);
@@ -219,7 +219,7 @@ namespace LittleMeowBot {
                 .name = "send_sticker",
                 .description = "获取QQ收藏表情的CQ码。先调list_stickers查看可用表情名，再用此工具。返回的CQ码必须复制到reply的content中，否则表情不会显示。",
                 .parameters = stickerParams,
-                .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
+                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
                     std::string name = args.isMember("name") ? args["name"].asString() : "";
                     if (name.empty()) co_return std::string("请提供表情名称");
 
@@ -257,13 +257,13 @@ namespace LittleMeowBot {
         saveParams["type"] = "object";
         saveParams["properties"]["file"]["type"] = "string";
         saveParams["properties"]["file"]["description"] =
-            "图片在QQ缓存中的文件名（来自聊天记录JSON的images[].file字段）";
+                "图片在QQ缓存中的文件名（来自聊天记录JSON的images[].file字段）";
         saveParams["properties"]["url"]["type"] = "string";
         saveParams["properties"]["url"]["description"] =
-            "图片URL（来自聊天记录JSON的images[].url字段），file方式获取失败时用于下载，最好同时提供";
+                "图片URL（来自聊天记录JSON的images[].url字段），file方式获取失败时用于下载，最好同时提供";
         saveParams["properties"]["name"]["type"] = "string";
         saveParams["properties"]["name"]["description"] =
-            "给表情起的简短名字（根据图片内容），如: 摸头、猫猫惊讶";
+                "给表情起的简短名字（根据图片内容），如: 摸头、猫猫惊讶";
         saveParams["required"].append("file");
         saveParams["required"].append("name");
         registry.registerTool(
@@ -272,7 +272,7 @@ namespace LittleMeowBot {
                 .description =
                 "把用户发的表情/图片保存为自己的QQ收藏表情并设置描述名称。仅在用户明确要求保存表情时使用。聊天记录中图片消息会带images数组，同时传images[].file和images[].url作为参数。name必须起一个能体现图片内容的名字，方便以后用send_sticker引用。",
                 .parameters = saveParams,
-                .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
+                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
                     const auto groupId = currentToolContext().groupId;
                     std::string file = args.isMember("file") ? args["file"].asString() : "";
                     std::string url = args.isMember("url") ? args["url"].asString() : "";
@@ -283,7 +283,7 @@ namespace LittleMeowBot {
                     spdlog::info("[Sticker] save_sticker 参数: file={} url={}",
                                  file, url.substr(0, 150));
 
-                    const auto& config = Config::instance();
+                    const auto &config = Config::instance();
 
                     // Step 1: 尝试 get_image 拿容器内路径（商城表情会失败/超时）
                     std::string containerPath;
@@ -291,7 +291,8 @@ namespace LittleMeowBot {
                         Json::Value getBody;
                         getBody["file"] = file;
                         const auto getResp = co_await HttpUtil::send("[Sticker]", config.qqHttpHost, "/get_image",
-                                                                     drogon::Post, getBody, config.accessToken, 15.0, groupId);
+                                                                     drogon::Post, getBody, config.accessToken, 15.0,
+                                                                     groupId);
                         if (getResp) {
                             const auto getJson = (*getResp)->getJsonObject();
                             if ((*getResp)->getStatusCode() == drogon::k200OK && getJson
@@ -310,7 +311,8 @@ namespace LittleMeowBot {
                         Json::Value dlBody;
                         dlBody["url"] = url;
                         const auto dlResp = co_await HttpUtil::send("[Sticker]", config.qqHttpHost, "/download_file",
-                                                                    drogon::Post, dlBody, config.accessToken, 30.0, groupId);
+                                                                    drogon::Post, dlBody, config.accessToken, 30.0,
+                                                                    groupId);
                         if (dlResp) {
                             const auto dlJson = (*dlResp)->getJsonObject();
                             if ((*dlResp)->getStatusCode() == drogon::k200OK && dlJson
@@ -327,7 +329,7 @@ namespace LittleMeowBot {
                     // Step 3: 记录保存前的 res_id 集合，用于保存后定位新表情
                     invalidateFavoriteEmojiCache();
                     std::set<std::string> beforeIds;
-                    for (const auto& e : co_await fetchFavoriteEmojis(groupId)) {
+                    for (const auto &e: co_await fetchFavoriteEmojis(groupId)) {
                         if (!e["res_id"].asString().empty()) {
                             beforeIds.insert(e["res_id"].asString());
                         }
@@ -337,7 +339,8 @@ namespace LittleMeowBot {
                     Json::Value addBody;
                     addBody["file"] = containerPath;
                     const auto addResp = co_await HttpUtil::send("[Sticker]", config.qqHttpHost, "/add_custom_face",
-                                                                 drogon::Post, addBody, config.accessToken, 30.0, groupId);
+                                                                 drogon::Post, addBody, config.accessToken, 30.0,
+                                                                 groupId);
                     if (!addResp) {
                         spdlog::error("[Sticker] 保存收藏表情失败: {}", containerPath);
                         co_return std::string("保存为收藏表情失败");
@@ -352,7 +355,7 @@ namespace LittleMeowBot {
                     // Step 5: 定位新表情并设置描述
                     invalidateFavoriteEmojiCache();
                     Json::Value newItem(Json::nullValue);
-                    for (const auto& e : co_await fetchFavoriteEmojis(groupId)) {
+                    for (const auto &e: co_await fetchFavoriteEmojis(groupId)) {
                         if (const std::string rid = e["res_id"].asString(); !rid.empty() && !beforeIds.contains(rid)) {
                             newItem = e;
                             break;
@@ -361,8 +364,8 @@ namespace LittleMeowBot {
                     if (!newItem.isNull()) {
                         Json::Value descBody;
                         descBody["emoji_id"] = newItem["emoji_id"].asString().empty()
-                                                  ? "0"
-                                                  : newItem["emoji_id"].asString();
+                                                   ? "0"
+                                                   : newItem["emoji_id"].asString();
                         descBody["res_id"] = newItem["res_id"].asString();
                         descBody["md5"] = newItem["md5"].asString();
                         descBody["desc"] = name;
@@ -405,7 +408,7 @@ namespace LittleMeowBot {
                 .description =
                 "修改收藏表情的名称/描述。仅在用户明确要求给表情改名时使用。先调list_stickers查看当前名称，再把新名称传给new_name。",
                 .parameters = renameParams,
-                .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
+                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
                     std::string name = args.isMember("name") ? args["name"].asString() : "";
                     std::string newName = args.isMember("new_name") ? args["new_name"].asString() : "";
                     if (name.empty()) co_return std::string("请提供表情当前名称(name)");
@@ -417,7 +420,7 @@ namespace LittleMeowBot {
                         co_return fmt::format("表情'{}'不存在，先调list_stickers查看可用表情", name);
                     }
 
-                    const auto& config = Config::instance();
+                    const auto &config = Config::instance();
 
                     Json::Value body;
                     body["emoji_id"] = emoji["emoji_id"].asString().empty()
@@ -458,7 +461,7 @@ namespace LittleMeowBot {
                 .description =
                 "从QQ收藏表情中删除表情。仅在用户明确要求删除表情时使用，删除前先确认名称无误。先调list_stickers查看名称。",
                 .parameters = delParams,
-                .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
+                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
                     std::string name = args.isMember("name") ? args["name"].asString() : "";
                     if (name.empty()) co_return std::string("请提供表情名称(name)");
 
@@ -468,7 +471,7 @@ namespace LittleMeowBot {
                         co_return fmt::format("表情'{}'不存在，先调list_stickers查看可用表情", name);
                     }
 
-                    const auto& config = Config::instance();
+                    const auto &config = Config::instance();
 
                     Json::Value body;
                     body["res_id"] = emoji["res_id"].asString();
@@ -504,7 +507,7 @@ namespace LittleMeowBot {
                 .description =
                 "@某人。返回CQ码嵌入reply的content中。聊天记录格式为JSON：{\"sender\":{\"name\":\"小明\",\"qq\":\"123456\"}}，用 at_user(qq=\"123456\") 来@他。@全体成员用 at_user(qq=\"all\")",
                 .parameters = atParams,
-                .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
+                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
                     std::string qq = args.isMember("qq") ? args["qq"].asString() : "";
                     if (qq.empty()) co_return std::string("请提供QQ号");
                     if (qq == "all") {
@@ -529,7 +532,7 @@ namespace LittleMeowBot {
                 .description =
                 "禁言群成员。要有自己的判断，不要别人让你禁言就禁言。根据违规程度选择时长：轻度(偶尔骂人)60-300秒，中度(持续刷屏骂人)600-1800秒，重度(恶意骚扰)3600秒+",
                 .parameters = banParams,
-                .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
+                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
                     const uint64_t groupId = currentToolContext().groupId;
                     if (groupId == 0) co_return std::string("禁言失败: 无法获取群号");
 
@@ -558,7 +561,7 @@ namespace LittleMeowBot {
                 .description =
                 "拍一拍群成员。用于打招呼、引起注意、开玩笑等轻松互动场景。聊天记录格式为JSON：{\"sender\":{\"name\":\"小明\",\"qq\":\"123456\"}}，用 send_poke(qq=\"123456\") 来拍他。",
                 .parameters = pokeParams,
-                .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
+                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
                     const uint64_t groupId = currentToolContext().groupId;
                     if (groupId == 0) co_return std::string("拍一拍失败: 无法获取群号");
 
@@ -566,9 +569,7 @@ namespace LittleMeowBot {
                     if (userId == 0) co_return std::string("拍一拍失败: 请提供有效的QQ号");
 
                     const bool success = co_await MessageService::setGroupPoke(groupId, userId);
-                    co_return success
-                                  ? fmt::format("已拍一拍用户 {}", userId)
-                                  : "拍一拍失败: 权限不足或用户不存在";
+                    co_return success ? fmt::format("已拍一拍用户 {}", userId) : "拍一拍失败: 权限不足或用户不存在";
                 }
             }, ToolCategory::ACTION
         );
@@ -585,7 +586,7 @@ namespace LittleMeowBot {
                 .description =
                 "撤回消息。当用户要求撤回某条消息时使用。聊天记录格式为JSON：{\"message_id\":\"12345\",\"reply_to\":\"67890\"}。若用户想撤回引用的消息，用 reply_to 字段的值；若想撤回某条消息本身，用 message_id 字段的值。",
                 .parameters = recallParams,
-                .handler = [](const Json::Value& args) -> drogon::Task<std::string> {
+                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
                     uint64_t messageId = args.isMember("message_id") ? parseUInt64(args["message_id"].asString()) : 0;
                     if (messageId == 0) co_return std::string("撤回失败: 请提供有效的消息ID");
 
@@ -601,9 +602,9 @@ namespace LittleMeowBot {
         spdlog::info("ToolManager: 工具注册完成（共19个工具）");
     }
 
-    void AgentToolManager::registerCustomTools(){
-        auto& registry = ToolRegistry::instance();
-        const auto& db = Database::instance();
+    void AgentToolManager::registerCustomTools() {
+        auto &registry = ToolRegistry::instance();
+        const auto &db = Database::instance();
 
         // 先清除所有已注册的自定义工具
         registry.clearAllCustomTools();
@@ -613,7 +614,7 @@ namespace LittleMeowBot {
         const auto tools = db.getEnabledCustomTools();
         int count = 0;
 
-        for (const auto& tool : tools) {
+        for (const auto &tool: tools) {
             // 解析参数 JSON
             Json::Value params;
             if (!tool.parameters.empty()) {
@@ -636,7 +637,7 @@ namespace LittleMeowBot {
                         .name = tool.name,
                         .description = tool.description,
                         .parameters = params,
-                        .handler = [script = tool.scriptContent](const Json::Value& args) -> drogon::Task<std::string> {
+                        .handler = [script = tool.scriptContent](const Json::Value &args) -> drogon::Task<std::string> {
                             co_return co_await executePythonTool(script, args);
                         }
                     }, ToolCategory::INFORMATION
@@ -648,7 +649,7 @@ namespace LittleMeowBot {
                         .description = tool.description,
                         .parameters = params,
                         .handler = [config = tool.executorConfig
-                        ](const Json::Value& args) -> drogon::Task<std::string> {
+                        ](const Json::Value &args) -> drogon::Task<std::string> {
                             co_return co_await executeHttpTool(config, args);
                         }
                     }, ToolCategory::INFORMATION
@@ -663,8 +664,8 @@ namespace LittleMeowBot {
         spdlog::info("ToolManager: 自定义工具注册完成（共{}个）", count);
     }
 
-    drogon::Task<std::string> AgentToolManager::executePythonTool(const std::string& scriptContent,
-                                                                  const Json::Value& args){
+    drogon::Task<std::string> AgentToolManager::executePythonTool(const std::string &scriptContent,
+                                                                  const Json::Value &args) {
         if (scriptContent.empty()) {
             co_return std::string("脚本内容为空");
         }
@@ -678,12 +679,17 @@ namespace LittleMeowBot {
         std::string inputJson = Json::writeString(writerBuilder, args);
 
         // 创建临时脚本文件（析构时自动删除）
-        struct TempFile{
+        struct TempFile {
             std::string path;
-            explicit TempFile(std::string p) : path(std::move(p)){}
-            TempFile(const TempFile&) = delete;
-            TempFile& operator=(const TempFile&) = delete;
-            ~TempFile(){
+
+            explicit TempFile(std::string p) : path(std::move(p)) {
+            }
+
+            TempFile(const TempFile &) = delete;
+
+            TempFile & operator=(const TempFile &) = delete;
+
+            ~TempFile() {
                 std::error_code ec;
                 std::filesystem::remove(path, ec);
             }
@@ -722,8 +728,8 @@ namespace LittleMeowBot {
         std::string result;
 
         // RAII 管理管道：出错路径自动 pclose
-        struct PipeCloser{
-            void operator()(FILE* f) const noexcept{ if (f) std::ignore = pclose(f); }
+        struct PipeCloser {
+            void operator()(FILE *f) const noexcept { if (f) std::ignore = pclose(f); }
         };
         std::unique_ptr<FILE, PipeCloser> pipe(popen(cmd.c_str(), "r"));
         if (!pipe) {
@@ -747,7 +753,7 @@ namespace LittleMeowBot {
         co_return result;
     }
 
-    drogon::Task<std::string> AgentToolManager::executeHttpTool(const std::string& config, const Json::Value& args){
+    drogon::Task<std::string> AgentToolManager::executeHttpTool(const std::string &config, const Json::Value &args) {
         // 解析配置
         Json::Value configJson;
         Json::CharReaderBuilder builder;
@@ -800,7 +806,7 @@ namespace LittleMeowBot {
 
         // CQ码参数值不能包含逗号和方括号，替换为空格
         std::string sanitizeCqParam(std::string s) {
-            for (char& c : s) {
+            for (char &c: s) {
                 if (c == ',' || c == '[' || c == ']') c = ' ';
             }
             return s;
@@ -817,7 +823,7 @@ namespace LittleMeowBot {
             }
         }
 
-        const auto& config = Config::instance();
+        const auto &config = Config::instance();
 
         Json::Value body;
         body["count"] = 200;
@@ -836,7 +842,7 @@ namespace LittleMeowBot {
             }
 
             int idx = 0;
-            for (const auto& item : (*json)["data"]) {
+            for (const auto &item: (*json)["data"]) {
                 Json::Value emoji;
                 const std::string desc = sanitizeCqParam(item.get("desc", "").asString());
                 const std::string md5 = item.get("md5", "").asString();
@@ -868,8 +874,8 @@ namespace LittleMeowBot {
     }
 
     drogon::Task<Json::Value> AgentToolManager::findFavoriteEmoji(
-        const std::string& name, const std::optional<uint64_t> groupId) {
-        for (const Json::Value emojis = co_await fetchFavoriteEmojis(groupId); const auto& emoji : emojis) {
+        const std::string &name, const std::optional<uint64_t> groupId) {
+        for (const Json::Value emojis = co_await fetchFavoriteEmojis(groupId); const auto &emoji: emojis) {
             if (emoji["name"].asString() == name || emoji["summary"].asString() == name) {
                 co_return emoji;
             }
@@ -877,7 +883,7 @@ namespace LittleMeowBot {
         co_return Json::Value(Json::nullValue);
     }
 
-    void AgentToolManager::invalidateFavoriteEmojiCache(){
+    void AgentToolManager::invalidateFavoriteEmojiCache() {
         std::lock_guard lock(g_favEmojiCacheMutex);
         g_favEmojiCache = Json::Value(Json::nullValue);
     }
