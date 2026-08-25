@@ -38,7 +38,7 @@ int main() {
         AgentSystem::instance().initialize();
 
         spdlog::info("系统初始化完成 - 启用群: {}, 管理员: {}", std::ssize(database.getEnabledGroups()),
-                  std::ssize(database.getAdmins()));
+                     std::ssize(database.getAdmins()));
 
         // 启动服务
         // 启动控制台命令线程

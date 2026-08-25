@@ -9,7 +9,7 @@ import {useToast} from '../composables/useToast'
 
 const qqConfig = inject<QQConfig>('qqConfig')
 const wsConnected = inject<Ref<boolean>>('wsConnected') as Ref<boolean>
-const ws = inject<{get: () => WebSocket | null}>('ws')
+const ws = inject<{ get: () => WebSocket | null }>('ws')
 const {showToast} = useToast()
 
 const botRunning = ref(true)
@@ -85,11 +85,13 @@ interface UsageItem {
   total: number
   cached: number
 }
+
 interface DayUsage {
   day: string
   calls: number
   total: number
 }
+
 const todayStats = ref({calls: 0, prompt: 0, completion: 0, total: 0, cached: 0})
 const todayByRole: Ref<UsageItem[]> = ref([])
 const byDay: Ref<DayUsage[]> = ref([])
@@ -159,8 +161,10 @@ const loadLLMModels = async (): Promise<void> => {
       const c = cfg as LLMConfig
       if (c.model) llmModels.value[name] = c.model
     }
-  } catch { /* ignore */ }
-  finally { llmLoading.value = false }
+  } catch { /* ignore */
+  } finally {
+    llmLoading.value = false
+  }
 }
 
 const loadSystemInfo = async (): Promise<void> => {
@@ -170,7 +174,8 @@ const loadSystemInfo = async (): Promise<void> => {
     startTimeEpoch.value = data.startTime || 0
     baseUptime.value = data.uptimeSeconds || 0
     loadMoment = Date.now()
-  } catch { /* ignore */ }
+  } catch { /* ignore */
+  }
 }
 
 const loadUsage = async (): Promise<void> => {
@@ -180,7 +185,8 @@ const loadUsage = async (): Promise<void> => {
     todayStats.value = data.today || {calls: 0, prompt: 0, completion: 0, total: 0, cached: 0}
     todayByRole.value = data.today_by_role || []
     byDay.value = data.by_day || []
-  } catch { /* ignore */ }
+  } catch { /* ignore */
+  }
 }
 
 const loadGroups = async (): Promise<void> => {
@@ -192,7 +198,8 @@ const loadGroups = async (): Promise<void> => {
       enabledCount.value = data.filter((g: any) => g.enabled).length
       totalMessages.value = data.reduce((sum: number, g: any) => sum + (g.messageCount || 0), 0)
     }
-  } catch { /* ignore */ }
+  } catch { /* ignore */
+  }
 }
 
 const loadAdmins = async (): Promise<void> => {
@@ -200,7 +207,8 @@ const loadAdmins = async (): Promise<void> => {
     const resp = await fetch('/admin/api/admins')
     const data = await resp.json()
     adminCount.value = Array.isArray(data) ? data.length : 0
-  } catch { /* ignore */ }
+  } catch { /* ignore */
+  }
 }
 
 const loadEmojis = async (): Promise<void> => {
@@ -208,7 +216,8 @@ const loadEmojis = async (): Promise<void> => {
     const resp = await fetch('/admin/api/emojis')
     const data = await resp.json()
     emojiCount.value = Array.isArray(data) ? data.length : 0
-  } catch { /* ignore */ }
+  } catch { /* ignore */
+  }
 }
 
 const loadTools = async (): Promise<void> => {
@@ -216,7 +225,8 @@ const loadTools = async (): Promise<void> => {
     const resp = await fetch('/admin/api/custom-tools')
     const data = await resp.json()
     toolCount.value = Array.isArray(data) ? data.length : 0
-  } catch { /* ignore */ }
+  } catch { /* ignore */
+  }
 }
 
 const loadKB = async (): Promise<void> => {
@@ -224,7 +234,8 @@ const loadKB = async (): Promise<void> => {
     const resp = await fetch('/admin/api/kb-config')
     const data = await resp.json()
     kbEnabled.value = data.enabled || false
-  } catch { /* ignore */ }
+  } catch { /* ignore */
+  }
 }
 
 let wsMessageHandler: ((e: MessageEvent) => void) | null = null
@@ -240,7 +251,9 @@ onMounted(() => {
   loadTools()
   loadKB()
 
-  uptimeTimer = window.setInterval(() => { nowTick.value = Date.now() }, 1000)
+  uptimeTimer = window.setInterval(() => {
+    nowTick.value = Date.now()
+  }, 1000)
 
   const wsConn = ws?.get()
   if (wsConn) {
@@ -248,7 +261,8 @@ onMounted(() => {
       try {
         const msg = JSON.parse(e.data)
         if (msg.type === 'usage_updated') loadUsage()
-      } catch { /* ignore */ }
+      } catch { /* ignore */
+      }
     }
     wsConn.addEventListener('message', wsMessageHandler)
   }
@@ -273,7 +287,7 @@ onUnmounted(() => {
     <!-- 状态条 -->
     <div class="dash-status-bar">
       <div class="status-item bot-control-item">
-        <span class="status-dot" :class="botRunning ? 'dot-green' : 'dot-gray'"></span>
+        <span :class="botRunning ? 'dot-green' : 'dot-gray'" class="status-dot"></span>
         <span>{{ botRunning ? '机器人运行中' : '机器人已暂停' }}</span>
         <button
             :class="botRunning ? 'btn-warning' : 'btn-success'"
@@ -286,15 +300,15 @@ onUnmounted(() => {
         </button>
       </div>
       <div class="status-item">
-        <span class="status-dot" :class="wsConnected ? 'dot-green' : 'dot-red'"></span>
+        <span :class="wsConnected ? 'dot-green' : 'dot-red'" class="status-dot"></span>
         <span>{{ wsConnected ? 'WebSocket 已连接' : 'WebSocket 未连接' }}</span>
       </div>
       <div class="status-item">
-        <span class="status-dot" :class="botOnline ? 'dot-green' : 'dot-gray'"></span>
+        <span :class="botOnline ? 'dot-green' : 'dot-gray'" class="status-dot"></span>
         <span>{{ botOnline ? 'OneBot 已配置' : 'OneBot 未配置' }}</span>
       </div>
       <div class="status-item">
-        <span class="status-dot" :class="kbEnabled ? 'dot-green' : 'dot-gray'"></span>
+        <span :class="kbEnabled ? 'dot-green' : 'dot-gray'" class="status-dot"></span>
         <span>{{ kbEnabled ? '知识库已启用' : '知识库已禁用' }}</span>
       </div>
     </div>
@@ -306,7 +320,7 @@ onUnmounted(() => {
         <!-- 运行时间 -->
         <div class="bento-card">
           <div class="bento-header">
-            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" class="bento-icon">
+            <svg class="bento-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <circle cx="12" cy="12" r="10"/>
               <polyline points="12 6 12 12 16 14"/>
             </svg>
@@ -319,8 +333,9 @@ onUnmounted(() => {
         <!-- OneBot 配置 -->
         <div class="bento-card">
           <div class="bento-header">
-            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" class="bento-icon">
-              <path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+            <svg class="bento-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path
+                  d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
             </svg>
             <span class="bento-title">OneBot 配置</span>
           </div>
@@ -343,7 +358,7 @@ onUnmounted(() => {
         <!-- 资源 -->
         <div class="bento-card">
           <div class="bento-header">
-            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" class="bento-icon">
+            <svg class="bento-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
               <circle cx="9" cy="7" r="4"/>
             </svg>
@@ -379,7 +394,7 @@ onUnmounted(() => {
         <!-- 模型配置 -->
         <div class="bento-card">
           <div class="bento-header">
-            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" class="bento-icon">
+            <svg class="bento-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
             </svg>
             <span class="bento-title">模型配置</span>
@@ -393,7 +408,7 @@ onUnmounted(() => {
             </template>
             <template v-else>
               <div v-for="name in llmOrder" :key="name" class="model-row">
-                <span class="model-dot" :style="{ background: roleColors[name] }"></span>
+                <span :style="{ background: roleColors[name] }" class="model-dot"></span>
                 <span class="model-name">{{ llmLabels[name] }}</span>
                 <code class="model-code">{{ llmModels[name] || '未配置' }}</code>
               </div>
@@ -404,7 +419,7 @@ onUnmounted(() => {
         <!-- 每日用量 -->
         <div class="bento-card">
           <div class="bento-header">
-            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" class="bento-icon">
+            <svg class="bento-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/>
               <path d="M12 6v6l4 2"/>
             </svg>
@@ -428,9 +443,9 @@ onUnmounted(() => {
           </div>
 
           <div class="usage-chart">
-            <div v-for="d in byDay" :key="d.day" class="usage-col" :title="`${d.day}: ${fmtNum(d.total)} Token`">
+            <div v-for="d in byDay" :key="d.day" :title="`${d.day}: ${fmtNum(d.total)} Token`" class="usage-col">
               <div class="usage-bar-track">
-                <div class="usage-bar" :style="{ height: (d.total / maxDayTotal) * 100 + '%' }"></div>
+                <div :style="{ height: (d.total / maxDayTotal) * 100 + '%' }" class="usage-bar"></div>
               </div>
               <span class="usage-day">{{ d.day.slice(5) }}</span>
             </div>
@@ -478,9 +493,19 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.dot-green { background: var(--success); box-shadow: 0 0 6px var(--success); }
-.dot-red { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
-.dot-gray { background: var(--text-light); }
+.dot-green {
+  background: var(--success);
+  box-shadow: 0 0 6px var(--success);
+}
+
+.dot-red {
+  background: var(--danger);
+  box-shadow: 0 0 6px var(--danger);
+}
+
+.dot-gray {
+  background: var(--text-light);
+}
 
 /* ====== 仪表盘布局（左 3 右 2） ====== */
 .dash-layout {
@@ -759,7 +784,13 @@ onUnmounted(() => {
     grid-template-columns: 1fr;
     min-height: 0;
   }
-  .usage-kpis { grid-template-columns: 1fr; }
-  .resource-grid { grid-template-columns: repeat(2, 1fr); }
+
+  .usage-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .resource-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 </style>

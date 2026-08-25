@@ -21,21 +21,24 @@ namespace LittleMeowBot {
         /// @brief 同群并发 eviction 防重入
         /// @details 不能用 std::mutex 直接跨 co_await（协程可能在不同线程恢复），
         ///          改用标记集合 + RAII，协程销毁时自动清除标记
-        class EvictionGuard{
+        class EvictionGuard {
         public:
-            explicit EvictionGuard(const uint64_t groupId) : m_groupId(groupId){
+            explicit EvictionGuard(const uint64_t groupId) : m_groupId(groupId) {
                 std::lock_guard lock(s_mutex);
                 m_acquired = s_evicting.insert(groupId).second;
             }
-            ~EvictionGuard(){
+
+            ~EvictionGuard() {
                 if (!m_acquired) return;
                 std::lock_guard lock(s_mutex);
                 s_evicting.erase(m_groupId);
             }
-            EvictionGuard(const EvictionGuard&) = delete;
-            EvictionGuard& operator=(const EvictionGuard&) = delete;
 
-            [[nodiscard]] bool acquired() const{ return m_acquired; }
+            EvictionGuard(const EvictionGuard &) = delete;
+
+            EvictionGuard &operator=(const EvictionGuard &) = delete;
+
+            [[nodiscard]] bool acquired() const { return m_acquired; }
 
         private:
             static inline std::mutex s_mutex;
@@ -45,7 +48,7 @@ namespace LittleMeowBot {
         };
 
         /// @brief 去除首尾空白
-        std::string trim(const std::string& s){
+        std::string trim(const std::string &s) {
             const size_t begin = s.find_first_not_of(" \t\r\n");
             if (begin == std::string::npos) return "";
             const size_t end = s.find_last_not_of(" \t\r\n");
@@ -54,11 +57,11 @@ namespace LittleMeowBot {
 
         /// @brief 一次 LLM 调用完成"提取 + 合并"：结合现有记忆从对话中提取新条目并输出合并结果
         /// @return nullopt 表示 API 失败（调用方不得推进水位线）
-        drogon::Task<std::optional<std::string>> maintainMemory(
-            const std::string& existingMemory,
-            const std::string& chatRecords,
+        drogon::Task<std::optional<std::string> > maintainMemory(
+            const std::string &existingMemory,
+            const std::string &chatRecords,
             int maxTokens,
-            const uint64_t groupId){
+            const uint64_t groupId) {
             Json::Value messages;
             Json::Value item;
             item["role"] = "system";
@@ -92,8 +95,8 @@ namespace LittleMeowBot {
             item.clear();
             item["role"] = "user";
             item["content"] = "现有记忆：\n" + (existingMemory.empty() ? "（空）" : existingMemory)
-                + "\n\n=== 最近对话 ===\n" + chatRecords
-                + "\n\n请直接输出合并后的记忆列表，每行一条，不要解释：";
+                              + "\n\n=== 最近对话 ===\n" + chatRecords
+                              + "\n\n请直接输出合并后的记忆列表，每行一条，不要解释：";
             messages.append(item);
 
             auto result = co_await ApiClient::requestLLM(messages, 0.4f, 0.9f, maxTokens, "memory", groupId);
@@ -106,7 +109,7 @@ namespace LittleMeowBot {
 
         /// @brief 把记录区间拼接为 JSON 数组字符串（与旧 getChatRecordsText 格式一致）
         std::string formatRecordsText(
-            const std::vector<Json::Value>& records, size_t from, size_t to){
+            const std::vector<Json::Value> &records, size_t from, size_t to) {
             std::string text = "[";
             bool first = true;
             for (size_t i = from; i < to; ++i) {
@@ -119,7 +122,7 @@ namespace LittleMeowBot {
         }
 
         /// @brief 统计文本行数
-        int countLines(const std::string& text){
+        int countLines(const std::string &text) {
             if (text.empty()) return 0;
             int count = 0;
             std::istringstream stream(text);
@@ -131,7 +134,7 @@ namespace LittleMeowBot {
         }
 
         /// @brief 截断记忆到最多 N 条（保留前 N 条，重要信息通常排在前面）
-        std::string trimToMaxLines(const std::string& memory, int maxLines){
+        std::string trimToMaxLines(const std::string &memory, int maxLines) {
             std::vector<std::string> lines;
             std::istringstream stream(memory);
             std::string line;
@@ -154,7 +157,7 @@ namespace LittleMeowBot {
 
         /// @brief 筛选值得长期保存的记忆
         drogon::Task<std::string> selectMemoriesToMigrate(
-            const std::string& shortTermMemory, const uint64_t groupId) {
+            const std::string &shortTermMemory, const uint64_t groupId) {
             const int migrateCount = Config::instance().memoryMigrateCount;
 
             Json::Value messages;
@@ -195,8 +198,8 @@ namespace LittleMeowBot {
 
         /// @brief 从文本中删除已迁移的行（双向子串匹配）
         std::string removeMigratedLines(
-            const std::string& original,
-            const std::string& migrated){
+            const std::string &original,
+            const std::string &migrated) {
             std::vector<std::string> migratedLines;
             std::istringstream stream(migrated);
             std::string line;
@@ -212,7 +215,7 @@ namespace LittleMeowBot {
                 if (line.empty()) continue;
 
                 bool shouldRemove = false;
-                for (const auto& migratedLine : migratedLines) {
+                for (const auto &migratedLine: migratedLines) {
                     if (line.find(migratedLine) != std::string::npos ||
                         migratedLine.find(line) != std::string::npos) {
                         shouldRemove = true;
@@ -230,11 +233,11 @@ namespace LittleMeowBot {
 
         /// @brief 从短期记忆迁移到长期记忆库
         drogon::Task<std::string> migrateToLongTermMemory(
-            uint64_t groupId, const std::string& shortTermMemory){
+            uint64_t groupId, const std::string &shortTermMemory) {
             const int maxLines = Config::instance().shortTermMemoryMax;
 
             // 检查 RAGFlow 是否实际可用（不仅 enabled，还需要配置了必要参数）
-            const auto& kb = Config::instance().knowledgeBase;
+            const auto &kb = Config::instance().knowledgeBase;
             if (!kb.enabled || kb.memoryDatasetId.empty() || kb.memoryDocumentId.empty()) {
                 Logger::group(groupId).info("短期记忆超限，RAGFlow 未配置或未启用，仅保留 {} 条", maxLines);
                 std::string trimmed = trimToMaxLines(shortTermMemory, maxLines);
@@ -295,14 +298,14 @@ namespace LittleMeowBot {
         }
     }
 
-    drogon::Task<void> MemoryService::appendAndMergeMemory(uint64_t groupId){
+    drogon::Task<void> MemoryService::appendAndMergeMemory(uint64_t groupId) {
         EvictionGuard guard(groupId);
         if (!guard.acquired()) {
-            co_return;  // 该群正在提取中，等下一轮消息触发
+            co_return; // 该群正在提取中，等下一轮消息触发
         }
 
-        auto& db = Database::instance();
-        auto& config = Config::instance();
+        auto &db = Database::instance();
+        auto &config = Config::instance();
 
         // 1. 检查窗口是否超限
         const uint64_t watermark = db.getMemoryWatermark(groupId);
@@ -313,7 +316,7 @@ namespace LittleMeowBot {
 
         size_t toDrop = count - config.windowKeepCount;
         if (toDrop == 0) {
-            toDrop = 1;  // 配置异常兜底（keep >= trigger），至少推进一条，保证触发循环能终止
+            toDrop = 1; // 配置异常兜底（keep >= trigger），至少推进一条，保证触发循环能终止
         }
 
         const auto records = db.getChatRecordsSince(groupId, watermark, 0);

@@ -19,7 +19,7 @@ namespace LittleMeowBot {
     /// @param message QQ 消息
     /// @return 路由决策结果（包含回复策略）
     [[nodiscard]] drogon::Task<RouterDecision> route(
-        const ChatRecordManager& chatRecords,
-        const MemoryManager& memory,
-        const QQMessage& message);
+        const ChatRecordManager &chatRecords,
+        const MemoryManager &memory,
+        const QQMessage &message);
 }

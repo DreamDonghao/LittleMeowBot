@@ -493,7 +493,7 @@ namespace LittleMeowBot {
         const MemoryManager &memory,
         const RouterDecision &decision) {
         Logger::group(chatRecords.getGroupId()).info("[Executor] 开始执行 | thinking={} | priority={} | maxLength={}",
-                                                      decision.enableThinking, decision.isPriority, decision.maxLength);
+                                                     decision.enableThinking, decision.isPriority, decision.maxLength);
 
         const auto &config = Config::instance();
         const Json::Value messages = co_await buildPrompt(chatRecords, memory, decision);

@@ -79,7 +79,7 @@ namespace LittleMeowBot {
             chatRecords, memory, message);
 
         Logger::group(groupId).info("[Router] 结果: {} | shouldReply={} | thinking={} | maxLength={}",
-                                     decision.action, decision.shouldReply, decision.enableThinking, decision.maxLength);
+                                    decision.action, decision.shouldReply, decision.enableThinking, decision.maxLength);
 
         // 检查处理代际是否被 @消息取消
         if (!isCurrentGeneration(groupId, generation)) {

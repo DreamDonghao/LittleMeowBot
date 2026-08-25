@@ -18,32 +18,32 @@ namespace LittleMeowBot {
         }
 
         template<typename... Args>
-        void trace(fmt::format_string<Args...> format, Args&&... args) const {
+        void trace(fmt::format_string<Args...> format, Args &&... args) const {
             write(spdlog::level::trace, fmt::format(format, std::forward<Args>(args)...));
         }
 
         template<typename... Args>
-        void debug(fmt::format_string<Args...> format, Args&&... args) const {
+        void debug(fmt::format_string<Args...> format, Args &&... args) const {
             write(spdlog::level::debug, fmt::format(format, std::forward<Args>(args)...));
         }
 
         template<typename... Args>
-        void info(fmt::format_string<Args...> format, Args&&... args) const {
+        void info(fmt::format_string<Args...> format, Args &&... args) const {
             write(spdlog::level::info, fmt::format(format, std::forward<Args>(args)...));
         }
 
         template<typename... Args>
-        void warn(fmt::format_string<Args...> format, Args&&... args) const {
+        void warn(fmt::format_string<Args...> format, Args &&... args) const {
             write(spdlog::level::warn, fmt::format(format, std::forward<Args>(args)...));
         }
 
         template<typename... Args>
-        void error(fmt::format_string<Args...> format, Args&&... args) const {
+        void error(fmt::format_string<Args...> format, Args &&... args) const {
             write(spdlog::level::err, fmt::format(format, std::forward<Args>(args)...));
         }
 
     private:
-        void write(spdlog::level::level_enum level, const std::string& message) const {
+        void write(spdlog::level::level_enum level, const std::string &message) const {
             spdlog::log(level, "[group_id={}] {}", m_groupId, message);
         }
 

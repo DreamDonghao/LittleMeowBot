@@ -19,46 +19,46 @@
 namespace LittleMeowBot {
     /// @brief WebSocket连接管理器（单例模式）
     /// @details 管理所有WebSocket连接，支持按群订阅消息
-    class WebSocketManager{
+    class WebSocketManager {
     public:
         /// @brief 获取单例实例
         /// @return WebSocketManager 实例引用
-        static WebSocketManager& instance();
+        static WebSocketManager &instance();
 
         /// @brief 添加连接
         /// @param conn WebSocket 连接指针
-        void addConnection(const drogon::WebSocketConnectionPtr& conn);
+        void addConnection(const drogon::WebSocketConnectionPtr &conn);
 
         /// @brief 移除连接
         /// @param conn WebSocket 连接指针
-        void removeConnection(const drogon::WebSocketConnectionPtr& conn);
+        void removeConnection(const drogon::WebSocketConnectionPtr &conn);
 
         /// @brief 订阅特定群的消息
         /// @param conn WebSocket 连接指针
         /// @param groupId 群号
-        void subscribeGroup(const drogon::WebSocketConnectionPtr& conn, uint64_t groupId);
+        void subscribeGroup(const drogon::WebSocketConnectionPtr &conn, uint64_t groupId);
 
         /// @brief 取消订阅群
         /// @param conn WebSocket 连接指针
         /// @param groupId 群号
-        void unsubscribeGroup(const drogon::WebSocketConnectionPtr& conn, uint64_t groupId);
+        void unsubscribeGroup(const drogon::WebSocketConnectionPtr &conn, uint64_t groupId);
 
         /// @brief 推送新消息到订阅该群的连接
         /// @param groupId 群号
         /// @param role 角色（user/assistant）
         /// @param content 消息内容
-        void pushMessage(uint64_t groupId, const std::string& role, const std::string& content);
+        void pushMessage(uint64_t groupId, const std::string &role, const std::string &content);
 
         /// @brief 广播事件到所有连接
         /// @param type 事件类型
         /// @param data 事件数据
-        void broadcastEvent(const std::string& type, const Json::Value& data);
+        void broadcastEvent(const std::string &type, const Json::Value &data);
 
     private:
         WebSocketManager() = default;
 
-        std::unordered_set<drogon::WebSocketConnectionPtr> m_connections;  ///< 所有连接
-        std::unordered_map<uint64_t, std::unordered_set<drogon::WebSocketConnectionPtr>> m_subscriptions; ///< 群订阅映射
-        mutable std::mutex m_mutex;  ///< 线程安全锁
+        std::unordered_set<drogon::WebSocketConnectionPtr> m_connections; ///< 所有连接
+        std::unordered_map<uint64_t, std::unordered_set<drogon::WebSocketConnectionPtr> > m_subscriptions; ///< 群订阅映射
+        mutable std::mutex m_mutex; ///< 线程安全锁
     };
 }

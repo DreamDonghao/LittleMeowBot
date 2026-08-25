@@ -13,7 +13,7 @@ namespace LittleMeowBot {
     /// @brief 短期记忆管理类
     /// @details 管理单个群组的短期记忆，每行一条记忆条目。
     ///          用于 LLM 上下文中提供记忆信息。
-    class MemoryManager{
+    class MemoryManager {
     public:
         /// @brief 构造函数
         /// @param groupId 群号
@@ -24,6 +24,6 @@ namespace LittleMeowBot {
         [[nodiscard]] std::string getMemory() const;
 
     private:
-        uint64_t m_groupId;  ///< 群号
+        uint64_t m_groupId; ///< 群号
     };
 }

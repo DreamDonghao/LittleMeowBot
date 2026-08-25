@@ -11,18 +11,20 @@
 #include <concepts>
 #include <filesystem>
 #include <utility>
+
 namespace LittleMeowBot {
     namespace {
         /// @brief 数据库错误异常
-        class DbError : public std::runtime_error{
+        class DbError : public std::runtime_error {
         public:
-            explicit DbError(std::string_view msg) : std::runtime_error(std::string(msg)){}
+            explicit DbError(std::string_view msg) : std::runtime_error(std::string(msg)) {
+            }
         };
 
         /// @brief SQLite Statement RAII 封装，自动管理 sqlite3_stmt 生命周期
-        class Statement{
+        class Statement {
         public:
-            Statement(sqlite3* db, std::string_view sql) : m_db(db){
+            Statement(sqlite3 *db, std::string_view sql) : m_db(db) {
                 if (sqlite3_prepare_v2(db, sql.data(), static_cast<int>(sql.size()), &m_stmt, nullptr) != SQLITE_OK) {
                     std::string err = sqlite3_errmsg(db);
                     spdlog::error("SQL 准备失败: {} - {}", sql, err);
@@ -30,18 +32,20 @@ namespace LittleMeowBot {
                 }
             }
 
-            ~Statement(){
+            ~Statement() {
                 if (m_stmt) sqlite3_finalize(m_stmt);
             }
 
-            Statement(const Statement&) = delete;
-            Statement& operator=(const Statement&) = delete;
+            Statement(const Statement &) = delete;
 
-            Statement(Statement&& other) noexcept
+            Statement &operator=(const Statement &) = delete;
+
+            Statement(Statement &&other) noexcept
                 : m_db(std::exchange(other.m_db, nullptr))
-                  , m_stmt(std::exchange(other.m_stmt, nullptr)){}
+                  , m_stmt(std::exchange(other.m_stmt, nullptr)) {
+            }
 
-            Statement& operator=(Statement&& other) noexcept{
+            Statement &operator=(Statement &&other) noexcept {
                 if (this != &other) {
                     if (m_stmt) sqlite3_finalize(m_stmt);
                     m_db = std::exchange(other.m_db, nullptr);
@@ -50,27 +54,27 @@ namespace LittleMeowBot {
                 return *this;
             }
 
-            void bind(int idx, std::integral auto v) noexcept{
+            void bind(const int idx, std::integral auto v) noexcept {
                 sqlite3_bind_int64(m_stmt, idx, static_cast<int64_t>(v));
             }
 
-            void bind(int idx, std::floating_point auto v) noexcept{
+            void bind(const int idx, std::floating_point auto v) noexcept {
                 sqlite3_bind_double(m_stmt, idx, static_cast<double>(v));
             }
 
-            void bind(int idx, const std::string& v) const noexcept{
+            void bind(const int idx, const std::string &v) const noexcept {
                 sqlite3_bind_text(m_stmt, idx, v.c_str(), static_cast<int>(v.size()), SQLITE_TRANSIENT);
             }
 
-            void bind(int idx, const std::string_view v) const noexcept{
+            void bind(int idx, const std::string_view v) const noexcept {
                 sqlite3_bind_text(m_stmt, idx, v.data(), static_cast<int>(v.size()), SQLITE_TRANSIENT);
             }
 
-            void bind(int idx, const char* v) const noexcept{
+            void bind(int idx, const char *v) const noexcept {
                 sqlite3_bind_text(m_stmt, idx, v, -1, SQLITE_TRANSIENT);
             }
 
-            void bind(int idx, const std::vector<uint8_t>& data) const noexcept{
+            void bind(int idx, const std::vector<uint8_t> &data) const noexcept {
                 if (data.empty()) {
                     sqlite3_bind_null(m_stmt, idx);
                 } else {
@@ -78,11 +82,11 @@ namespace LittleMeowBot {
                 }
             }
 
-            void bindNull(int idx) const noexcept{
+            void bindNull(int idx) const noexcept {
                 sqlite3_bind_null(m_stmt, idx);
             }
 
-            [[nodiscard]] bool step() noexcept{
+            [[nodiscard]] bool step() noexcept {
                 int rc = sqlite3_step(m_stmt);
                 if (rc == SQLITE_ROW) return true;
                 if (rc == SQLITE_DONE) return false;
@@ -90,67 +94,67 @@ namespace LittleMeowBot {
                 return false;
             }
 
-            void exec() noexcept{
+            void exec() noexcept {
                 sqlite3_step(m_stmt);
             }
 
-            void reset() noexcept{
+            void reset() noexcept {
                 sqlite3_reset(m_stmt);
                 sqlite3_clear_bindings(m_stmt);
             }
 
-            [[nodiscard]] int64_t getInt64(int col) const noexcept{
+            [[nodiscard]] int64_t getInt64(int col) const noexcept {
                 return sqlite3_column_int64(m_stmt, col);
             }
 
-            [[nodiscard]] int getInt(int col) const noexcept{
+            [[nodiscard]] int getInt(int col) const noexcept {
                 return sqlite3_column_int(m_stmt, col);
             }
 
-            [[nodiscard]] double getDouble(int col) const noexcept{
+            [[nodiscard]] double getDouble(int col) const noexcept {
                 return sqlite3_column_double(m_stmt, col);
             }
 
-            [[nodiscard]] std::string getText(int col) const noexcept{
-                const auto* p = sqlite3_column_text(m_stmt, col);
-                return p ? reinterpret_cast<const char*>(p) : "";
+            [[nodiscard]] std::string getText(int col) const noexcept {
+                const auto *p = sqlite3_column_text(m_stmt, col);
+                return p ? reinterpret_cast<const char *>(p) : "";
             }
 
-            [[nodiscard]] bool isNull(int col) const noexcept{
+            [[nodiscard]] bool isNull(int col) const noexcept {
                 return sqlite3_column_type(m_stmt, col) == SQLITE_NULL;
             }
 
-            [[nodiscard]] std::vector<uint8_t> getBlob(int col) const noexcept{
-                const auto* p = static_cast<const uint8_t*>(sqlite3_column_blob(m_stmt, col));
+            [[nodiscard]] std::vector<uint8_t> getBlob(int col) const noexcept {
+                const auto *p = static_cast<const uint8_t *>(sqlite3_column_blob(m_stmt, col));
                 int size = sqlite3_column_bytes(m_stmt, col);
                 if (!p || size <= 0) return {};
                 return {p, p + size};
             }
 
-            [[nodiscard]] static int64_t lastInsertRowId(sqlite3* db) noexcept{
+            [[nodiscard]] static int64_t lastInsertRowId(sqlite3 *db) noexcept {
                 return sqlite3_last_insert_rowid(db);
             }
 
-            [[nodiscard]] static int changes(sqlite3* db) noexcept{
+            [[nodiscard]] static int changes(sqlite3 *db) noexcept {
                 return sqlite3_changes(db);
             }
 
         private:
-            sqlite3* m_db;
-            sqlite3_stmt* m_stmt = nullptr;
+            sqlite3 *m_db;
+            sqlite3_stmt *m_stmt = nullptr;
         };
     }
 
-    Database& Database::instance(){
+    Database &Database::instance() {
         static Database db;
         return db;
     }
 
-    Database::~Database(){
+    Database::~Database() {
         close();
     }
 
-    void Database::initialize(const std::string& dbPath){
+    void Database::initialize(const std::string &dbPath) {
         std::unique_lock lock(m_mutex);
 
         // 创建数据目录
@@ -170,7 +174,7 @@ namespace LittleMeowBot {
         spdlog::info("数据库初始化完成");
     }
 
-    void Database::close(){
+    void Database::close() {
         std::unique_lock lock(m_mutex);
         if (m_db) {
             sqlite3_close(m_db);
@@ -183,7 +187,7 @@ namespace LittleMeowBot {
     //                      群组配置操作
     // ============================================================
 
-    GroupConfig Database::getGroupConfig(uint64_t groupId) const{
+    GroupConfig Database::getGroupConfig(uint64_t groupId) const {
         std::shared_lock lock(m_mutex);
         GroupConfig config;
         Statement stmt(m_db, "SELECT all_mes_count, all_char_count FROM group_config WHERE group_id = ?");
@@ -195,7 +199,7 @@ namespace LittleMeowBot {
         return config;
     }
 
-    void Database::saveGroupConfig(uint64_t groupId, const GroupConfig& config) const{
+    void Database::saveGroupConfig(uint64_t groupId, const GroupConfig &config) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(
             m_db, "INSERT OR REPLACE INTO group_config (group_id, all_mes_count, all_char_count) VALUES (?, ?, ?)");
@@ -205,7 +209,7 @@ namespace LittleMeowBot {
         stmt.exec();
     }
 
-    void Database::incrementMessageCount(uint64_t groupId, size_t charCount) const{
+    void Database::incrementMessageCount(uint64_t groupId, size_t charCount) const {
         std::unique_lock lock(m_mutex);
 
         Statement stmt(
@@ -227,7 +231,7 @@ namespace LittleMeowBot {
         }
     }
 
-    bool Database::hasGroupConfig(uint64_t groupId) const{
+    bool Database::hasGroupConfig(uint64_t groupId) const {
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT 1 FROM group_config WHERE group_id = ?");
         stmt.bind(1, groupId);
@@ -238,7 +242,7 @@ namespace LittleMeowBot {
     //                      聊天记录操作
     // ============================================================
 
-    void Database::addChatRecord(uint64_t groupId, const std::string& role, const std::string& content) const{
+    void Database::addChatRecord(uint64_t groupId, const std::string &role, const std::string &content) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db, "INSERT INTO chat_records (group_id, role, content) VALUES (?, ?, ?)");
         stmt.bind(1, groupId);
@@ -247,7 +251,7 @@ namespace LittleMeowBot {
         stmt.exec();
     }
 
-    std::vector<Json::Value> Database::getChatRecords(uint64_t groupId, int limit) const{
+    std::vector<Json::Value> Database::getChatRecords(uint64_t groupId, int limit) const {
         std::shared_lock lock(m_mutex);
         std::vector<Json::Value> records;
 
@@ -266,7 +270,7 @@ namespace LittleMeowBot {
         return records;
     }
 
-    std::vector<Json::Value> Database::getChatRecordsWithIds(uint64_t groupId, int limit) const{
+    std::vector<Json::Value> Database::getChatRecordsWithIds(uint64_t groupId, int limit) const {
         std::shared_lock lock(m_mutex);
         std::vector<Json::Value> records;
 
@@ -286,7 +290,7 @@ namespace LittleMeowBot {
     }
 
     std::vector<Json::Value> Database::getChatRecordsSince(
-        uint64_t groupId, uint64_t watermarkId, int limit) const{
+        uint64_t groupId, uint64_t watermarkId, int limit) const {
         std::shared_lock lock(m_mutex);
         std::vector<Json::Value> records;
 
@@ -310,7 +314,7 @@ namespace LittleMeowBot {
         return records;
     }
 
-    size_t Database::getChatRecordCountSince(uint64_t groupId, uint64_t watermarkId) const{
+    size_t Database::getChatRecordCountSince(uint64_t groupId, uint64_t watermarkId) const {
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT COUNT(*) FROM chat_records WHERE group_id = ? AND id > ?");
         stmt.bind(1, groupId);
@@ -322,7 +326,7 @@ namespace LittleMeowBot {
     //                      长期记忆操作
     // ============================================================
 
-    std::string Database::getShortTermMemory(uint64_t groupId) const{
+    std::string Database::getShortTermMemory(uint64_t groupId) const {
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT memory_content FROM short_term_memory WHERE group_id = ?");
         stmt.bind(1, groupId);
@@ -330,7 +334,7 @@ namespace LittleMeowBot {
     }
 
     // upsert 而非 REPLACE：手动编辑记忆(后台)时不能重置水位线
-    void Database::updateShortTermMemory(uint64_t groupId, const std::string& memory) const{
+    void Database::updateShortTermMemory(uint64_t groupId, const std::string &memory) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(
             m_db,
@@ -341,7 +345,7 @@ namespace LittleMeowBot {
         stmt.exec();
     }
 
-    uint64_t Database::getMemoryWatermark(uint64_t groupId) const{
+    uint64_t Database::getMemoryWatermark(uint64_t groupId) const {
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT watermark_id FROM short_term_memory WHERE group_id = ?");
         stmt.bind(1, groupId);
@@ -349,7 +353,7 @@ namespace LittleMeowBot {
     }
 
     void Database::updateShortTermMemoryWithWatermark(
-        uint64_t groupId, const std::string& memory, uint64_t watermarkId) const{
+        uint64_t groupId, const std::string &memory, uint64_t watermarkId) const {
         std::unique_lock lock(m_mutex);
         // 单条 upsert 语句天然原子：记忆与水位线要么一起生效要么都不生效
         Statement stmt(
@@ -367,14 +371,14 @@ namespace LittleMeowBot {
     //                      提示词操作
     // ============================================================
 
-    std::string Database::getPrompt(const std::string& key, const std::string& defaultValue) const{
+    std::string Database::getPrompt(const std::string &key, const std::string &defaultValue) const {
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT prompt_content FROM prompts WHERE prompt_key = ?");
         stmt.bind(1, key);
         return stmt.step() ? stmt.getText(0) : defaultValue;
     }
 
-    void Database::setPrompt(const std::string& key, const std::string& content, const std::string& description){
+    void Database::setPrompt(const std::string &key, const std::string &content, const std::string &description) {
         std::unique_lock lock(m_mutex);
         Statement stmt(
             m_db, "INSERT OR REPLACE INTO prompts (prompt_key, prompt_content, description) VALUES (?, ?, ?)");
@@ -384,14 +388,14 @@ namespace LittleMeowBot {
         stmt.exec();
     }
 
-    bool Database::hasPrompt(const std::string& key) const{
+    bool Database::hasPrompt(const std::string &key) const {
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT 1 FROM prompts WHERE prompt_key = ?");
         stmt.bind(1, key);
         return stmt.step();
     }
 
-    std::unordered_map<std::string, std::string> Database::getAllPrompts() const{
+    std::unordered_map<std::string, std::string> Database::getAllPrompts() const {
         std::shared_lock lock(m_mutex);
         std::unordered_map<std::string, std::string> prompts;
 
@@ -406,14 +410,14 @@ namespace LittleMeowBot {
     //                      启用群聊操作
     // ============================================================
 
-    bool Database::isGroupEnabled(uint64_t groupId) const{
+    bool Database::isGroupEnabled(uint64_t groupId) const {
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT enabled FROM enabled_groups WHERE group_id = ?");
         stmt.bind(1, groupId);
         return stmt.step() && stmt.getInt(0) == 1;
     }
 
-    void Database::enableGroup(uint64_t groupId) const{
+    void Database::enableGroup(uint64_t groupId) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db, "INSERT OR REPLACE INTO enabled_groups (group_id, enabled) VALUES (?, 1)");
         stmt.bind(1, groupId);
@@ -421,7 +425,7 @@ namespace LittleMeowBot {
         spdlog::info("已启用群: {}", groupId);
     }
 
-    void Database::disableGroup(uint64_t groupId) const{
+    void Database::disableGroup(uint64_t groupId) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db, "DELETE FROM enabled_groups WHERE group_id = ?");
         stmt.bind(1, groupId);
@@ -429,7 +433,7 @@ namespace LittleMeowBot {
         spdlog::info("已禁用群: {}", groupId);
     }
 
-    std::vector<uint64_t> Database::getEnabledGroups() const{
+    std::vector<uint64_t> Database::getEnabledGroups() const {
         std::shared_lock lock(m_mutex);
         std::vector<uint64_t> groups;
         Statement stmt(m_db, "SELECT group_id FROM enabled_groups WHERE enabled = 1");
@@ -439,9 +443,9 @@ namespace LittleMeowBot {
         return groups;
     }
 
-    std::vector<std::tuple<uint64_t, std::string, int>> Database::getGroupsWithChatRecords() const{
+    std::vector<std::tuple<uint64_t, std::string, int> > Database::getGroupsWithChatRecords() const {
         std::shared_lock lock(m_mutex);
-        std::vector<std::tuple<uint64_t, std::string, int>> groups;
+        std::vector<std::tuple<uint64_t, std::string, int> > groups;
         Statement stmt(m_db,
                        "SELECT cr.group_id, COALESCE(eg.group_name, ''), COUNT(*) as cnt "
                        "FROM chat_records cr "
@@ -454,9 +458,9 @@ namespace LittleMeowBot {
         return groups;
     }
 
-    std::vector<std::tuple<uint64_t, std::string, bool, int>> Database::getAllGroupsWithStatus() const{
+    std::vector<std::tuple<uint64_t, std::string, bool, int> > Database::getAllGroupsWithStatus() const {
         std::shared_lock lock(m_mutex);
-        std::vector<std::tuple<uint64_t, std::string, bool, int>> groups;
+        std::vector<std::tuple<uint64_t, std::string, bool, int> > groups;
         Statement stmt(m_db,
                        "SELECT eg.group_id, eg.group_name, eg.enabled, "
                        "(SELECT COUNT(*) FROM chat_records WHERE group_id = eg.group_id) as cnt "
@@ -468,14 +472,14 @@ namespace LittleMeowBot {
         return groups;
     }
 
-    void Database::toggleGroupStatus(uint64_t groupId) const{
+    void Database::toggleGroupStatus(uint64_t groupId) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db, "UPDATE enabled_groups SET enabled = NOT enabled WHERE group_id = ?");
         stmt.bind(1, groupId);
         stmt.exec();
     }
 
-    void Database::updateChatRecord(int recordId, const std::string& content) const{
+    void Database::updateChatRecord(int recordId, const std::string &content) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db, "UPDATE chat_records SET content = ? WHERE id = ?");
         stmt.bind(1, content);
@@ -483,14 +487,14 @@ namespace LittleMeowBot {
         stmt.exec();
     }
 
-    void Database::deleteChatRecord(int recordId) const{
+    void Database::deleteChatRecord(int recordId) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db, "DELETE FROM chat_records WHERE id = ?");
         stmt.bind(1, recordId);
         stmt.exec();
     }
 
-    void Database::clearGroupChatRecords(uint64_t groupId) const{
+    void Database::clearGroupChatRecords(uint64_t groupId) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db, "DELETE FROM chat_records WHERE group_id = ?");
         stmt.bind(1, groupId);
@@ -498,7 +502,7 @@ namespace LittleMeowBot {
         spdlog::info("已清空群 {} 的聊天记录", groupId);
     }
 
-    void Database::updateGroupName(uint64_t groupId, const std::string& name) const{
+    void Database::updateGroupName(uint64_t groupId, const std::string &name) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db, "UPDATE enabled_groups SET group_name = ? WHERE group_id = ?");
         stmt.bind(1, name);
@@ -507,7 +511,7 @@ namespace LittleMeowBot {
         spdlog::info("更新群名称: {} -> {}", groupId, name);
     }
 
-    std::string Database::getGroupName(uint64_t groupId) const{
+    std::string Database::getGroupName(uint64_t groupId) const {
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT group_name FROM enabled_groups WHERE group_id = ?");
         stmt.bind(1, groupId);
@@ -518,14 +522,14 @@ namespace LittleMeowBot {
     //                      管理员操作
     // ============================================================
 
-    bool Database::isAdmin(uint64_t qqNumber) const{
+    bool Database::isAdmin(uint64_t qqNumber) const {
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT 1 FROM admins WHERE qq_number = ?");
         stmt.bind(1, qqNumber);
         return stmt.step();
     }
 
-    void Database::addAdmin(uint64_t qqNumber) const{
+    void Database::addAdmin(uint64_t qqNumber) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db, "INSERT OR IGNORE INTO admins (qq_number) VALUES (?)");
         stmt.bind(1, qqNumber);
@@ -533,7 +537,7 @@ namespace LittleMeowBot {
         spdlog::info("已添加管理员: {}", qqNumber);
     }
 
-    void Database::removeAdmin(uint64_t qqNumber) const{
+    void Database::removeAdmin(uint64_t qqNumber) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db, "DELETE FROM admins WHERE qq_number = ?");
         stmt.bind(1, qqNumber);
@@ -541,7 +545,7 @@ namespace LittleMeowBot {
         spdlog::info("已移除管理员: {}", qqNumber);
     }
 
-    std::vector<uint64_t> Database::getAdmins() const{
+    std::vector<uint64_t> Database::getAdmins() const {
         std::shared_lock lock(m_mutex);
         std::vector<uint64_t> admins;
         Statement stmt(m_db, "SELECT qq_number FROM admins");
@@ -560,7 +564,7 @@ namespace LittleMeowBot {
     //                      LLM 配置操作
     // ============================================================
 
-    Json::Value Database::getLLMConfig(const std::string& name) const{
+    Json::Value Database::getLLMConfig(const std::string &name) const {
         std::shared_lock lock(m_mutex);
         Json::Value config;
 
@@ -582,7 +586,7 @@ namespace LittleMeowBot {
         return config;
     }
 
-    void Database::saveLLMConfig(const std::string& name, const Json::Value& config) const{
+    void Database::saveLLMConfig(const std::string &name, const Json::Value &config) const {
         std::unique_lock lock(m_mutex);
 
         Statement stmt(
@@ -600,12 +604,13 @@ namespace LittleMeowBot {
         stmt.exec();
     }
 
-    Json::Value Database::getAllLLMConfigs(){
+    Json::Value Database::getAllLLMConfigs() {
         std::shared_lock lock(m_mutex);
         Json::Value configs;
 
         Statement stmt(
-            m_db, "SELECT name, api_key, base_url, path, model, max_tokens, temperature, top_p, reasoning_effort FROM llm_config");
+            m_db,
+            "SELECT name, api_key, base_url, path, model, max_tokens, temperature, top_p, reasoning_effort FROM llm_config");
         while (stmt.step()) {
             Json::Value cfg;
             cfg["apiKey"] = stmt.getText(1);
@@ -625,7 +630,7 @@ namespace LittleMeowBot {
     //                      知识库配置操作
     // ============================================================
 
-    Json::Value Database::getKBConfig() const{
+    Json::Value Database::getKBConfig() const {
         std::shared_lock lock(m_mutex);
         Json::Value config;
 
@@ -643,7 +648,7 @@ namespace LittleMeowBot {
         return config;
     }
 
-    void Database::saveKBConfig(const Json::Value& config) const{
+    void Database::saveKBConfig(const Json::Value &config) const {
         std::unique_lock lock(m_mutex);
 
         Statement stmt(
@@ -663,7 +668,7 @@ namespace LittleMeowBot {
     //                      QQ Bot 配置操作
     // ============================================================
 
-    Json::Value Database::getQQConfig() const{
+    Json::Value Database::getQQConfig() const {
         std::shared_lock lock(m_mutex);
         Json::Value config;
 
@@ -679,7 +684,7 @@ namespace LittleMeowBot {
         return config;
     }
 
-    void Database::saveQQConfig(const Json::Value& config) const{
+    void Database::saveQQConfig(const Json::Value &config) const {
         std::unique_lock lock(m_mutex);
 
         Statement stmt(
@@ -697,7 +702,7 @@ namespace LittleMeowBot {
     //                      记忆配置操作
     // ============================================================
 
-    Json::Value Database::getMemoryConfig() const{
+    Json::Value Database::getMemoryConfig() const {
         std::shared_lock lock(m_mutex);
         Json::Value config;
 
@@ -716,7 +721,7 @@ namespace LittleMeowBot {
         return config;
     }
 
-    void Database::saveMemoryConfig(const Json::Value& config) const{
+    void Database::saveMemoryConfig(const Json::Value &config) const {
         std::unique_lock lock(m_mutex);
 
         Statement stmt(
@@ -737,13 +742,13 @@ namespace LittleMeowBot {
     //                      用量统计操作
     // ============================================================
 
-    void Database::addUsageRecord(const std::string& role, const std::string& model,
+    void Database::addUsageRecord(const std::string &role, const std::string &model,
                                   const int promptTokens, const int completionTokens,
-                                  const int totalTokens, const int cachedTokens) const{
+                                  const int totalTokens, const int cachedTokens) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db,
-            "INSERT INTO llm_usage (role, model, prompt_tokens, completion_tokens, total_tokens, cached_tokens) "
-            "VALUES (?, ?, ?, ?, ?, ?)");
+                       "INSERT INTO llm_usage (role, model, prompt_tokens, completion_tokens, total_tokens, cached_tokens) "
+                       "VALUES (?, ?, ?, ?, ?, ?)");
         stmt.bind(1, role);
         stmt.bind(2, model);
         stmt.bind(3, promptTokens);
@@ -753,7 +758,7 @@ namespace LittleMeowBot {
         stmt.exec();
     }
 
-    Json::Value Database::getUsageSummary(const int days) const{
+    Json::Value Database::getUsageSummary(const int days) const {
         std::shared_lock lock(m_mutex);
         Json::Value result;
         const std::string sinceDate = fmt::format("-{} days", days);
@@ -761,9 +766,9 @@ namespace LittleMeowBot {
         // 汇总
         {
             Statement stmt(m_db,
-                "SELECT COUNT(*), COALESCE(SUM(prompt_tokens),0), COALESCE(SUM(completion_tokens),0), "
-                "COALESCE(SUM(total_tokens),0), COALESCE(SUM(cached_tokens),0) "
-                "FROM llm_usage WHERE created_at >= datetime('now', 'localtime', ?)");
+                           "SELECT COUNT(*), COALESCE(SUM(prompt_tokens),0), COALESCE(SUM(completion_tokens),0), "
+                           "COALESCE(SUM(total_tokens),0), COALESCE(SUM(cached_tokens),0) "
+                           "FROM llm_usage WHERE created_at >= datetime('now', 'localtime', ?)");
             stmt.bind(1, sinceDate);
             if (stmt.step()) {
                 result["total_calls"] = stmt.getInt(0);
@@ -777,9 +782,9 @@ namespace LittleMeowBot {
         // 今日汇总（按本地日期）
         {
             Statement stmt(m_db,
-                "SELECT COUNT(*), COALESCE(SUM(prompt_tokens),0), COALESCE(SUM(completion_tokens),0), "
-                "COALESCE(SUM(total_tokens),0), COALESCE(SUM(cached_tokens),0) "
-                "FROM llm_usage WHERE date(created_at, 'localtime') = date('now', 'localtime')");
+                           "SELECT COUNT(*), COALESCE(SUM(prompt_tokens),0), COALESCE(SUM(completion_tokens),0), "
+                           "COALESCE(SUM(total_tokens),0), COALESCE(SUM(cached_tokens),0) "
+                           "FROM llm_usage WHERE date(created_at, 'localtime') = date('now', 'localtime')");
             if (stmt.step()) {
                 result["today"]["calls"] = stmt.getInt(0);
                 result["today"]["prompt"] = stmt.getInt64(1);
@@ -793,10 +798,10 @@ namespace LittleMeowBot {
         {
             Json::Value todayByRole(Json::arrayValue);
             Statement stmt(m_db,
-                "SELECT role, MAX(model), COUNT(*), COALESCE(SUM(prompt_tokens),0), "
-                "COALESCE(SUM(completion_tokens),0), COALESCE(SUM(total_tokens),0), COALESCE(SUM(cached_tokens),0) "
-                "FROM llm_usage WHERE date(created_at, 'localtime') = date('now', 'localtime') "
-                "GROUP BY role ORDER BY SUM(total_tokens) DESC");
+                           "SELECT role, MAX(model), COUNT(*), COALESCE(SUM(prompt_tokens),0), "
+                           "COALESCE(SUM(completion_tokens),0), COALESCE(SUM(total_tokens),0), COALESCE(SUM(cached_tokens),0) "
+                           "FROM llm_usage WHERE date(created_at, 'localtime') = date('now', 'localtime') "
+                           "GROUP BY role ORDER BY SUM(total_tokens) DESC");
             while (stmt.step()) {
                 Json::Value item;
                 item["role"] = stmt.getText(0);
@@ -815,10 +820,10 @@ namespace LittleMeowBot {
         {
             Json::Value byRole(Json::arrayValue);
             Statement stmt(m_db,
-                "SELECT role, MAX(model), COUNT(*), COALESCE(SUM(prompt_tokens),0), "
-                "COALESCE(SUM(completion_tokens),0), COALESCE(SUM(total_tokens),0), COALESCE(SUM(cached_tokens),0) "
-                "FROM llm_usage WHERE created_at >= datetime('now', 'localtime', ?) "
-                "GROUP BY role ORDER BY SUM(total_tokens) DESC");
+                           "SELECT role, MAX(model), COUNT(*), COALESCE(SUM(prompt_tokens),0), "
+                           "COALESCE(SUM(completion_tokens),0), COALESCE(SUM(total_tokens),0), COALESCE(SUM(cached_tokens),0) "
+                           "FROM llm_usage WHERE created_at >= datetime('now', 'localtime', ?) "
+                           "GROUP BY role ORDER BY SUM(total_tokens) DESC");
             stmt.bind(1, sinceDate);
             while (stmt.step()) {
                 Json::Value item;
@@ -838,9 +843,9 @@ namespace LittleMeowBot {
         {
             Json::Value byDay(Json::arrayValue);
             Statement stmt(m_db,
-                "SELECT date(created_at, 'localtime') AS day, COUNT(*), COALESCE(SUM(total_tokens),0) "
-                "FROM llm_usage WHERE created_at >= datetime('now', 'localtime', ?) "
-                "GROUP BY day ORDER BY day");
+                           "SELECT date(created_at, 'localtime') AS day, COUNT(*), COALESCE(SUM(total_tokens),0) "
+                           "FROM llm_usage WHERE created_at >= datetime('now', 'localtime', ?) "
+                           "GROUP BY day ORDER BY day");
             stmt.bind(1, sinceDate);
             while (stmt.step()) {
                 Json::Value item;
@@ -855,12 +860,12 @@ namespace LittleMeowBot {
         return result;
     }
 
-    Json::Value Database::getRecentUsage(const int limit) const{
+    Json::Value Database::getRecentUsage(const int limit) const {
         std::shared_lock lock(m_mutex);
         Json::Value result(Json::arrayValue);
         Statement stmt(m_db,
-            "SELECT datetime(created_at, 'localtime') AS time, role, model, prompt_tokens, completion_tokens, total_tokens, cached_tokens "
-            "FROM llm_usage ORDER BY id DESC LIMIT ?");
+                       "SELECT datetime(created_at, 'localtime') AS time, role, model, prompt_tokens, completion_tokens, total_tokens, cached_tokens "
+                       "FROM llm_usage ORDER BY id DESC LIMIT ?");
         stmt.bind(1, limit);
         while (stmt.step()) {
             Json::Value item;
@@ -880,12 +885,13 @@ namespace LittleMeowBot {
     //                      自定义工具操作
     // ============================================================
 
-    std::vector<Database::CustomTool> Database::loadCustomTools(const bool onlyEnabled) const{
+    std::vector<Database::CustomTool> Database::loadCustomTools(const bool onlyEnabled) const {
         std::shared_lock lock(m_mutex);
         std::vector<CustomTool> tools;
         Statement stmt(m_db,
-            fmt::format("SELECT id, name, description, parameters, executor_type, executor_config, script_content, readme, enabled "
-                        "FROM custom_tools{} ORDER BY id", onlyEnabled ? " WHERE enabled = 1" : ""));
+                       fmt::format(
+                           "SELECT id, name, description, parameters, executor_type, executor_config, script_content, readme, enabled "
+                           "FROM custom_tools{} ORDER BY id", onlyEnabled ? " WHERE enabled = 1" : ""));
         while (stmt.step()) {
             CustomTool tool;
             tool.id = stmt.getInt(0);
@@ -902,15 +908,15 @@ namespace LittleMeowBot {
         return tools;
     }
 
-    std::vector<Database::CustomTool> Database::getCustomTools() const{
+    std::vector<Database::CustomTool> Database::getCustomTools() const {
         return loadCustomTools(false);
     }
 
-    std::vector<Database::CustomTool> Database::getEnabledCustomTools() const{
+    std::vector<Database::CustomTool> Database::getEnabledCustomTools() const {
         return loadCustomTools(true);
     }
 
-    int Database::addCustomTool(const CustomTool& tool) const{
+    int Database::addCustomTool(const CustomTool &tool) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db,
                        "INSERT INTO custom_tools (name, description, parameters, executor_type, executor_config, script_content, readme, enabled) "
@@ -928,7 +934,7 @@ namespace LittleMeowBot {
         return sqlite3_last_insert_rowid(m_db);
     }
 
-    void Database::updateCustomTool(const CustomTool& tool) const{
+    void Database::updateCustomTool(const CustomTool &tool) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db,
                        "UPDATE custom_tools SET name=?, description=?, parameters=?, executor_type=?, executor_config=?, script_content=?, readme=?, enabled=? "
@@ -946,7 +952,7 @@ namespace LittleMeowBot {
         spdlog::info("已更新自定义工具: {}", tool.name);
     }
 
-    void Database::deleteCustomTool(int id) const{
+    void Database::deleteCustomTool(int id) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db, "DELETE FROM custom_tools WHERE id=?");
         stmt.bind(1, id);
@@ -954,14 +960,14 @@ namespace LittleMeowBot {
         spdlog::info("已删除自定义工具 ID: {}", id);
     }
 
-    void Database::toggleCustomTool(int id) const{
+    void Database::toggleCustomTool(int id) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db, "UPDATE custom_tools SET enabled = NOT enabled WHERE id=?");
         stmt.bind(1, id);
         stmt.exec();
     }
 
-    bool Database::hasCustomTool(const std::string& name) const{
+    bool Database::hasCustomTool(const std::string &name) const {
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT 1 FROM custom_tools WHERE name=?");
         stmt.bind(1, name);
@@ -972,7 +978,7 @@ namespace LittleMeowBot {
     //                      自定义工具配置
     // ============================================================
 
-    std::string Database::getCustomToolPython() const{
+    std::string Database::getCustomToolPython() const {
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT value FROM settings WHERE key='custom_tool_python'");
         if (stmt.step()) {
@@ -981,7 +987,7 @@ namespace LittleMeowBot {
         return "python3"; // 默认值
     }
 
-    void Database::setCustomToolPython(const std::string& pythonPath) const{
+    void Database::setCustomToolPython(const std::string &pythonPath) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db,
                        "INSERT OR REPLACE INTO settings (key, value) VALUES ('custom_tool_python', ?)");
@@ -994,7 +1000,7 @@ namespace LittleMeowBot {
     //                      私有方法
     // ============================================================
 
-    void Database::createTables(){
+    void Database::createTables() {
         constexpr std::array tables = {
             R"(CREATE TABLE IF NOT EXISTS group_config (
         group_id INTEGER PRIMARY KEY,
@@ -1095,8 +1101,8 @@ namespace LittleMeowBot {
     ))"
         };
 
-        for (const auto* sql : tables) {
-            auto* errMsg = static_cast<char*>(nullptr);
+        for (const auto *sql: tables) {
+            auto *errMsg = static_cast<char *>(nullptr);
             if (sqlite3_exec(m_db, sql, nullptr, nullptr, &errMsg) != SQLITE_OK) {
                 spdlog::error("创建表失败: {}", errMsg);
                 sqlite3_free(errMsg);
@@ -1108,7 +1114,7 @@ namespace LittleMeowBot {
             "CREATE INDEX IF NOT EXISTS idx_chat_records_group ON chat_records(group_id)",
             "CREATE INDEX IF NOT EXISTS idx_chat_records_time ON chat_records(group_id, created_at DESC)"
         };
-        for (const auto* sql : indexes) {
+        for (const auto *sql: indexes) {
             sqlite3_exec(m_db, sql, nullptr, nullptr, nullptr);
         }
 
@@ -1121,12 +1127,12 @@ namespace LittleMeowBot {
         initDefaultQQConfig();
     }
 
-    void Database::migrateDatabase() const{
+    void Database::migrateDatabase() const {
         // 检查表中是否存在指定列（sqlite3_exec 回调，同步执行）
-        const auto columnExists = [&](const std::string& table, const std::string& column) {
+        const auto columnExists = [&](const std::string &table, const std::string &column) {
             bool found = false;
-            const auto cb = [](void* data, int argc, char** argv, char**) -> int {
-                auto* ctx = static_cast<std::pair<bool*, const std::string*>*>(data);
+            const auto cb = [](void *data, int argc, char **argv, char **) -> int {
+                auto *ctx = static_cast<std::pair<bool *, const std::string *> *>(data);
                 for (int i = 0; i < argc; ++i) {
                     if (argv[i] && *ctx->second == argv[i]) {
                         *ctx->first = true;
@@ -1140,15 +1146,15 @@ namespace LittleMeowBot {
             return found;
         };
         // 检查表是否存在
-        const auto tableExists = [&](const std::string& name) {
+        const auto tableExists = [&](const std::string &name) {
             bool found = false;
-            const auto cb = [](void* data, int argc, char** argv, char**) -> int {
-                if (argc > 0 && argv[0]) *static_cast<bool*>(data) = true;
+            const auto cb = [](void *data, int argc, char **argv, char **) -> int {
+                if (argc > 0 && argv[0]) *static_cast<bool *>(data) = true;
                 return 0;
             };
             sqlite3_exec(m_db,
-                fmt::format("SELECT name FROM sqlite_master WHERE type='table' AND name='{}'", name).c_str(),
-                cb, &found, nullptr);
+                         fmt::format("SELECT name FROM sqlite_master WHERE type='table' AND name='{}'", name).c_str(),
+                         cb, &found, nullptr);
             return found;
         };
 
@@ -1158,11 +1164,13 @@ namespace LittleMeowBot {
         }
         if (!columnExists("llm_config", "reasoning_effort")) {
             spdlog::info("数据库迁移: 添加 llm_config.reasoning_effort 列");
-            sqlite3_exec(m_db, "ALTER TABLE llm_config ADD COLUMN reasoning_effort TEXT DEFAULT ''", nullptr, nullptr, nullptr);
+            sqlite3_exec(m_db, "ALTER TABLE llm_config ADD COLUMN reasoning_effort TEXT DEFAULT ''", nullptr, nullptr,
+                         nullptr);
         }
         if (!columnExists("llm_usage", "role")) {
             spdlog::info("数据库迁移: 添加 llm_usage.role 列");
-            sqlite3_exec(m_db, "ALTER TABLE llm_usage ADD COLUMN role TEXT NOT NULL DEFAULT ''", nullptr, nullptr, nullptr);
+            sqlite3_exec(m_db, "ALTER TABLE llm_usage ADD COLUMN role TEXT NOT NULL DEFAULT ''", nullptr, nullptr,
+                         nullptr);
         }
 
         // 数据库迁移: long_term_memory → short_term_memory
@@ -1170,44 +1178,44 @@ namespace LittleMeowBot {
         if (tableExists("long_term_memory")) {
             // 检查旧表是否有数据
             int oldCount = 0;
-            const auto countCb = [](void* data, int argc, char** argv, char**) -> int {
-                if (argc > 0 && argv[0]) *static_cast<int*>(data) = std::stoi(argv[0]);
+            const auto countCb = [](void *data, int argc, char **argv, char **) -> int {
+                if (argc > 0 && argv[0]) *static_cast<int *>(data) = std::stoi(argv[0]);
                 return 0;
             };
             sqlite3_exec(m_db, "SELECT COUNT(*) FROM long_term_memory",
-                countCb, &oldCount, nullptr);
+                         countCb, &oldCount, nullptr);
 
             if (oldCount > 0) {
                 if (tableExists("short_term_memory")) {
                     // createTables() 创建了空表，先删掉再重命名旧表
                     sqlite3_exec(m_db, "DROP TABLE short_term_memory",
-                        nullptr, nullptr, nullptr);
+                                 nullptr, nullptr, nullptr);
                 }
                 spdlog::info("数据库迁移: 重命名 long_term_memory → short_term_memory ({} 条数据)", oldCount);
                 sqlite3_exec(m_db, "ALTER TABLE long_term_memory RENAME TO short_term_memory",
-                    nullptr, nullptr, nullptr);
+                             nullptr, nullptr, nullptr);
             } else {
                 // 旧表为空，直接删掉即可
                 spdlog::info("数据库迁移: 删除空的 long_term_memory 表");
                 sqlite3_exec(m_db, "DROP TABLE long_term_memory",
-                    nullptr, nullptr, nullptr);
+                             nullptr, nullptr, nullptr);
             }
         }
 
         // 数据库迁移: 上下文窗口配置（窗口触发条数/保留条数/提取 maxTokens/记忆水位线）
-        const auto ensureColumn = [&](const std::string& table, const std::string& colName,
-                                      const std::string& colDefault) {
+        const auto ensureColumn = [&](const std::string &table, const std::string &colName,
+                                      const std::string &colDefault) {
             if (columnExists(table, colName)) return;
             spdlog::info("数据库迁移: 新增 {}.{} 列", table, colName);
             sqlite3_exec(m_db, fmt::format("ALTER TABLE {} ADD COLUMN {} INTEGER DEFAULT {}",
                                            table, colName, colDefault).c_str(),
-                nullptr, nullptr, nullptr);
+                         nullptr, nullptr, nullptr);
         };
-        const auto dropColumn = [&](const std::string& table, const std::string& colName) {
+        const auto dropColumn = [&](const std::string &table, const std::string &colName) {
             if (!columnExists(table, colName)) return;
             spdlog::info("数据库迁移: 移除废弃的 {}.{} 列", table, colName);
             sqlite3_exec(m_db, fmt::format("ALTER TABLE {} DROP COLUMN {}", table, colName).c_str(),
-                nullptr, nullptr, nullptr);
+                         nullptr, nullptr, nullptr);
         };
 
         ensureColumn("memory_config", "window_trigger_count", "100");
@@ -1224,11 +1232,11 @@ namespace LittleMeowBot {
         // 老群已有短期记忆：水位线初始化为该群最新记录 id，
         // 避免升级后首次触发时把全部历史重新提取一遍（历史已浓缩在现有记忆中）
         sqlite3_exec(m_db,
-            "UPDATE short_term_memory SET watermark_id = "
-            "(SELECT COALESCE(MAX(id), 0) FROM chat_records c WHERE c.group_id = short_term_memory.group_id) "
-            "WHERE watermark_id = 0 "
-            "AND EXISTS (SELECT 1 FROM chat_records c WHERE c.group_id = short_term_memory.group_id)",
-            nullptr, nullptr, nullptr);
+                     "UPDATE short_term_memory SET watermark_id = "
+                     "(SELECT COALESCE(MAX(id), 0) FROM chat_records c WHERE c.group_id = short_term_memory.group_id) "
+                     "WHERE watermark_id = 0 "
+                     "AND EXISTS (SELECT 1 FROM chat_records c WHERE c.group_id = short_term_memory.group_id)",
+                     nullptr, nullptr, nullptr);
         if (const int backfilled = sqlite3_changes(m_db); backfilled > 0) {
             spdlog::info("数据库迁移: 回填 {} 个群的记忆水位线", backfilled);
         }
@@ -1240,8 +1248,8 @@ namespace LittleMeowBot {
         }
     }
 
-    void Database::initDefaultLLMConfigs() const{
-        struct DefaultConfig{
+    void Database::initDefaultLLMConfigs() const {
+        struct DefaultConfig {
             const char *name, *apiKey, *baseUrl, *path, *model;
             int maxTokens;
             float temperature, topP;
@@ -1250,14 +1258,17 @@ namespace LittleMeowBot {
         constexpr DefaultConfig defaults[] = {
             {"router", "", "http://127.0.0.1:3001", "/v1/chat/completions", "deepseek-chat", 100, 0.3f, 0.9f},
             {"executor", "", "http://127.0.0.1:3001", "/v1/chat/completions", "deepseek-chat", 150, 0.7f, 0.9f},
-            {"executorThinking", "", "http://127.0.0.1:3001", "/v1/chat/completions", "deepseek-reasoner", 512, 0.7f, 0.9f},
+            {
+                "executorThinking", "", "http://127.0.0.1:3001", "/v1/chat/completions", "deepseek-reasoner", 512, 0.7f,
+                0.9f
+            },
             {
                 "image", "", "https://dashscope.aliyuncs.com", "/compatible-mode/v1/chat/completions",
                 "qwen-vl-plus", 1024, 0.7f, 0.9f
             }
         };
 
-        for (const auto& [name, apiKey, baseUrl, path, model, maxTokens, temperature, topP] : defaults) {
+        for (const auto &[name, apiKey, baseUrl, path, model, maxTokens, temperature, topP]: defaults) {
             // 检查该配置是否已存在
             Statement checkStmt(m_db, "SELECT COUNT(*) FROM llm_config WHERE name = ?");
             checkStmt.bind(1, name);
@@ -1281,7 +1292,7 @@ namespace LittleMeowBot {
         }
     }
 
-    void Database::initDefaultKBConfig() const{
+    void Database::initDefaultKBConfig() const {
         if (Statement checkStmt(m_db, "SELECT COUNT(*) FROM kb_config");
             checkStmt.step() && checkStmt.getInt(0) > 0) {
             return;
@@ -1294,7 +1305,7 @@ namespace LittleMeowBot {
         spdlog::info("已初始化默认知识库配置");
     }
 
-    void Database::initDefaultMemoryConfig() const{
+    void Database::initDefaultMemoryConfig() const {
         if (Statement checkStmt(m_db, "SELECT COUNT(*) FROM memory_config");
             checkStmt.step() && checkStmt.getInt(0) > 0) {
             return;
@@ -1307,7 +1318,7 @@ namespace LittleMeowBot {
         spdlog::info("已初始化默认记忆配置");
     }
 
-    void Database::initDefaultQQConfig() const{
+    void Database::initDefaultQQConfig() const {
         if (Statement checkStmt(m_db, "SELECT COUNT(*) FROM qq_config");
             checkStmt.step() && checkStmt.getInt(0) > 0) {
             return;

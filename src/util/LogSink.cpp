@@ -5,7 +5,7 @@
 #include <util/LogBuffer.hpp>
 
 namespace LittleMeowBot {
-    void LogSink::sink_it_(const spdlog::details::log_msg& message) {
+    void LogSink::sink_it_(const spdlog::details::log_msg &message) {
         LogBuffer::instance().append(message);
     }
 

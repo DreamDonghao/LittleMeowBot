@@ -5,14 +5,14 @@
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
     <title>LittleMeowBot 管理后台</title>
     <script>
-      // 提前应用主题，避免加载闪烁
-      (function () {
-        var t = localStorage.getItem('theme')
-        if (t !== 'light' && t !== 'dark') {
-          t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-        }
-        document.documentElement.setAttribute('data-theme', t)
-      })()
+        // 提前应用主题，避免加载闪烁
+        (function () {
+            var t = localStorage.getItem('theme')
+            if (t !== 'light' && t !== 'dark') {
+                t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+            }
+            document.documentElement.setAttribute('data-theme', t)
+        })()
     </script>
 </head>
 <body>

@@ -19,12 +19,12 @@ namespace LittleMeowBot {
         /// @brief 获取提示词（支持占位符替换）
         /// @param key 提示词键名
         /// @return 提示词内容，已替换 {botName} 等占位符
-        std::string getPrompt(const std::string& key);
+        std::string getPrompt(const std::string &key);
 
         /// @brief 设置提示词（运行时修改）
         /// @param key 提示词键名
         /// @param content 提示词内容
-        void setPrompt(const std::string& key, const std::string& content);
+        void setPrompt(const std::string &key, const std::string &content);
 
         /// @brief 获取 Executor 系统提示词
         /// @return Executor 角色系统提示词

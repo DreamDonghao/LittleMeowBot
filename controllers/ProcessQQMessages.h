@@ -13,13 +13,14 @@ namespace LittleMeowBot {
     /// @details 接收来自 OneBot 协议的 QQ 消息，通过两层 Agent 架构处理：
     ///          1. Router Agent - 判断是否需要回复并规划回复策略
     ///          2. Executor Agent - 生成回复并调用工具
-    class ProcessQQMessages : public drogon::HttpController<ProcessQQMessages>{
+    class ProcessQQMessages : public drogon::HttpController<ProcessQQMessages> {
     public:
         ProcessQQMessages() = default;
+
         ~ProcessQQMessages() override = default;
 
         METHOD_LIST_BEGIN
-        ADD_METHOD_TO(ProcessQQMessages::receiveMessages, "/", drogon::Post);
+            ADD_METHOD_TO(ProcessQQMessages::receiveMessages, "/", drogon::Post);
         METHOD_LIST_END
 
         /// @brief 接收并处理 QQ 消息

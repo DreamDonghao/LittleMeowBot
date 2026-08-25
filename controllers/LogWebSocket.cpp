@@ -9,8 +9,8 @@
 
 namespace LittleMeowBot {
     void LogWebSocket::handleNewConnection(
-        const drogon::HttpRequestPtr& req,
-        const drogon::WebSocketConnectionPtr& conn
+        const drogon::HttpRequestPtr &req,
+        const drogon::WebSocketConnectionPtr &conn
     ) {
         LogWebSocketManager::instance().addConnection(conn);
         Json::Value welcome;
@@ -21,9 +21,9 @@ namespace LittleMeowBot {
     }
 
     void LogWebSocket::handleNewMessage(
-        const drogon::WebSocketConnectionPtr& conn,
-        std::string&& message,
-        const drogon::WebSocketMessageType& type
+        const drogon::WebSocketConnectionPtr &conn,
+        std::string &&message,
+        const drogon::WebSocketMessageType &type
     ) {
         if (type != drogon::WebSocketMessageType::Text) {
             return;
@@ -59,7 +59,7 @@ namespace LittleMeowBot {
         }
     }
 
-    void LogWebSocket::handleConnectionClosed(const drogon::WebSocketConnectionPtr& conn) {
+    void LogWebSocket::handleConnectionClosed(const drogon::WebSocketConnectionPtr &conn) {
         LogWebSocketManager::instance().removeConnection(conn);
     }
 }

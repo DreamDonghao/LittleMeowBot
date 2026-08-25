@@ -8,9 +8,9 @@ set(BUILD_SHARED_LIBS OFF)
 
 find_package(Drogon CONFIG REQUIRED)
 # 若 Drogon 没有 SQLite3 应用独立的包
-if(NOT TARGET SQLite3 AND NOT TARGET SQLite3::SQLite3 AND NOT TARGET SQLite3_lib)
+if (NOT TARGET SQLite3 AND NOT TARGET SQLite3::SQLite3 AND NOT TARGET SQLite3_lib)
     find_package(SQLite3 REQUIRED)
-endif()
+endif ()
 find_package(spdlog REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 
@@ -39,7 +39,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
         Drogon::Drogon
         spdlog::spdlog_header_only
         fmt::fmt
-SQLite3_lib
+        SQLite3_lib
 )
 
 # 前端构建 (Vue3) - 前端源码变化时自动重新构建，输出到 build/bot/public

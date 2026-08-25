@@ -7,7 +7,6 @@
 #include <memory>
 #include <string_view>
 #include <vector>
-#include <fmt/core.h>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/sinks/rotating_file_sink.h>
@@ -69,7 +68,6 @@ namespace LittleMeowBot {
     GroupLogger Logger::group(const uint64_t groupId) {
         return GroupLogger(groupId);
     }
-
 
     void Logger::shutdown() {
         spdlog::shutdown();

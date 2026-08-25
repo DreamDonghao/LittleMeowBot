@@ -6,7 +6,7 @@
 import {computed, inject, onMounted, onUnmounted, ref, type Ref} from 'vue'
 
 const showToast = inject<(msg: string, isError?: boolean) => void>('showToast')
-const ws = inject<{get: () => WebSocket | null}>('ws')
+const ws = inject<{ get: () => WebSocket | null }>('ws')
 
 interface RoleUsage {
   role: string
@@ -48,7 +48,7 @@ const byDay: Ref<DayUsage[]> = ref([])
 const recent: Ref<RecentCall[]> = ref([])
 
 // 今日统计（后端直接返回准确值）
-const todayStats = ref({ calls: 0, prompt: 0, completion: 0, total: 0, cached: 0 })
+const todayStats = ref({calls: 0, prompt: 0, completion: 0, total: 0, cached: 0})
 const todayByRole: Ref<RoleUsage[]> = ref([])
 
 const fmtLocalDate = (d: Date): string => {
@@ -179,7 +179,7 @@ const loadUsage = async (): Promise<void> => {
     byRole.value = data.by_role || []
     byDay.value = data.by_day || []
     recent.value = data.recent || []
-    todayStats.value = data.today || { calls: 0, prompt: 0, completion: 0, total: 0, cached: 0 }
+    todayStats.value = data.today || {calls: 0, prompt: 0, completion: 0, total: 0, cached: 0}
     todayByRole.value = data.today_by_role || []
   } catch {
     showToast!('网络错误，请检查后端服务', true)
@@ -201,7 +201,8 @@ onMounted(() => {
         if (msg.type === 'usage_updated') {
           loadUsage()
         }
-      } catch { /* ignore */ }
+      } catch { /* ignore */
+      }
     }
     wsConn.addEventListener('message', wsMessageHandler)
   }
@@ -228,7 +229,7 @@ onUnmounted(() => {
       <div class="overview-card">
         <div class="ov-label">今日调用</div>
         <div class="ov-value">{{ fmtNum(todayTotalCalls) }} <span class="ov-unit">次</span></div>
-        <div v-if="todayTrend" class="ov-trend" :class="'trend-' + todayTrend">{{ trendText }}</div>
+        <div v-if="todayTrend" :class="'trend-' + todayTrend" class="ov-trend">{{ trendText }}</div>
         <div v-else class="ov-trend muted">暂无昨日数据</div>
       </div>
 
@@ -250,7 +251,9 @@ onUnmounted(() => {
       <div class="overview-card">
         <div class="ov-label">近 {{ days }} 天总计</div>
         <div class="ov-value">{{ fmtNum(totalTokens) }}</div>
-        <div class="ov-sub">{{ fmtNum(totalCalls) }} 次调用 · 日均 {{ fmtNum(dailyAvgTokens) }} Token · 缓存命中 {{ fmtPct(monthHitRate) }}</div>
+        <div class="ov-sub">{{ fmtNum(totalCalls) }} 次调用 · 日均 {{ fmtNum(dailyAvgTokens) }} Token · 缓存命中
+          {{ fmtPct(monthHitRate) }}
+        </div>
       </div>
     </div>
 
@@ -293,7 +296,7 @@ onUnmounted(() => {
             <td class="col-num">{{ fmtNum(r.periodTokens) }}</td>
             <td class="col-num">
               <div class="share-bar-cell">
-                <div class="share-bar" :style="{ width: Math.max(r.share, 2) + '%' }"></div>
+                <div :style="{ width: Math.max(r.share, 2) + '%' }" class="share-bar"></div>
                 <span>{{ fmtPct(r.share) }}</span>
               </div>
             </td>
@@ -315,17 +318,17 @@ onUnmounted(() => {
 
       <div v-if="byDay.length" class="trend-chart">
         <div
-          v-for="d in byDay"
-          :key="d.day"
-          class="trend-row"
-          :class="{ 'trend-row-today': d.day === today }"
+            v-for="d in byDay"
+            :key="d.day"
+            :class="{ 'trend-row-today': d.day === today }"
+            class="trend-row"
         >
           <span class="trend-date">{{ d.day.slice(5) }}</span>
           <div class="trend-bar-wrap">
             <div
-              class="trend-bar"
-              :style="{ width: (d.total / maxDayTotal) * 100 + '%' }"
-              :class="{ 'trend-bar-today': d.day === today }"
+                :class="{ 'trend-bar-today': d.day === today }"
+                :style="{ width: (d.total / maxDayTotal) * 100 + '%' }"
+                class="trend-bar"
             ></div>
           </div>
           <span class="trend-tokens">{{ fmtNum(d.total) }}</span>
@@ -424,10 +427,22 @@ onUnmounted(() => {
   margin-top: 4px;
 }
 
-.ov-trend.muted { color: var(--text-light); font-weight: 400; }
-.ov-trend.trend-up { color: var(--success); }
-.ov-trend.trend-down { color: var(--danger); }
-.ov-trend.trend-flat { color: var(--text-light); }
+.ov-trend.muted {
+  color: var(--text-light);
+  font-weight: 400;
+}
+
+.ov-trend.trend-up {
+  color: var(--success);
+}
+
+.ov-trend.trend-down {
+  color: var(--danger);
+}
+
+.ov-trend.trend-flat {
+  color: var(--text-light);
+}
 
 /* ====== Card 通用 ====== */
 .card-header {

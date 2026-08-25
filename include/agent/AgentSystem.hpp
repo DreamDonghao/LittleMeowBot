@@ -27,6 +27,7 @@ namespace LittleMeowBot {
         static AgentSystem &instance();
 
         [[nodiscard]] bool isRunning() const noexcept;
+
         void setRunning(bool running) noexcept;
 
         /// @brief 初始化 Agent System（注册工具）

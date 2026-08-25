@@ -9,7 +9,8 @@
 namespace LittleMeowBot {
     class LogSink final : public spdlog::sinks::base_sink<std::mutex> {
     protected:
-        void sink_it_(const spdlog::details::log_msg& message) override;
+        void sink_it_(const spdlog::details::log_msg &message) override;
+
         void flush_() override;
     };
 }

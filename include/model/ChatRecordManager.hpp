@@ -14,7 +14,7 @@ namespace LittleMeowBot {
     /// @brief 聊天记录管理类
     /// @details 管理单个群组的聊天记录，使用 SQLite 存储。
     ///          每个群组对应一个 ChatRecordManager 实例。
-    class ChatRecordManager{
+    class ChatRecordManager {
     public:
         /// @brief 构造函数
         /// @param groupId 群号
@@ -26,11 +26,11 @@ namespace LittleMeowBot {
 
         /// @brief 添加用户消息记录
         /// @param content 消息内容
-        void addUserRecord(const std::string& content) const;
+        void addUserRecord(const std::string &content) const;
 
         /// @brief 添加 AI 回复记录
         /// @param content 回复内容
-        void addAssistantRecord(const std::string& content) const;
+        void addAssistantRecord(const std::string &content) const;
 
         /// @brief 获取上下文窗口内的聊天记录（水位线之后的最新记录，旧→新）
         /// @return 聊天记录队列

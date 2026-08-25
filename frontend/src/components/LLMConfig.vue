@@ -82,7 +82,8 @@ const saveLLMConfig = async (): Promise<void> => {
         <div class="form-group">
           <label class="form-label">API Key</label>
           <div class="api-key-row">
-            <input v-model="llmConfig.apiKey" class="form-input" placeholder="sk-..." :type="showApiKey ? 'text' : 'password'">
+            <input v-model="llmConfig.apiKey" :type="showApiKey ? 'text' : 'password'" class="form-input"
+                   placeholder="sk-...">
             <button class="btn btn-secondary btn-sm api-key-toggle" type="button" @click="showApiKey = !showApiKey">
               {{ showApiKey ? '● 隐藏' : '○ 显示' }}
             </button>

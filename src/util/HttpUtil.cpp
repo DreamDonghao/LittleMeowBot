@@ -45,7 +45,7 @@ namespace LittleMeowBot::HttpUtil {
         }
     } // namespace
 
-    drogon::Task<std::optional<drogon::HttpResponsePtr>> send(
+    drogon::Task<std::optional<drogon::HttpResponsePtr> > send(
         const std::string_view tag,
         const std::string &baseUrl,
         const std::string &path,

@@ -13,8 +13,9 @@
 #include <model/GroupConfigManager.hpp>
 #include <util/tool.h>
 #include <util/HttpUtil.hpp>
+
 namespace LittleMeowBot {
-    bool isCommand(const QQMessage& message) {
+    bool isCommand(const QQMessage &message) {
         if (!message.atMe()) return false;
         std::string rawMsg = message.getRawMessage();
 
@@ -37,13 +38,13 @@ namespace LittleMeowBot {
     }
 
     drogon::Task<std::string> handleCommand(
-        const QQMessage& message,
-        ChatRecordManager& chatRecords) {
+        const QQMessage &message,
+        ChatRecordManager &chatRecords) {
         std::string rawMsg = message.getRawMessage();
         uint64_t groupId = message.getGroupId();
         uint64_t senderQQ = message.getSenderQQNumber();
 
-        auto& database = Database::instance();
+        auto &database = Database::instance();
         bool hasPermission = database.isAdmin(senderQQ);
 
         std::string cmdStr;
@@ -74,25 +75,25 @@ namespace LittleMeowBot {
 
         if (cmd == "/help" || cmd == "/帮助") {
             response = "可用命令:\n"
-                "【群聊管理】\n"
-                "/enable [群号] - 启用群聊\n"
-                "/disable [群号] - 禁用群聊\n"
-                "/groups - 查看启用的群列表\n"
-                "/status - 查看当前群状态\n"
-                "【管理员】\n"
-                "/admins - 查看管理员列表\n"
-                "/addadmin <QQ号> - 添加管理员\n"
-                "/deladmin <QQ号> - 移除管理员\n"
-                "【表情管理】\n"
-                "/delemoji <名称> - 删除表情包\n"
-                "/listemoji - 查看表情包列表\n"
-                "【其他】\n"
-                "/help - 显示帮助\n"
-                "/about - 关于本项目\n\n"
-                "注意: 管理命令仅限管理员使用";
+                    "【群聊管理】\n"
+                    "/enable [群号] - 启用群聊\n"
+                    "/disable [群号] - 禁用群聊\n"
+                    "/groups - 查看启用的群列表\n"
+                    "/status - 查看当前群状态\n"
+                    "【管理员】\n"
+                    "/admins - 查看管理员列表\n"
+                    "/addadmin <QQ号> - 添加管理员\n"
+                    "/deladmin <QQ号> - 移除管理员\n"
+                    "【表情管理】\n"
+                    "/delemoji <名称> - 删除表情包\n"
+                    "/listemoji - 查看表情包列表\n"
+                    "【其他】\n"
+                    "/help - 显示帮助\n"
+                    "/about - 关于本项目\n\n"
+                    "注意: 管理命令仅限管理员使用";
         } else if (cmd == "/status" || cmd == "/状态") {
             bool enabled = database.isGroupEnabled(groupId);
-            auto [allMesCount, allCharCount] = GroupConfigManager::instance().getConfig(groupId);
+            auto [allMesCount, allCharCount] = GroupConfigManager::getConfig(groupId);
             response = fmt::format(
                 "群 {} 状态:\n"
                 "- 启用: {}\n"
@@ -106,7 +107,7 @@ namespace LittleMeowBot {
         } else if (cmd == "/admins" || cmd == "/管理员") {
             auto admins = database.getAdmins();
             response = "管理员列表:\n";
-            for (auto qq : admins) {
+            for (auto qq: admins) {
                 response += fmt::format("- {}\n", qq);
             }
             if (admins.empty()) {
@@ -114,10 +115,10 @@ namespace LittleMeowBot {
             }
         } else if (cmd == "/about" || cmd == "/关于") {
             response = "LittleMeowBot - 智能 QQ 群聊机器人\n"
-                "基于 Agent 架构，支持自定义角色、长期记忆、多工具调用\n\n"
-                "项目地址: https://github.com/DreamDonghao/LittleMeowBot\n"
-                "作者: DreamDonghao\n"
-                "许可证: AGPL-3.0 (未经允许禁止商用)";
+                    "基于 Agent 架构，支持自定义角色、长期记忆、多工具调用\n\n"
+                    "项目地址: https://github.com/DreamDonghao/LittleMeowBot\n"
+                    "作者: DreamDonghao\n"
+                    "许可证: AGPL-3.0 (未经允许禁止商用)";
         } else if (!hasPermission) {
             response = fmt::format("权限不足，你({})不是管理员", senderQQ);
         } else if (cmd == "/enable" || cmd == "/启用") {
@@ -145,7 +146,7 @@ namespace LittleMeowBot {
         } else if (cmd == "/groups" || cmd == "/群列表") {
             auto groups = database.getEnabledGroups();
             response = "启用的群聊列表:\n";
-            for (auto gid : groups) {
+            for (auto gid: groups) {
                 response += fmt::format("- {}\n", gid);
             }
             if (groups.empty()) {
@@ -183,7 +184,7 @@ namespace LittleMeowBot {
                 co_return fmt::format("收藏表情中找不到'{}'", name);
             }
 
-            const auto& config = Config::instance();
+            const auto &config = Config::instance();
             Json::Value body;
             body["res_id"] = emoji["res_id"].asString();
             const auto resp = co_await HttpUtil::send("[Sticker]", config.qqHttpHost, "/delete_custom_face",
@@ -204,7 +205,7 @@ namespace LittleMeowBot {
                 response = "QQ收藏表情为空或获取失败";
             } else {
                 response = "收藏表情列表:\n";
-                for (const auto& emoji : emojis) {
+                for (const auto &emoji: emojis) {
                     response += fmt::format("- {}\n", emoji["name"].asString());
                 }
                 response += fmt::format("\n共 {} 个表情", emojis.size());

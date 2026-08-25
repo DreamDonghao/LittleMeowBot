@@ -14,8 +14,8 @@
 
 namespace LittleMeowBot {
     /// @brief Router Agent 决策结果（合并了规划功能）
-    struct RouterDecision{
-        enum class Action{
+    struct RouterDecision {
+        enum class Action {
             SKIP, ///< 不处理
             REPLY ///< 需要回复
         };
@@ -30,34 +30,34 @@ namespace LittleMeowBot {
         int maxLength = 25;
         bool isPriority = false;
 
-        [[nodiscard]] static constexpr std::string_view actionToString(Action a){
+        [[nodiscard]] static constexpr std::string_view actionToString(Action a) {
             constexpr std::array names = {"skip", "reply"};
             return names[static_cast<size_t>(a)];
         }
     };
 
     /// @brief Executor Agent 回复结果
-    struct ReplyDecision{
+    struct ReplyDecision {
         bool shouldReply = false;
         std::string content;
     };
 }
 
 // fmt::formatter 特化
-template <>
-struct fmt::formatter<LittleMeowBot::RouterDecision::Action> : formatter<string_view>{
-    template <typename FormatContext>
-    auto format(LittleMeowBot::RouterDecision::Action a, FormatContext& ctx) const{
+template<>
+struct fmt::formatter<LittleMeowBot::RouterDecision::Action> : formatter<string_view> {
+    template<typename FormatContext>
+    auto format(LittleMeowBot::RouterDecision::Action a, FormatContext &ctx) const {
         return formatter<string_view>::format(
             LittleMeowBot::RouterDecision::actionToString(a), ctx);
     }
 };
 
 // std::formatter 特化
-template <>
-struct std::formatter<LittleMeowBot::RouterDecision::Action> : std::formatter<std::string_view>{
-    template <typename FormatContext>
-    auto format(const LittleMeowBot::RouterDecision::Action a, FormatContext& ctx) const{
+template<>
+struct std::formatter<LittleMeowBot::RouterDecision::Action> : std::formatter<std::string_view> {
+    template<typename FormatContext>
+    auto format(const LittleMeowBot::RouterDecision::Action a, FormatContext &ctx) const {
         return std::formatter<std::string_view>::format(
             LittleMeowBot::RouterDecision::actionToString(a), ctx);
     }

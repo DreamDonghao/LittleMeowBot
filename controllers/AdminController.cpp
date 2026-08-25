@@ -22,7 +22,7 @@ namespace {
     // 进程启动时间（文件作用域 static，程序启动时初始化）
     const auto g_processStartTime = std::chrono::system_clock::now();
 
-    uint64_t parseQueryUInt64(const HttpRequestPtr& req, const std::string& name, uint64_t fallback = 0) {
+    uint64_t parseQueryUInt64(const HttpRequestPtr &req, const std::string &name, uint64_t fallback = 0) {
         const auto value = req->getParameter(name);
         return value.empty() ? fallback : parseUInt64(value, fallback);
     }
@@ -32,8 +32,8 @@ namespace {
 
 Task<> AdminController::getLLMConfigs(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     auto configs = Database::instance().getAllLLMConfigs();
     callback(HttpResponse::newHttpJsonResponse(configs));
     co_return;
@@ -41,8 +41,8 @@ Task<> AdminController::getLLMConfigs(
 
 Task<> AdminController::saveLLMConfig(
     const HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     auto json = req->getJsonObject();
     if (!json || !json->isMember("name")) {
         Json::Value err;
@@ -55,7 +55,7 @@ Task<> AdminController::saveLLMConfig(
     Database::instance().saveLLMConfig(name, *json);
 
     // 更新内存中的配置
-    auto& config = Config::instance();
+    auto &config = Config::instance();
     if (name == "router") {
         config.router.apiKey = json->get("apiKey", "").asString();
         config.router.baseUrl = json->get("baseUrl", "").asString();
@@ -102,12 +102,12 @@ Task<> AdminController::saveLLMConfig(
 
 Task<> AdminController::getPrompts(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     auto prompts = Database::instance().getAllPrompts();
 
     Json::Value result;
-    for (const auto& [key, content] : prompts) {
+    for (const auto &[key, content]: prompts) {
         result[key] = content;
     }
     callback(HttpResponse::newHttpJsonResponse(result));
@@ -116,8 +116,8 @@ Task<> AdminController::getPrompts(
 
 Task<> AdminController::savePrompt(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     auto json = req->getJsonObject();
     if (!json || !json->isMember("key") || !json->isMember("content")) {
         Json::Value err;
@@ -132,7 +132,7 @@ Task<> AdminController::savePrompt(
 
     // 防护: router_system 的 JSON 格式示例若含双花括号(fmt 转义残留/旧页面缓存内容),模型会照抄导致解析失败
     if (key == "router_system" && (content.find("{{") != std::string::npos
-        || content.find("}}") != std::string::npos)) {
+                                   || content.find("}}") != std::string::npos)) {
         Json::Value err;
         err["success"] = false;
         err["error"] = "提示词包含双花括号{{ }}，JSON 格式示例应为单花括号，请刷新页面后重试";
@@ -154,7 +154,7 @@ Task<> AdminController::savePrompt(
 
 Task<> AdminController::getLogs(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
+    std::function<void(const HttpResponsePtr &)> callback
 ) const {
     LogQuery query;
 
@@ -179,7 +179,7 @@ Task<> AdminController::getLogs(
 
     Json::Value resp;
     resp["entries"] = Json::arrayValue;
-    for (const auto& entry : result.entries) {
+    for (const auto &entry: result.entries) {
         Json::Value item;
         item["id"] = static_cast<Json::UInt64>(entry.id);
         item["timestamp"] = entry.timestamp;
@@ -207,13 +207,13 @@ Task<> AdminController::getLogs(
 
 Task<> AdminController::getUsage(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     int days = 30;
     if (const std::string p = req->getParameter("days"); !p.empty()) {
         // 与 stoi 行为一致：跳过前导空白，解析失败时保留默认值
-        const auto* begin = p.data();
-        const auto* end = p.data() + p.size();
+        const auto *begin = p.data();
+        const auto *end = p.data() + p.size();
         while (begin < end && (*begin == ' ' || *begin == '\t')) ++begin;
         std::from_chars(begin, end, days);
     }
@@ -229,11 +229,12 @@ Task<> AdminController::getUsage(
 
 Task<> AdminController::getSystemInfo(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     const auto now = std::chrono::system_clock::now();
     const auto uptimeSeconds = std::chrono::duration_cast<std::chrono::seconds>(now - g_processStartTime).count();
-    const auto startEpoch = std::chrono::duration_cast<std::chrono::seconds>(g_processStartTime.time_since_epoch()).count();
+    const auto startEpoch = std::chrono::duration_cast<std::chrono::seconds>(g_processStartTime.time_since_epoch()).
+            count();
 
     Json::Value resp;
     resp["startTime"] = static_cast<Json::Int64>(startEpoch);
@@ -244,8 +245,8 @@ Task<> AdminController::getSystemInfo(
 
 Task<> AdminController::getBotStatus(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     Json::Value resp;
     resp["running"] = AgentSystem::instance().isRunning();
     callback(HttpResponse::newHttpJsonResponse(resp));
@@ -254,8 +255,8 @@ Task<> AdminController::getBotStatus(
 
 Task<> AdminController::setBotStatus(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     const auto json = req->getJsonObject();
     if (!json || !json->isMember("running") || !(*json)["running"].isBool()) {
         Json::Value err;
@@ -281,16 +282,16 @@ Task<> AdminController::setBotStatus(
 
 Task<> AdminController::getEmojis(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     callback(HttpResponse::newHttpJsonResponse(co_await AgentToolManager::fetchFavoriteEmojis()));
     co_return;
 }
 
 Task<> AdminController::updateEmojiDesc(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     auto json = req->getJsonObject();
     if (!json || !json->isMember("res_id") || !json->isMember("desc")) {
         Json::Value err;
@@ -299,7 +300,7 @@ Task<> AdminController::updateEmojiDesc(
         co_return;
     }
 
-    const auto& config = Config::instance();
+    const auto &config = Config::instance();
 
     Json::Value body;
     body["emoji_id"] = json->isMember("emoji_id") ? (*json)["emoji_id"].asString() : "0";
@@ -342,12 +343,12 @@ Task<> AdminController::updateEmojiDesc(
 
 Task<> AdminController::getAdmins(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     auto admins = Database::instance().getAdmins();
 
     Json::Value result(Json::arrayValue);
-    for (uint64_t qq : admins) {
+    for (uint64_t qq: admins) {
         Json::Value admin;
         admin["qq"] = static_cast<Json::UInt64>(qq);
         result.append(admin);
@@ -358,8 +359,8 @@ Task<> AdminController::getAdmins(
 
 Task<> AdminController::addAdmin(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     auto json = req->getJsonObject();
     if (!json || !json->isMember("qq")) {
         Json::Value err;
@@ -380,9 +381,9 @@ Task<> AdminController::addAdmin(
 
 Task<> AdminController::removeAdmin(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback,
-    const std::string& qq
-) const{
+    std::function<void(const HttpResponsePtr &)> callback,
+    const std::string &qq
+) const {
     uint64_t qqNum = std::stoull(qq);
     Database::instance().removeAdmin(qqNum);
 
@@ -397,12 +398,12 @@ Task<> AdminController::removeAdmin(
 
 Task<> AdminController::getGroups(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     auto groups = Database::instance().getAllGroupsWithStatus();
 
     Json::Value result(Json::arrayValue);
-    for (const auto& [groupId, groupName, enabled, messageCount] : groups) {
+    for (const auto &[groupId, groupName, enabled, messageCount]: groups) {
         Json::Value group;
         group["groupId"] = static_cast<Json::UInt64>(groupId);
         group["groupName"] = groupName;
@@ -416,8 +417,8 @@ Task<> AdminController::getGroups(
 
 Task<> AdminController::enableGroup(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     auto json = req->getJsonObject();
     if (!json || !json->isMember("groupId")) {
         Json::Value err;
@@ -442,9 +443,9 @@ Task<> AdminController::enableGroup(
 
 Task<> AdminController::toggleGroup(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback,
-    const std::string& groupId
-) const{
+    std::function<void(const HttpResponsePtr &)> callback,
+    const std::string &groupId
+) const {
     const uint64_t gid = std::stoull(groupId);
     Database::instance().toggleGroupStatus(gid);
 
@@ -457,9 +458,9 @@ Task<> AdminController::toggleGroup(
 
 Task<> AdminController::removeGroup(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback,
-    const std::string& groupId
-) const{
+    std::function<void(const HttpResponsePtr &)> callback,
+    const std::string &groupId
+) const {
     uint64_t gid = std::stoull(groupId);
     Database::instance().disableGroup(gid);
 
@@ -472,9 +473,9 @@ Task<> AdminController::removeGroup(
 
 Task<> AdminController::refreshGroupName(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback,
-    const std::string& groupId
-) const{
+    std::function<void(const HttpResponsePtr &)> callback,
+    const std::string &groupId
+) const {
     uint64_t gid = std::stoull(groupId);
     auto groupName = co_await MessageService::fetchAndUpdateGroupName(gid);
 
@@ -487,11 +488,11 @@ Task<> AdminController::refreshGroupName(
 
 Task<> AdminController::refreshAllGroupNames(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     auto groups = Database::instance().getAllGroupsWithStatus();
 
-    for (const auto& [groupId, groupName, enabled, messageCount] : groups) {
+    for (const auto &[groupId, groupName, enabled, messageCount]: groups) {
         co_await MessageService::fetchAndUpdateGroupName(groupId);
     }
 
@@ -506,12 +507,12 @@ Task<> AdminController::refreshAllGroupNames(
 
 Task<> AdminController::getChatGroups(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     auto groups = Database::instance().getGroupsWithChatRecords();
 
     Json::Value result(Json::arrayValue);
-    for (const auto& [groupId, groupName, messageCount] : groups) {
+    for (const auto &[groupId, groupName, messageCount]: groups) {
         Json::Value group;
         group["groupId"] = static_cast<Json::UInt64>(groupId);
         group["groupName"] = groupName;
@@ -524,9 +525,9 @@ Task<> AdminController::getChatGroups(
 
 Task<> AdminController::getChatRecords(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback,
-    const std::string& groupId
-) const{
+    std::function<void(const HttpResponsePtr &)> callback,
+    const std::string &groupId
+) const {
     uint64_t gid = std::stoull(groupId);
 
     // 支持limit参数
@@ -550,9 +551,9 @@ Task<> AdminController::getChatRecords(
 
 Task<> AdminController::updateChatRecord(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback,
-    const std::string& recordId
-) const{
+    std::function<void(const HttpResponsePtr &)> callback,
+    const std::string &recordId
+) const {
     auto json = req->getJsonObject();
     if (!json || !json->isMember("content")) {
         Json::Value err;
@@ -574,9 +575,9 @@ Task<> AdminController::updateChatRecord(
 
 Task<> AdminController::deleteChatRecord(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback,
-    const std::string& recordId
-) const{
+    std::function<void(const HttpResponsePtr &)> callback,
+    const std::string &recordId
+) const {
     int id = std::stoi(recordId);
     Database::instance().deleteChatRecord(id);
 
@@ -589,9 +590,9 @@ Task<> AdminController::deleteChatRecord(
 
 Task<> AdminController::clearGroupChatRecords(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback,
-    const std::string& groupId
-) const{
+    std::function<void(const HttpResponsePtr &)> callback,
+    const std::string &groupId
+) const {
     uint64_t gid = std::stoull(groupId);
     Database::instance().clearGroupChatRecords(gid);
 
@@ -606,8 +607,8 @@ Task<> AdminController::clearGroupChatRecords(
 
 Task<> AdminController::getKBConfig(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     auto config = Database::instance().getKBConfig();
     callback(HttpResponse::newHttpJsonResponse(config));
     co_return;
@@ -615,8 +616,8 @@ Task<> AdminController::getKBConfig(
 
 Task<> AdminController::saveKBConfig(
     const HttpRequestPtr req,
-    const std::function<void(const HttpResponsePtr&)> callback
-) const{
+    const std::function<void(const HttpResponsePtr &)> callback
+) const {
     const auto json = req->getJsonObject();
     if (!json) {
         Json::Value err;
@@ -628,7 +629,7 @@ Task<> AdminController::saveKBConfig(
     Database::instance().saveKBConfig(*json);
 
     // 更新内存中的配置
-    auto& kbConfig = Config::instance().knowledgeBase;
+    auto &kbConfig = Config::instance().knowledgeBase;
     kbConfig.enabled = json->get("enabled", true).asBool();
     kbConfig.apiKey = json->get("apiKey", "").asString();
     kbConfig.baseUrl = json->get("baseUrl", "").asString();
@@ -647,9 +648,9 @@ Task<> AdminController::saveKBConfig(
 
 Task<> AdminController::getGroupMemory(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback,
-    const std::string& groupId
-) const{
+    std::function<void(const HttpResponsePtr &)> callback,
+    const std::string &groupId
+) const {
     const uint64_t gid = std::stoull(groupId);
     const std::string memory = Database::instance().getShortTermMemory(gid);
 
@@ -662,9 +663,9 @@ Task<> AdminController::getGroupMemory(
 
 Task<> AdminController::updateGroupMemory(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback,
-    const std::string& groupId
-) const{
+    std::function<void(const HttpResponsePtr &)> callback,
+    const std::string &groupId
+) const {
     auto json = req->getJsonObject();
     if (!json || !json->isMember("memory")) {
         Json::Value err;
@@ -688,8 +689,8 @@ Task<> AdminController::updateGroupMemory(
 
 Task<> AdminController::getMemoryConfig(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     auto config = Database::instance().getMemoryConfig();
     callback(HttpResponse::newHttpJsonResponse(config));
     co_return;
@@ -697,8 +698,8 @@ Task<> AdminController::getMemoryConfig(
 
 Task<> AdminController::saveMemoryConfig(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     auto json = req->getJsonObject();
     if (!json) {
         Json::Value err;
@@ -730,7 +731,7 @@ Task<> AdminController::saveMemoryConfig(
     Database::instance().saveMemoryConfig(*json);
 
     // 更新内存中的配置
-    auto& config = Config::instance();
+    auto &config = Config::instance();
     config.windowTriggerCount = (*json)["windowTriggerCount"].asInt();
     config.windowKeepCount = (*json)["windowKeepCount"].asInt();
     config.memoryExtractMaxTokens = (*json)["memoryExtractMaxTokens"].asInt();
@@ -750,8 +751,8 @@ Task<> AdminController::saveMemoryConfig(
 
 Task<> AdminController::getQQConfig(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     auto config = Database::instance().getQQConfig();
     callback(HttpResponse::newHttpJsonResponse(config));
     co_return;
@@ -759,8 +760,8 @@ Task<> AdminController::getQQConfig(
 
 Task<> AdminController::saveQQConfig(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     auto json = req->getJsonObject();
     if (!json) {
         Json::Value err;
@@ -772,7 +773,7 @@ Task<> AdminController::saveQQConfig(
     Database::instance().saveQQConfig(*json);
 
     // 更新内存中的配置
-    auto& config = Config::instance();
+    auto &config = Config::instance();
     config.accessToken = (*json).get("accessToken", "").asString();
     config.selfQQNumber = (*json).get("selfQQNumber", 0).asInt64();
     config.qqHttpHost = (*json).get("qqHttpHost", "").asString();
@@ -792,12 +793,12 @@ Task<> AdminController::saveQQConfig(
 
 Task<> AdminController::getCustomTools(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     auto tools = Database::instance().getCustomTools();
 
     Json::Value result(Json::arrayValue);
-    for (const auto& tool : tools) {
+    for (const auto &tool: tools) {
         Json::Value item;
         item["id"] = tool.id;
         item["name"] = tool.name;
@@ -816,8 +817,8 @@ Task<> AdminController::getCustomTools(
 
 Task<> AdminController::addCustomTool(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     auto json = req->getJsonObject();
     if (!json || !json->isMember("name") || !json->isMember("executorType") || !json->isMember("executorConfig")) {
         Json::Value err;
@@ -829,7 +830,7 @@ Task<> AdminController::addCustomTool(
     std::string name = (*json)["name"].asString();
 
     // 检查是否与内置工具名冲突
-    auto& registry = ToolRegistry::instance();
+    auto &registry = ToolRegistry::instance();
     if (registry.hasTool(name)) {
         Json::Value err;
         err["error"] = "工具名 '" + name + "' 已存在（内置工具或自定义工具）";
@@ -862,9 +863,9 @@ Task<> AdminController::addCustomTool(
 
 Task<> AdminController::updateCustomTool(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback,
-    const std::string& id
-) const{
+    std::function<void(const HttpResponsePtr &)> callback,
+    const std::string &id
+) const {
     auto json = req->getJsonObject();
     if (!json || !json->isMember("name") || !json->isMember("executorType") || !json->isMember("executorConfig")) {
         Json::Value err;
@@ -898,9 +899,9 @@ Task<> AdminController::updateCustomTool(
 
 Task<> AdminController::deleteCustomTool(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback,
-    const std::string& id
-) const{
+    std::function<void(const HttpResponsePtr &)> callback,
+    const std::string &id
+) const {
     const int toolId = std::stoi(id);
     Database::instance().deleteCustomTool(toolId);
 
@@ -916,9 +917,9 @@ Task<> AdminController::deleteCustomTool(
 
 Task<> AdminController::toggleCustomTool(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback,
-    const std::string& id
-) const{
+    std::function<void(const HttpResponsePtr &)> callback,
+    const std::string &id
+) const {
     int toolId = std::stoi(id);
     Database::instance().toggleCustomTool(toolId);
 
@@ -934,8 +935,8 @@ Task<> AdminController::toggleCustomTool(
 
 Task<> AdminController::reloadCustomTools(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     AgentToolManager::registerCustomTools();
 
     Json::Value resp;
@@ -947,8 +948,8 @@ Task<> AdminController::reloadCustomTools(
 
 Task<> AdminController::testCustomTool(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     auto json = req->getJsonObject();
     if (!json) {
         Json::Value err;
@@ -971,7 +972,7 @@ Task<> AdminController::testCustomTool(
         int toolId = (*json)["toolId"].asInt();
         auto tools = Database::instance().getCustomTools();
         auto it =
-            std::ranges::find_if(tools, [toolId](const auto& t) { return t.id == toolId; });
+                std::ranges::find_if(tools, [toolId](const auto &t) { return t.id == toolId; });
         if (it == tools.end()) {
             Json::Value err;
             err["success"] = false;
@@ -1011,8 +1012,8 @@ Task<> AdminController::testCustomTool(
 
 Task<> AdminController::getCustomToolConfig(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback
-) const{
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
     Json::Value resp;
     resp["pythonPath"] = Database::instance().getCustomToolPython();
     callback(HttpResponse::newHttpJsonResponse(resp));
@@ -1021,8 +1022,8 @@ Task<> AdminController::getCustomToolConfig(
 
 Task<> AdminController::saveCustomToolConfig(
     const HttpRequestPtr req,
-    const std::function<void(const HttpResponsePtr&)> callback
-) const{
+    const std::function<void(const HttpResponsePtr &)> callback
+) const {
     const auto json = req->getJsonObject();
     if (!json || !json->isMember("pythonPath")) {
         Json::Value err;
@@ -1046,14 +1047,13 @@ Task<> AdminController::saveCustomToolConfig(
 
 Task<> AdminController::exportCustomTool(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback,
-    const std::string& id) const{
-
+    std::function<void(const HttpResponsePtr &)> callback,
+    const std::string &id) const {
     int toolId = std::stoi(id);
     auto tools = Database::instance().getCustomTools();
 
     auto it = std::find_if(tools.begin(), tools.end(),
-        [toolId](const Database::CustomTool& t) { return t.id == toolId; });
+                           [toolId](const Database::CustomTool &t) { return t.id == toolId; });
 
     if (it == tools.end()) {
         Json::Value resp;
@@ -1063,7 +1063,7 @@ Task<> AdminController::exportCustomTool(
         co_return;
     }
 
-    const auto& tool = *it;
+    const auto &tool = *it;
 
     // 只支持导出 Python 工具
     if (tool.executorType != "python") {
@@ -1109,8 +1109,7 @@ Task<> AdminController::exportCustomTool(
 
 Task<> AdminController::importCustomTool(
     HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr&)> callback) const{
-
+    std::function<void(const HttpResponsePtr &)> callback) const {
     auto json = req->getJsonObject();
     if (!json) {
         Json::Value resp;

@@ -88,7 +88,8 @@ cd frontend && npm run type-check
 - 数据目录 `data/` 与日志 `logs/bot.log` 在工作目录下生成
 - 控制台输入 `quit` 优雅退出
 
-注意：构建产物会输出到 `build/`，而 `data/`、`logs/` 与 `public/` 位于仓库根目录。开发时如果从仓库根目录运行 `./build/bot/exe/LittleMeowBot`，读取的是根目录的 `data/`；如果直接进入 `build/bot/` 运行，则会在 `build/bot/` 下生成数据目录。
+注意：构建产物会输出到 `build/`，而 `data/`、`logs/` 与 `public/` 位于仓库根目录。开发时如果从仓库根目录运行
+`./build/bot/exe/LittleMeowBot`，读取的是根目录的 `data/`；如果直接进入 `build/bot/` 运行，则会在 `build/bot/` 下生成数据目录。
 
 ## 项目结构
 
@@ -150,30 +151,37 @@ MessageService::sendGroupMsg → OneBot API
 ### 工具系统
 
 - `ToolRegistry` 按类别管理工具，LLM 调用时按类别分组注入 prompt：
-  - `TERMINAL`：终结工具（`reply` / `no_reply` / `reply_with_quote`），调用后结束本轮处理
-  - `INFORMATION`：信息工具（`search_knowledge` / `recall_memory` / `get_group_name` / `list_stickers`），获取数据
-  - `ACTION`：动作工具（`send_face` / `send_image` / `send_sticker` / `save_sticker` / `rename_sticker` / `delete_sticker` / `at_user` / `ban_user` / `send_poke` / `recall_message`），执行操作
+    - `TERMINAL`：终结工具（`reply` / `no_reply` / `reply_with_quote`），调用后结束本轮处理
+    - `INFORMATION`：信息工具（`search_knowledge` / `recall_memory` / `get_group_name` / `list_stickers`），获取数据
+    - `ACTION`：动作工具（`send_face` / `send_image` / `send_sticker` / `save_sticker` / `rename_sticker` /
+      `delete_sticker` / `at_user` / `ban_user` / `send_poke` / `recall_message`），执行操作
 - 内置工具在 `src/agent/AgentToolManager.cpp` 注册；自定义工具注册为 `INFORMATION` 类别
 - 自定义工具（Python 脚本 / HTTP 接口）存储于数据库，启动时加载；Python 工具通过 `sys.argv[1]` 传入参数 JSON 文件路径
-- 拍一拍、撤回、引用回复、表情包收发均由上述工具实现，由 Executor 根据上下文自动决策调用；天气、搜索、随机数、时间等能力来自 `agentTools/` 目录的可导入自定义工具
+- 拍一拍、撤回、引用回复、表情包收发均由上述工具实现，由 Executor 根据上下文自动决策调用；天气、搜索、随机数、时间等能力来自
+  `agentTools/` 目录的可导入自定义工具
 
 ### 记忆系统
 
 - **短期记忆**：本地 SQLite（`MemoryManager`），按群存储
 - **长期记忆**：RAGFlow 记忆库，由 `MemoryService` 负责提取、合并、去重与迁移
-- **提取机制**（可配置）：聊天记录窗口超过 `windowTriggerCount` 条时，LLM 从待删除的旧记录中提取记忆并滑动窗口（保留最近 `windowKeepCount` 条）；Router 有独立的子窗口参数（`routerWindowTriggerCount` / `routerWindowKeepCount`）
+- **提取机制**（可配置）：聊天记录窗口超过 `windowTriggerCount` 条时，LLM 从待删除的旧记录中提取记忆并滑动窗口（保留最近
+  `windowKeepCount` 条）；Router 有独立的子窗口参数（`routerWindowTriggerCount` / `routerWindowKeepCount`）
 - **迁移机制**：短期记忆超过 `shortTermMemoryMax` 条时，LLM 筛选 `memoryMigrateCount` 条重要记忆写入 RAGFlow
 - 记忆提取与合并复用 executor 模型（`ApiClient::requestLLM`）
 
 ### 配置系统
 
-`Config` 单例从 SQLite 加载 LLM API 配置（router / executor / executorThinking / image，每组独立配置 model / endpoint / temperature 等参数，可选 `reasoningEffort`）、知识库（RAGFlow，含 `enabled` 开关）、QQ Bot 配置、记忆参数。管理后台另有 `memory` LLM 配置项存储于数据库，但当前记忆提取复用 executor 模型。提示词由 `PromptService` 管理（`executor_system` / `router_system`），支持 `{botName}` 占位符，修改后写回数据库。
+`Config` 单例从 SQLite 加载 LLM API 配置（router / executor / executorThinking / image，每组独立配置 model / endpoint /
+temperature 等参数，可选 `reasoningEffort`）、知识库（RAGFlow，含 `enabled` 开关）、QQ Bot 配置、记忆参数。管理后台另有 `memory`
+LLM 配置项存储于数据库，但当前记忆提取复用 executor 模型。提示词由 `PromptService` 管理（`executor_system` /
+`router_system`），支持 `{botName}` 占位符，修改后写回数据库。
 
 **用量统计**：每次 LLM 调用通过 `ApiClient::logUsage` 记录模型与 token 用量，后台"用量统计"页读取 `/admin/api/usage` 展示。
 
 ### 数据库
 
-SQLite 文件位于 `data/little_meow_bot.db`（`Database` 单例，`shared_mutex` 线程安全）。存储：聊天记录、短期/长期记忆、LLM 配置、提示词、启用群、管理员、表情、自定义工具。
+SQLite 文件位于 `data/little_meow_bot.db`（`Database` 单例，`shared_mutex` 线程安全）。存储：聊天记录、短期/长期记忆、LLM
+配置、提示词、启用群、管理员、表情、自定义工具。
 
 调试时可用任意 SQLite 客户端查看：
 
@@ -237,11 +245,13 @@ registry.registerTool(
 
 ### 修改数据库表结构
 
-数据库表由 `Database::initialize()` 创建。修改表结构时需注意现有用户的数据库不会自动迁移：请在 `initialize()` 中编写 `ALTER TABLE` 式的增量迁移（检测列/表是否存在再执行），而非仅修改建表语句。
+数据库表由 `Database::initialize()` 创建。修改表结构时需注意现有用户的数据库不会自动迁移：请在 `initialize()` 中编写
+`ALTER TABLE` 式的增量迁移（检测列/表是否存在再执行），而非仅修改建表语句。
 
 ## 调试
 
-- **日志**：`spdlog` 输出到控制台与 `logs/bot.log`，模块间通过 `util/Log.hpp` 封装。排查消息流水线问题时先看日志中 Router 决策与 Executor 输出
+- **日志**：`spdlog` 输出到控制台与 `logs/bot.log`，模块间通过 `util/Log.hpp` 封装。排查消息流水线问题时先看日志中 Router
+  决策与 Executor 输出
 - **协程**：所有异步 I/O 使用 `drogon::Task<T>` / `co_await`，注意 `co_await` 后对象生命周期（捕获 `shared_ptr` 而非裸指针）
 - **组内互斥**：`AgentSystem` 保证同一群的消息串行处理，新增消息处理逻辑时不要绕过该机制
 - **前端**：`npm run dev` + 浏览器 DevTools；后端日志会打印收到的 OneBot 原始 JSON

@@ -90,7 +90,8 @@ const saveKBConfig = async (): Promise<void> => {
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">记忆库 Document ID</label>
-          <input v-model="kbConfig.memoryDocumentId" class="form-input" placeholder="记忆文档ID（可选，不填则自动获取第一个）"
+          <input v-model="kbConfig.memoryDocumentId" class="form-input"
+                 placeholder="记忆文档ID（可选，不填则自动获取第一个）"
                  type="text">
         </div>
       </div>

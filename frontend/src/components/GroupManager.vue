@@ -3,7 +3,7 @@
  * @file GroupManager.vue
  * @brief 群管理组件 - 群启用状态、群记忆与聊天记录
  */
-import {inject, nextTick, onMounted, onUnmounted, ref, watch, type Ref} from 'vue'
+import {inject, nextTick, onMounted, onUnmounted, ref, type Ref, watch} from 'vue'
 import type {ApiResponse, ChatMessage, Group, QQConfig} from '../vite-env.d'
 
 const showToast = inject<(msg: string, isError?: boolean) => void>('showToast')

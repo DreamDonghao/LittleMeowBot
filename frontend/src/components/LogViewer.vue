@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import {computed, inject, nextTick, onMounted, onUnmounted, ref, type Ref} from 'vue'
+import {computed, inject, nextTick, onMounted, onUnmounted, ref} from 'vue'
 import type {Group, LogEntry, LogQueryResult} from '../vite-env.d'
 
 const showToast = inject<(msg: string, isError?: boolean) => void>('showToast')

@@ -477,12 +477,12 @@ pip install requests numpy  # 安装需要的包</pre>
         <div class="dialog-body">
           <div class="form-group">
             <label class="form-label">上传 JSON 文件</label>
-            <input type="file" accept=".json" class="form-input" @change="handleFileUpload">
+            <input accept=".json" class="form-input" type="file" @change="handleFileUpload">
           </div>
           <div class="form-group">
             <label class="form-label">或粘贴 JSON 内容</label>
-            <textarea v-model="importJson" class="form-input code-input" style="min-height: 200px;"
-                      placeholder="粘贴工具 JSON 内容..." spellcheck="false"></textarea>
+            <textarea v-model="importJson" class="form-input code-input" placeholder="粘贴工具 JSON 内容..."
+                      spellcheck="false" style="min-height: 200px;"></textarea>
           </div>
           <div class="import-example">
             <strong>JSON 格式示例：</strong>
@@ -550,8 +550,8 @@ pip install requests numpy  # 安装需要的包</pre>
           <!-- README 文档 -->
           <div class="form-group">
             <label class="form-label">说明文档 (Markdown)</label>
-            <textarea v-model="editTool.readme" class="form-input auto-height" style="min-height: 80px;"
-                      placeholder="作者、用法、联系方式等信息..." @input="autoResize"></textarea>
+            <textarea v-model="editTool.readme" class="form-input auto-height" placeholder="作者、用法、联系方式等信息..."
+                      style="min-height: 80px;" @input="autoResize"></textarea>
             <small class="form-hint">可选填写作者、使用示例、联系方式等，便于分享和查阅</small>
           </div>
 
@@ -735,9 +735,17 @@ pip install requests numpy  # 安装需要的包</pre>
   color: var(--text-primary);
 }
 
-.readme-content h1 { font-size: 20px; }
-.readme-content h2 { font-size: 18px; }
-.readme-content h3 { font-size: 16px; }
+.readme-content h1 {
+  font-size: 20px;
+}
+
+.readme-content h2 {
+  font-size: 18px;
+}
+
+.readme-content h3 {
+  font-size: 16px;
+}
 
 .readme-content p {
   margin: 0 0 12px 0;

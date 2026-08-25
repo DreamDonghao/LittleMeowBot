@@ -64,13 +64,11 @@ Task<> ProcessQQMessages::receiveMessages(const HttpRequestPtr req,
         co_return;
     }
 
-    auto &groupConfigMgr = GroupConfigManager::instance();
-
     QQMessage qqMessage(*json);
     uint64_t groupId = qqMessage.getGroupId(); ///< 当前消息的群号
     // 确保群配置存在
-    if (!groupConfigMgr.contains(groupId)) {
-        groupConfigMgr.addConfig(groupId);
+    if (!GroupConfigManager::contains(groupId)) {
+        GroupConfigManager::addConfig(groupId);
     }
     // 格式化消息
     co_await qqMessage.formatMessage();
@@ -134,8 +132,8 @@ Task<> ProcessQQMessages::receiveMessages(const HttpRequestPtr req,
     }
 
     // 更新统计
-    groupConfigMgr.incrementMessageCount(groupId, qqMessage.getFormatMessage().size());
-    auto [allMesCount, allCharCount] = groupConfigMgr.getConfig(groupId);
+    GroupConfigManager::incrementMessageCount(groupId, qqMessage.getFormatMessage().size());
+    auto [allMesCount, allCharCount] = GroupConfigManager::getConfig(groupId);
     log.info("群聊统计数据: 接收总消息数{}条,接收总字符(字节)数{}个", allMesCount, allCharCount);
 
     // 记忆提取与窗口滑动 - 窗口超限时触发（失败自愈：下条消息重试）

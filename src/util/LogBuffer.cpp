@@ -22,16 +22,16 @@ namespace LittleMeowBot {
         };
     }
 
-    LogBuffer& LogBuffer::instance() {
+    LogBuffer &LogBuffer::instance() {
         static LogBuffer buffer;
         return buffer;
     }
 
-    void LogBuffer::loadFromDirectory(const std::string& directory) {
+    void LogBuffer::loadFromDirectory(const std::string &directory) {
         std::vector<LogEntry> loaded;
         for (int index = 5; index >= 0; --index) {
             const auto path = std::filesystem::path(directory)
-                / (index == 0 ? "bot.log" : fmt::format("bot.log.{}", index));
+                              / (index == 0 ? "bot.log" : fmt::format("bot.log.{}", index));
             std::ifstream file(path);
             if (!file) {
                 continue;
@@ -54,7 +54,7 @@ namespace LittleMeowBot {
         }
     }
 
-    void LogBuffer::append(const spdlog::details::log_msg& message) {
+    void LogBuffer::append(const spdlog::details::log_msg &message) {
         LogEntry entry;
         entry.timestamp = formatTimestamp(message.time);
         const auto level = spdlog::level::to_string_view(message.level);
@@ -76,14 +76,14 @@ namespace LittleMeowBot {
             evt["level"] = entry.level;
             evt["message"] = entry.message;
             evt["groupId"] = entry.groupId.has_value()
-                                  ? Json::Value(static_cast<Json::UInt64>(*entry.groupId))
-                                  : Json::Value(Json::nullValue);
+                                 ? Json::Value(static_cast<Json::UInt64>(*entry.groupId))
+                                 : Json::Value(Json::nullValue);
             m_entries.push_back(entry);
         }
         LogWebSocketManager::instance().pushLog(evt);
     }
 
-    LogQueryResult LogBuffer::query(const LogQuery& query) const {
+    LogQueryResult LogBuffer::query(const LogQuery &query) const {
         std::lock_guard lock(m_mutex);
         LogQueryResult result;
         if (!m_entries.empty()) {
@@ -91,9 +91,9 @@ namespace LittleMeowBot {
             result.newestId = m_entries.back().id;
         }
 
-        std::vector<const LogEntry*> matched;
+        std::vector<const LogEntry *> matched;
         matched.reserve(m_entries.size());
-        for (const auto& entry : m_entries) {
+        for (const auto &entry: m_entries) {
             if (matches(entry, query)) {
                 matched.push_back(&entry);
             }
@@ -105,12 +105,12 @@ namespace LittleMeowBot {
         size_t start = 0;
         size_t end = matched.size();
         if (query.afterId > 0) {
-            start = std::distance(matched.begin(), std::find_if(matched.begin(), matched.end(), [&](const auto* entry) {
+            start = std::distance(matched.begin(), std::ranges::find_if(matched, [&](const auto *entry) {
                 return entry->id > query.afterId;
             }));
             end = std::min(start + query.limit, matched.size());
         } else if (query.beforeId.has_value()) {
-            end = std::distance(matched.begin(), std::find_if(matched.begin(), matched.end(), [&](const auto* entry) {
+            end = std::distance(matched.begin(), std::ranges::find_if(matched, [&](const auto *entry) {
                 return entry->id >= *query.beforeId;
             }));
             if (end > query.limit) {
@@ -139,7 +139,7 @@ namespace LittleMeowBot {
         return m_entries.size();
     }
 
-    std::optional<LogEntry> LogBuffer::parseLine(const std::string& line) {
+    std::optional<LogEntry> LogBuffer::parseLine(const std::string &line) {
         static const std::regex pattern(
             R"(^\[([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3})\] \[([a-z]+)\] (.*)$)",
             std::regex::icase);
@@ -156,13 +156,13 @@ namespace LittleMeowBot {
         return entry;
     }
 
-    std::optional<uint64_t> LogBuffer::extractGroupId(const std::string& message) {
+    std::optional<uint64_t> LogBuffer::extractGroupId(const std::string &message) {
         std::smatch match;
-        for (const auto& pattern : kGroupPatterns) {
+        for (const auto &pattern: kGroupPatterns) {
             if (std::regex_search(message, match, pattern)) {
                 try {
                     return std::stoull(match[1].str());
-                } catch (const std::exception&) {
+                } catch (const std::exception &) {
                     return std::nullopt;
                 }
             }
@@ -170,7 +170,7 @@ namespace LittleMeowBot {
         return std::nullopt;
     }
 
-    std::string LogBuffer::formatTimestamp(const spdlog::log_clock::time_point& timestamp) {
+    std::string LogBuffer::formatTimestamp(const spdlog::log_clock::time_point &timestamp) {
         const auto time = spdlog::log_clock::to_time_t(timestamp);
         std::tm localTime{};
 #ifdef _WIN32
@@ -179,11 +179,11 @@ namespace LittleMeowBot {
         localtime_r(&time, &localTime);
 #endif
         const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-            timestamp.time_since_epoch()).count() % 1000;
+                                      timestamp.time_since_epoch()).count() % 1000;
         return fmt::format("{:%Y-%m-%d %H:%M:%S}.{:03d}", localTime, milliseconds);
     }
 
-    bool LogBuffer::matches(const LogEntry& entry, const LogQuery& query) {
+    bool LogBuffer::matches(const LogEntry &entry, const LogQuery &query) {
         if (query.systemOnly && entry.groupId.has_value()) {
             return false;
         }

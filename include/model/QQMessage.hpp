@@ -15,11 +15,11 @@
 namespace LittleMeowBot {
     /// @brief QQ 消息模型类
     /// @details 封装单条 QQ 群消息的解析和格式化
-    class QQMessage{
+    class QQMessage {
     public:
         /// @brief 构造函数，从 JSON 解析消息
         /// @param qqMessageJson OneBot 消息 JSON
-        explicit QQMessage(Json::Value  qqMessageJson);
+        explicit QQMessage(Json::Value qqMessageJson);
 
         /// @brief 检查是否 @ 了机器人
         /// @return 是否 @ 了机器人
@@ -56,7 +56,7 @@ namespace LittleMeowBot {
         /// @brief 设置自定义 QQ 昵称
         /// @param qqNumber QQ 号
         /// @param qqName 自定义昵称
-        static void setCustomQQName(Json::UInt64 qqNumber, const Json::String& qqName);
+        static void setCustomQQName(Json::UInt64 qqNumber, const Json::String &qqName);
 
         /// @brief 获取 QQ 昵称
         /// @param qqNumber QQ 号
@@ -70,19 +70,19 @@ namespace LittleMeowBot {
     private:
         /// @brief 设置消息 JSON（仅构造函数使用）
         /// @param qqMessageJson OneBot 消息 JSON
-        void setMessageJson(const Json::Value& qqMessageJson);
+        void setMessageJson(const Json::Value &qqMessageJson);
 
         /// @brief 获取发送者昵称
         /// @return 发送者昵称
         [[nodiscard]] Json::String getSenderQQName() const;
 
         const Json::Value m_qqMessageJson{}; ///< OneBot 消息 JSON 指针
-        Json::String m_formatMessage;         ///< 格式化后的消息（JSON格式）
-        uint64_t m_replyTo{0};                ///< 引用的消息ID
-        bool m_isAtMe{false};                 ///< 是否 @ 了机器人
+        Json::String m_formatMessage; ///< 格式化后的消息（JSON格式）
+        uint64_t m_replyTo{0}; ///< 引用的消息ID
+        bool m_isAtMe{false}; ///< 是否 @ 了机器人
 
 
-        inline static std::unordered_map<Json::UInt64, Json::String> m_QQNameMap;       ///< QQ 号到昵称映射
+        inline static std::unordered_map<Json::UInt64, Json::String> m_QQNameMap; ///< QQ 号到昵称映射
         inline static std::unordered_map<Json::UInt64, Json::String> m_customQQNameMap; ///< 自定义昵称映射
     };
 }

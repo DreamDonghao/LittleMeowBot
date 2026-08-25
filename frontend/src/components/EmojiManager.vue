@@ -108,17 +108,17 @@ onMounted(loadEmojis)
               <div style="width:100%;height:100px;display:flex;align-items:center;justify-content:center;
                           background:var(--bg-secondary, #f5f5f5);border-radius:8px;
                           border:1px solid var(--border-color)">
-                <img v-if="emoji.url" :src="emoji.url" :alt="emoji.name"
-                     style="max-width:100%;max-height:100%;object-fit:contain"
+                <img v-if="emoji.url" :alt="emoji.name" :src="emoji.url"
                      loading="lazy"
+                     style="max-width:100%;max-height:100%;object-fit:contain"
                      @error="($event.target as HTMLImageElement).style.display='none'">
                 <span v-if="!emoji.url" style="color:var(--text-muted);font-size:12px">无预览</span>
               </div>
 
               <template v-if="editingId === emoji.res_id">
                 <input v-model="editingDesc" class="form-input"
-                       style="margin-top:6px;width:100%;box-sizing:border-box"
-                       placeholder="表情描述" type="text">
+                       placeholder="表情描述"
+                       style="margin-top:6px;width:100%;box-sizing:border-box" type="text">
                 <div style="margin-top:4px;display:flex;gap:6px;justify-content:center">
                   <button :disabled="saving" class="btn btn-success btn-sm" @click="saveDesc(emoji)">
                     {{ saving ? '保存中' : '保存' }}

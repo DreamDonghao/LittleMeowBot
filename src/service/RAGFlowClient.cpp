@@ -14,14 +14,14 @@ namespace LittleMeowBot {
         /// @param json RAGFlow API 返回的 JSON
         /// @return 格式化后的检索结果文本
         [[nodiscard]] std::string parseSearchResult(
-            const Json::Value& json, std::optional<uint64_t> groupId);
+            const Json::Value &json, std::optional<uint64_t> groupId);
     }
 
-    drogon::Task<std::optional<std::string>> RAGFlowClient::searchKnowledge(
-        const std::string& question,
+    drogon::Task<std::optional<std::string> > RAGFlowClient::searchKnowledge(
+        const std::string &question,
         int topK,
-        std::optional<uint64_t> groupId){
-        const auto& kbConfig = Config::instance().knowledgeBase;
+        std::optional<uint64_t> groupId) {
+        const auto &kbConfig = Config::instance().knowledgeBase;
 
         // 检查是否启用 RAGFlow
         if (!kbConfig.enabled) {
@@ -29,9 +29,9 @@ namespace LittleMeowBot {
             co_return std::nullopt;
         }
 
-        const auto& apiKey = kbConfig.apiKey;
-        const auto& baseUrl = kbConfig.baseUrl;
-        const auto& knowledgeDatasetId = kbConfig.knowledgeDatasetId;
+        const auto &apiKey = kbConfig.apiKey;
+        const auto &baseUrl = kbConfig.baseUrl;
+        const auto &knowledgeDatasetId = kbConfig.knowledgeDatasetId;
 
         if (knowledgeDatasetId.empty()) {
             spdlog::error("RAGFlow: 知识库ID未配置");
@@ -78,11 +78,11 @@ namespace LittleMeowBot {
         co_return result;
     }
 
-    drogon::Task<std::optional<std::string>> RAGFlowClient::searchMemory(
-        const std::string& question,
+    drogon::Task<std::optional<std::string> > RAGFlowClient::searchMemory(
+        const std::string &question,
         int topK,
         std::optional<uint64_t> groupId) {
-        const auto& kbConfig = Config::instance().knowledgeBase;
+        const auto &kbConfig = Config::instance().knowledgeBase;
 
         // 检查是否启用 RAGFlow
         if (!kbConfig.enabled) {
@@ -90,9 +90,9 @@ namespace LittleMeowBot {
             co_return std::nullopt;
         }
 
-        const auto& apiKey = kbConfig.apiKey;
-        const auto& baseUrl = kbConfig.baseUrl;
-        const auto& memoryDatasetId = kbConfig.memoryDatasetId;
+        const auto &apiKey = kbConfig.apiKey;
+        const auto &baseUrl = kbConfig.baseUrl;
+        const auto &memoryDatasetId = kbConfig.memoryDatasetId;
 
         if (memoryDatasetId.empty()) {
             spdlog::warn("RAGFlow: 记忆库ID未配置");
@@ -130,8 +130,8 @@ namespace LittleMeowBot {
     }
 
     drogon::Task<bool> RAGFlowClient::addMemory(
-        const std::string& content, std::optional<uint64_t> groupId) {
-        const auto& kbConfig = Config::instance().knowledgeBase;
+        const std::string &content, std::optional<uint64_t> groupId) {
+        const auto &kbConfig = Config::instance().knowledgeBase;
 
         // 检查是否启用 RAGFlow
         if (!kbConfig.enabled) {
@@ -139,10 +139,10 @@ namespace LittleMeowBot {
             co_return false;
         }
 
-        const auto& apiKey = kbConfig.apiKey;
-        const auto& baseUrl = kbConfig.baseUrl;
-        const auto& memoryDatasetId = kbConfig.memoryDatasetId;
-        const auto& memoryDocumentId = kbConfig.memoryDocumentId;
+        const auto &apiKey = kbConfig.apiKey;
+        const auto &baseUrl = kbConfig.baseUrl;
+        const auto &memoryDatasetId = kbConfig.memoryDatasetId;
+        const auto &memoryDocumentId = kbConfig.memoryDocumentId;
 
         if (memoryDatasetId.empty()) {
             spdlog::warn("RAGFlow: 记忆库ID未配置，无法添加记忆");
@@ -198,40 +198,40 @@ namespace LittleMeowBot {
     }
 
     namespace {
-        std::string parseSearchResult(const Json::Value& json, const std::optional<uint64_t> groupId){
-        if (!json.isMember("data") || !json["data"].isMember("chunks")) {
-            if (groupId) {
-                Logger::group(*groupId).warn("RAGFlow 返回格式异常");
-            } else {
-                spdlog::warn("RAGFlow 返回格式异常");
-            }
-            return "";
-        }
-
-        const auto& chunks = json["data"]["chunks"];
-        if (!chunks.isArray() || chunks.empty()) {
-            return "未找到相关信息";
-        }
-
-        std::string result;
-        int count = 0;
-
-        for (const auto& chunk : chunks) {
-            if (count >= 3) break;
-
-            if (chunk.isMember("content")) {
-                std::string content = chunk["content"].asString();
-
-                if (chunk.isMember("similarity")) {
-                    if (const float similarity = chunk["similarity"].asFloat(); similarity < 0.3f) continue;
+        std::string parseSearchResult(const Json::Value &json, const std::optional<uint64_t> groupId) {
+            if (!json.isMember("data") || !json["data"].isMember("chunks")) {
+                if (groupId) {
+                    Logger::group(*groupId).warn("RAGFlow 返回格式异常");
+                } else {
+                    spdlog::warn("RAGFlow 返回格式异常");
                 }
-
-                result += content + "\n";
-                count++;
+                return "";
             }
-        }
 
-        return result;
-    }
+            const auto &chunks = json["data"]["chunks"];
+            if (!chunks.isArray() || chunks.empty()) {
+                return "未找到相关信息";
+            }
+
+            std::string result;
+            int count = 0;
+
+            for (const auto &chunk: chunks) {
+                if (count >= 3) break;
+
+                if (chunk.isMember("content")) {
+                    std::string content = chunk["content"].asString();
+
+                    if (chunk.isMember("similarity")) {
+                        if (const float similarity = chunk["similarity"].asFloat(); similarity < 0.3f) continue;
+                    }
+
+                    result += content + "\n";
+                    count++;
+                }
+            }
+
+            return result;
+        }
     }
 }

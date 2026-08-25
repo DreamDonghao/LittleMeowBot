@@ -40,20 +40,26 @@ namespace LittleMeowBot {
 
     class LogBuffer {
     public:
-        static LogBuffer& instance();
+        static LogBuffer &instance();
 
-        void loadFromDirectory(const std::string& directory);
-        void append(const spdlog::details::log_msg& message);
-        [[nodiscard]] LogQueryResult query(const LogQuery& query) const;
+        void loadFromDirectory(const std::string &directory);
+
+        void append(const spdlog::details::log_msg &message);
+
+        [[nodiscard]] LogQueryResult query(const LogQuery &query) const;
+
         [[nodiscard]] size_t size() const;
 
     private:
         LogBuffer() = default;
 
-        static std::optional<LogEntry> parseLine(const std::string& line);
-        static std::optional<uint64_t> extractGroupId(const std::string& message);
-        static std::string formatTimestamp(const spdlog::log_clock::time_point& timestamp);
-        static bool matches(const LogEntry& entry, const LogQuery& query);
+        static std::optional<LogEntry> parseLine(const std::string &line);
+
+        static std::optional<uint64_t> extractGroupId(const std::string &message);
+
+        static std::string formatTimestamp(const spdlog::log_clock::time_point &timestamp);
+
+        static bool matches(const LogEntry &entry, const LogQuery &query);
 
         mutable std::mutex m_mutex;
         std::vector<LogEntry> m_entries;

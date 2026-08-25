@@ -13,7 +13,7 @@
 #include <util/Logger.hpp>
 
 namespace LittleMeowBot {
-    std::string MessageService::convertAtToCQCode(const std::string& text){
+    std::string MessageService::convertAtToCQCode(const std::string &text) {
         std::string result = text;
 
         // 格式 @[...数字...] → 提取数字转为 [CQ:at,qq=数字]
@@ -24,18 +24,18 @@ namespace LittleMeowBot {
         auto nameToQQ = QQMessage::getNameToQQMap();
 
         // 按昵称长度降序排序，避免短昵称先匹配
-        std::vector<std::pair<std::string, uint64_t>> sortedNames(nameToQQ.begin(), nameToQQ.end());
+        std::vector<std::pair<std::string, uint64_t> > sortedNames(nameToQQ.begin(), nameToQQ.end());
         std::sort(sortedNames.begin(), sortedNames.end(),
-                  [](const auto& a, const auto& b) { return a.first.length() > b.first.length(); });
+                  [](const auto &a, const auto &b) { return a.first.length() > b.first.length(); });
 
-        for (const auto& [name, qq] : sortedNames) {
+        for (const auto &[name, qq]: sortedNames) {
             std::string atPattern = "@" + name;
             size_t pos = 0;
             while ((pos = result.find(atPattern, pos)) != std::string::npos) {
                 size_t endPos = pos + atPattern.length();
                 bool isComplete = (endPos >= result.length() ||
-                    (!std::isalnum(static_cast<unsigned char>(result[endPos])) &&
-                        result[endPos] != '_' && result[endPos] != '-'));
+                                   (!std::isalnum(static_cast<unsigned char>(result[endPos])) &&
+                                    result[endPos] != '_' && result[endPos] != '-'));
 
                 if (isComplete) {
                     // 检查是否已经是CQ码的一部分（避免重复转换）
@@ -57,9 +57,9 @@ namespace LittleMeowBot {
 
     drogon::Task<> MessageService::sendGroupMsg(
         Json::UInt64 groupId,
-        const std::string& message,
-        const ChatRecordManager& chatRecords){
-        const auto& config = Config::instance();
+        const std::string &message,
+        const ChatRecordManager &chatRecords) {
+        const auto &config = Config::instance();
 
         // 转换 @[QQ:xxx] 为 CQ 码
         std::string processedMessage = convertAtToCQCode(message);
@@ -78,15 +78,15 @@ namespace LittleMeowBot {
 
         if ((*resp)->getStatusCode() != drogon::k200OK || !requestJson) {
             Logger::group(groupId).error("[Msg] 发送消息错误: status={}",
-                                          static_cast<int>((*resp)->getStatusCode()));
+                                         static_cast<int>((*resp)->getStatusCode()));
             co_return;
         }
 
         std::string status = requestJson->get("status", "").asString();
         if (status != "ok") {
             Logger::group(groupId).error("发送消息错误: status={}, retcode={}, msgLen={}, preview={}",
-                                        status, requestJson->get("retcode", -1).asInt(),
-                                        processedMessage.size(), processedMessage.substr(0, 200));
+                                         status, requestJson->get("retcode", -1).asInt(),
+                                         processedMessage.size(), processedMessage.substr(0, 200));
             co_return;
         }
 
@@ -121,8 +121,8 @@ namespace LittleMeowBot {
     drogon::Task<bool> MessageService::setGroupBan(
         Json::UInt64 groupId,
         Json::UInt64 userId,
-        Json::UInt64 duration){
-        const auto& config = Config::instance();
+        Json::UInt64 duration) {
+        const auto &config = Config::instance();
 
         Json::Value body;
         body["group_id"] = groupId;
@@ -138,7 +138,7 @@ namespace LittleMeowBot {
 
         if ((*resp)->getStatusCode() != drogon::k200OK || !requestJson) {
             Logger::group(groupId).error("[Ban] 禁言请求失败: http_status={}",
-                                          static_cast<int>((*resp)->getStatusCode()));
+                                         static_cast<int>((*resp)->getStatusCode()));
             co_return false;
         }
 
@@ -158,8 +158,8 @@ namespace LittleMeowBot {
         co_return false;
     }
 
-    drogon::Task<Json::Value> MessageService::getGroupInfo(Json::UInt64 groupId){
-        const auto& config = Config::instance();
+    drogon::Task<Json::Value> MessageService::getGroupInfo(Json::UInt64 groupId) {
+        const auto &config = Config::instance();
 
         const auto resp = co_await HttpUtil::send("[GroupInfo]", config.qqHttpHost,
                                                   fmt::format("/get_group_info?group_id={}", groupId),
@@ -177,7 +177,7 @@ namespace LittleMeowBot {
         co_return result;
     }
 
-    drogon::Task<std::string> MessageService::fetchAndUpdateGroupName(Json::UInt64 groupId){
+    drogon::Task<std::string> MessageService::fetchAndUpdateGroupName(Json::UInt64 groupId) {
         auto result = co_await getGroupInfo(groupId);
 
         std::string groupName;
@@ -189,8 +189,8 @@ namespace LittleMeowBot {
         co_return groupName;
     }
 
-    drogon::Task<bool> MessageService::setGroupPoke(Json::UInt64 groupId, Json::UInt64 userId){
-        const auto& config = Config::instance();
+    drogon::Task<bool> MessageService::setGroupPoke(Json::UInt64 groupId, Json::UInt64 userId) {
+        const auto &config = Config::instance();
 
         Json::Value body;
         body["group_id"] = groupId;
@@ -205,7 +205,7 @@ namespace LittleMeowBot {
 
         if ((*resp)->getStatusCode() != drogon::k200OK || !requestJson) {
             Logger::group(groupId).error("[Poke] 拍一拍请求失败: http_status={}",
-                                          static_cast<int>((*resp)->getStatusCode()));
+                                         static_cast<int>((*resp)->getStatusCode()));
             co_return false;
         }
 
@@ -218,13 +218,13 @@ namespace LittleMeowBot {
         }
 
         Logger::group(groupId).error("拍一拍失败: status={}, retcode={}",
-                                      status, requestJson->get("retcode", -1).asInt());
+                                     status, requestJson->get("retcode", -1).asInt());
         co_return false;
     }
 
     drogon::Task<bool> MessageService::deleteMessage(
         Json::UInt64 messageId, std::optional<uint64_t> groupId) {
-        const auto& config = Config::instance();
+        const auto &config = Config::instance();
 
         Json::Value body;
         body["message_id"] = messageId;

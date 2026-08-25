@@ -4,24 +4,19 @@
 #include <model/GroupConfigManager.hpp>
 
 namespace LittleMeowBot {
-    GroupConfigManager& GroupConfigManager::instance(){
-        static GroupConfigManager manager;
-        return manager;
-    }
-
-    GroupConfig GroupConfigManager::getConfig(uint64_t groupId) const{
+    GroupConfig GroupConfigManager::getConfig(const uint64_t groupId) {
         return Database::instance().getGroupConfig(groupId);
     }
 
-    bool GroupConfigManager::contains(uint64_t groupId) const{
+    bool GroupConfigManager::contains(const uint64_t groupId) {
         return Database::instance().hasGroupConfig(groupId);
     }
 
-    void GroupConfigManager::addConfig(uint64_t groupId, const GroupConfig& config) const{
+    void GroupConfigManager::addConfig(const uint64_t groupId, const GroupConfig &config) {
         Database::instance().saveGroupConfig(groupId, config);
     }
 
-    void GroupConfigManager::incrementMessageCount(uint64_t groupId, size_t charCount) const{
+    void GroupConfigManager::incrementMessageCount(const uint64_t groupId, const size_t charCount) {
         Database::instance().incrementMessageCount(groupId, charCount);
     }
 }

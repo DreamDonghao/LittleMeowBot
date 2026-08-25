@@ -111,7 +111,7 @@ const copyJoinUrl = async (): Promise<void> => {
             <button class="btn btn-primary btn-sm" type="button" @click="copyGroupId">复制群号</button>
             <button class="btn btn-secondary btn-sm" type="button" @click="copyJoinUrl">复制加群链接</button>
           </div>
-          <a class="join-link" :href="GROUP_JOIN_URL" target="_blank">或点击这里直接加群 →</a>
+          <a :href="GROUP_JOIN_URL" class="join-link" target="_blank">或点击这里直接加群 →</a>
         </div>
       </div>
     </div>

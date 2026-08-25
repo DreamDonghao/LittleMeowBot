@@ -88,8 +88,8 @@ const qqConfig = reactive<QQConfigType>({
 // Bot 头像（QQ 公开头像 CDN，失败时回退为线条图标）
 const avatarUrl = computed<string>(() => {
   return qqConfig.selfQQNumber > 0
-    ? `https://q1.qlogo.cn/g?b=qq&nk=${qqConfig.selfQQNumber}&s=100`
-    : ''
+      ? `https://q1.qlogo.cn/g?b=qq&nk=${qqConfig.selfQQNumber}&s=100`
+      : ''
 })
 const avatarFailed: Ref<boolean> = ref(false)
 

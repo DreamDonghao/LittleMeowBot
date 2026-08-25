@@ -20,18 +20,18 @@
 
 namespace LittleMeowBot {
     /// @brief 群组配置结构
-    struct GroupConfig{
+    struct GroupConfig {
         uint64_t allMesCount = 0;
         uint64_t allCharCount = 0;
     };
 
     /// @brief SQLite 数据库管理类
-    class Database{
+    class Database {
     public:
-        static Database& instance();
+        static Database &instance();
 
         /// @brief 初始化数据库
-        void initialize(const std::string& dbPath);
+        void initialize(const std::string &dbPath);
 
         /// @brief 关闭数据库
         void close();
@@ -41,20 +41,26 @@ namespace LittleMeowBot {
         // ============================================================
 
         GroupConfig getGroupConfig(uint64_t groupId) const;
-        void saveGroupConfig(uint64_t groupId, const GroupConfig& config) const;
+
+        void saveGroupConfig(uint64_t groupId, const GroupConfig &config) const;
+
         void incrementMessageCount(uint64_t groupId, size_t charCount) const;
+
         bool hasGroupConfig(uint64_t groupId) const;
 
         // ============================================================
         //                      聊天记录操作
         // ============================================================
 
-        void addChatRecord(uint64_t groupId, const std::string& role, const std::string& content) const;
+        void addChatRecord(uint64_t groupId, const std::string &role, const std::string &content) const;
+
         std::vector<Json::Value> getChatRecords(uint64_t groupId, int limit = 50) const;
+
         std::vector<Json::Value> getChatRecordsWithIds(uint64_t groupId, int limit = 50) const;
 
         /// @brief 获取水位线之后的最新记录（旧→新），limit<=0 表示不限
         std::vector<Json::Value> getChatRecordsSince(uint64_t groupId, uint64_t watermarkId, int limit = 0) const;
+
         /// @brief 统计水位线之后的记录条数
         size_t getChatRecordCountSince(uint64_t groupId, uint64_t watermarkId) const;
 
@@ -63,19 +69,26 @@ namespace LittleMeowBot {
         // ============================================================
 
         std::string getShortTermMemory(uint64_t groupId) const;
-        void updateShortTermMemory(uint64_t groupId, const std::string& memory) const;
+
+        void updateShortTermMemory(uint64_t groupId, const std::string &memory) const;
+
         /// @brief 获取群记忆水位线（最后已提取的聊天记录 id，无记录时为 0）
         uint64_t getMemoryWatermark(uint64_t groupId) const;
+
         /// @brief 原子更新记忆与水位线（单条 upsert 语句，崩溃安全）
-        void updateShortTermMemoryWithWatermark(uint64_t groupId, const std::string& memory, uint64_t watermarkId) const;
+        void updateShortTermMemoryWithWatermark(uint64_t groupId, const std::string &memory,
+                                                uint64_t watermarkId) const;
 
         // ============================================================
         //                      提示词操作
         // ============================================================
 
-        std::string getPrompt(const std::string& key, const std::string& defaultValue = "") const;
-        void setPrompt(const std::string& key, const std::string& content, const std::string& description = "");
-        bool hasPrompt(const std::string& key) const;
+        std::string getPrompt(const std::string &key, const std::string &defaultValue = "") const;
+
+        void setPrompt(const std::string &key, const std::string &content, const std::string &description = "");
+
+        bool hasPrompt(const std::string &key) const;
+
         std::unordered_map<std::string, std::string> getAllPrompts() const;
 
         // ============================================================
@@ -83,21 +96,24 @@ namespace LittleMeowBot {
         // ============================================================
 
         bool isGroupEnabled(uint64_t groupId) const;
+
         void enableGroup(uint64_t groupId) const;
+
         void disableGroup(uint64_t groupId) const;
+
         std::vector<uint64_t> getEnabledGroups() const;
 
         /// @brief 获取所有有聊天记录的群（用于聊天记录页面）
-        std::vector<std::tuple<uint64_t, std::string, int>> getGroupsWithChatRecords() const;
+        std::vector<std::tuple<uint64_t, std::string, int> > getGroupsWithChatRecords() const;
 
         /// @brief 获取所有群（包括已禁用的）
-        std::vector<std::tuple<uint64_t, std::string, bool, int>> getAllGroupsWithStatus() const;
+        std::vector<std::tuple<uint64_t, std::string, bool, int> > getAllGroupsWithStatus() const;
 
         /// @brief 切换群启用状态
         void toggleGroupStatus(uint64_t groupId) const;
 
         /// @brief 更新聊天记录内容
-        void updateChatRecord(int recordId, const std::string& content) const;
+        void updateChatRecord(int recordId, const std::string &content) const;
 
         /// @brief 删除聊天记录
         void deleteChatRecord(int recordId) const;
@@ -105,7 +121,8 @@ namespace LittleMeowBot {
         /// @brief 清空群的所有聊天记录
         void clearGroupChatRecords(uint64_t groupId) const;
 
-        void updateGroupName(uint64_t groupId, const std::string& name) const;
+        void updateGroupName(uint64_t groupId, const std::string &name) const;
+
         std::string getGroupName(uint64_t groupId) const;
 
         // ============================================================
@@ -113,8 +130,11 @@ namespace LittleMeowBot {
         // ============================================================
 
         bool isAdmin(uint64_t qqNumber) const;
+
         void addAdmin(uint64_t qqNumber) const;
+
         void removeAdmin(uint64_t qqNumber) const;
+
         std::vector<uint64_t> getAdmins() const;
 
 
@@ -122,8 +142,10 @@ namespace LittleMeowBot {
         //                      LLM 配置操作
         // ============================================================
 
-        Json::Value getLLMConfig(const std::string& name) const;
-        void saveLLMConfig(const std::string& name, const Json::Value& config) const;
+        Json::Value getLLMConfig(const std::string &name) const;
+
+        void saveLLMConfig(const std::string &name, const Json::Value &config) const;
+
         Json::Value getAllLLMConfigs();
 
         // ============================================================
@@ -131,31 +153,36 @@ namespace LittleMeowBot {
         // ============================================================
 
         Json::Value getKBConfig() const;
-        void saveKBConfig(const Json::Value& config) const;
+
+        void saveKBConfig(const Json::Value &config) const;
 
         // ============================================================
         //                      QQ Bot 配置操作
         // ============================================================
 
         Json::Value getQQConfig() const;
-        void saveQQConfig(const Json::Value& config) const;
+
+        void saveQQConfig(const Json::Value &config) const;
 
         // ============================================================
         //                      记忆配置操作
         // ============================================================
 
         Json::Value getMemoryConfig() const;
-        void saveMemoryConfig(const Json::Value& config) const;
+
+        void saveMemoryConfig(const Json::Value &config) const;
 
         // ============================================================
         //                      用量统计操作
         // ============================================================
 
         /// @brief 记录一次 LLM 调用用量
-        void addUsageRecord(const std::string& role, const std::string& model, int promptTokens,
+        void addUsageRecord(const std::string &role, const std::string &model, int promptTokens,
                             int completionTokens, int totalTokens, int cachedTokens) const;
+
         /// @brief 获取最近 N 天用量汇总（按角色、按天聚合）
         Json::Value getUsageSummary(int days) const;
+
         /// @brief 获取最近调用明细
         Json::Value getRecentUsage(int limit) const;
 
@@ -164,7 +191,7 @@ namespace LittleMeowBot {
         // ============================================================
 
         /// @brief 自定义工具结构
-        struct CustomTool{
+        struct CustomTool {
             int id = 0;
             std::string name; // 工具名，如 "search_web"
             std::string description; // 给LLM看的描述
@@ -183,10 +210,10 @@ namespace LittleMeowBot {
         std::vector<CustomTool> getEnabledCustomTools() const;
 
         /// @brief 添加自定义工具
-        int addCustomTool(const CustomTool& tool) const;
+        int addCustomTool(const CustomTool &tool) const;
 
         /// @brief 更新自定义工具
-        void updateCustomTool(const CustomTool& tool) const;
+        void updateCustomTool(const CustomTool &tool) const;
 
         /// @brief 删除自定义工具
         void deleteCustomTool(int id) const;
@@ -195,7 +222,7 @@ namespace LittleMeowBot {
         void toggleCustomTool(int id) const;
 
         /// @brief 检查工具名是否已存在
-        bool hasCustomTool(const std::string& name) const;
+        bool hasCustomTool(const std::string &name) const;
 
         // ============================================================
         //                      自定义工具配置
@@ -205,22 +232,29 @@ namespace LittleMeowBot {
         std::string getCustomToolPython() const;
 
         /// @brief 设置自定义工具Python解释器路径
-        void setCustomToolPython(const std::string& pythonPath) const;
+        void setCustomToolPython(const std::string &pythonPath) const;
 
     private:
         Database() = default;
+
         ~Database();
 
-        sqlite3* m_db = nullptr;
+        sqlite3 *m_db = nullptr;
         mutable std::shared_mutex m_mutex;
 
         void createTables();
+
         void migrateDatabase() const;
+
         /// @brief 从数据库加载自定义工具（onlyEnabled 时仅加载启用的）
         std::vector<CustomTool> loadCustomTools(bool onlyEnabled) const;
+
         void initDefaultLLMConfigs() const;
+
         void initDefaultKBConfig() const;
+
         void initDefaultMemoryConfig() const;
+
         void initDefaultQQConfig() const;
     };
 } // namespace LittleMeowBot

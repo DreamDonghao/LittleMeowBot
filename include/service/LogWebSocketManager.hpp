@@ -22,18 +22,22 @@ namespace LittleMeowBot {
 
     class LogWebSocketManager {
     public:
-        static LogWebSocketManager& instance();
+        static LogWebSocketManager &instance();
 
-        void addConnection(const drogon::WebSocketConnectionPtr& conn);
-        void removeConnection(const drogon::WebSocketConnectionPtr& conn);
-        void updateSubscription(const drogon::WebSocketConnectionPtr& conn, LogSubscription subscription);
-        void pushLog(const Json::Value& log);
-        void broadcastStatus(const Json::Value& status);
+        void addConnection(const drogon::WebSocketConnectionPtr &conn);
+
+        void removeConnection(const drogon::WebSocketConnectionPtr &conn);
+
+        void updateSubscription(const drogon::WebSocketConnectionPtr &conn, LogSubscription subscription);
+
+        void pushLog(const Json::Value &log);
+
+        void broadcastStatus(const Json::Value &status);
 
     private:
         LogWebSocketManager() = default;
 
-        [[nodiscard]] static bool matches(const LogSubscription& subscription, const Json::Value& log);
+        [[nodiscard]] static bool matches(const LogSubscription &subscription, const Json::Value &log);
 
         std::mutex m_mutex;
         std::unordered_set<drogon::WebSocketConnectionPtr> m_connections;

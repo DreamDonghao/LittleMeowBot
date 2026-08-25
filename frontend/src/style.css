@@ -459,12 +459,29 @@ a {
     border-top: 1px solid var(--border);
 }
 
-.level-trace .log-level { color: var(--text-light); }
-.level-debug .log-level { color: var(--text-secondary); }
-.level-info .log-level { color: var(--primary); }
-.level-warn .log-level { color: var(--warning); }
-.level-error .log-level { color: var(--danger); }
-.level-critical .log-level { color: var(--neon-pink); }
+.level-trace .log-level {
+    color: var(--text-light);
+}
+
+.level-debug .log-level {
+    color: var(--text-secondary);
+}
+
+.level-info .log-level {
+    color: var(--primary);
+}
+
+.level-warn .log-level {
+    color: var(--warning);
+}
+
+.level-error .log-level {
+    color: var(--danger);
+}
+
+.level-critical .log-level {
+    color: var(--neon-pink);
+}
 
 /* ============ 卡片 ============ */
 .card {

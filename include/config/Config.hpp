@@ -7,7 +7,7 @@
 #include <storage/Database.hpp>
 
 namespace LittleMeowBot {
-    struct LLMApiConfig{
+    struct LLMApiConfig {
         std::string apiKey;
         std::string baseUrl;
         std::string path;
@@ -15,14 +15,14 @@ namespace LittleMeowBot {
         std::string reasoningEffort; // "none"/"medium"/"high"，空串表示不发送
     };
 
-    struct LLMModelParams{
+    struct LLMModelParams {
         int maxTokens = 1024;
         float temperature = 0.7f;
         float topP = 0.9f;
     };
 
-    struct KBApiConfig{
-        bool enabled = true;  // 是否启用 RAGFlow
+    struct KBApiConfig {
+        bool enabled = true; // 是否启用 RAGFlow
         std::string apiKey;
         std::string baseUrl;
         std::string knowledgeDatasetId;
@@ -30,23 +30,23 @@ namespace LittleMeowBot {
         std::string memoryDocumentId;
     };
 
-    class Config{
+    class Config {
     public:
         // Agent 配置
         LLMApiConfig router;
         LLMModelParams routerParams;
         LLMApiConfig executor;
         LLMModelParams executorParams;
-        LLMApiConfig executorThinking;  // Executor 思考模型配置
+        LLMApiConfig executorThinking; // Executor 思考模型配置
         LLMModelParams executorThinkingParams;
         LLMApiConfig image;
 
         // 记忆配置
-        int windowTriggerCount = 100;  // 上下文窗口超过该条数时触发提取与滑动
-        int windowKeepCount = 50;      // 触发后保留的最近消息条数
-        int memoryExtractMaxTokens = 4000;  // 记忆提取 LLM 调用的 maxTokens
-        int routerWindowTriggerCount = 20;  // Router 子窗口触发条数（批量滑动）
-        int routerWindowKeepCount = 10;     // Router 子窗口保留条数
+        int windowTriggerCount = 100; // 上下文窗口超过该条数时触发提取与滑动
+        int windowKeepCount = 50; // 触发后保留的最近消息条数
+        int memoryExtractMaxTokens = 4000; // 记忆提取 LLM 调用的 maxTokens
+        int routerWindowTriggerCount = 20; // Router 子窗口触发条数（批量滑动）
+        int routerWindowKeepCount = 10; // Router 子窗口保留条数
         int shortTermMemoryMax = 15;
         int memoryMigrateCount = 5;
 
@@ -59,7 +59,7 @@ namespace LittleMeowBot {
         // 知识库配置
         KBApiConfig knowledgeBase;
 
-        static Config& instance();
+        static Config &instance();
 
         void loadFromDatabase();
 

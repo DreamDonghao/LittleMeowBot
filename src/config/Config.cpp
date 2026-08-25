@@ -11,7 +11,8 @@ namespace LittleMeowBot {
         /// @param name 配置名（router/executor/executorThinking/image）
         /// @param apiConfig 输出的 API 配置
         /// @param modelParams 模型参数（可为 nullptr，表示不加载）
-        void loadLLMConfig(const std::string_view name, LLMApiConfig& apiConfig, LLMModelParams* modelParams = nullptr){
+        void loadLLMConfig(const std::string_view name, LLMApiConfig &apiConfig,
+                           LLMModelParams *modelParams = nullptr) {
             const auto cfg = Database::instance().getLLMConfig(std::string(name));
             if (cfg.isNull()) return;
 
@@ -30,14 +31,14 @@ namespace LittleMeowBot {
             }
         }
     }
-    Config& Config::instance(){
+
+    Config &Config::instance() {
         static Config config{};
         return config;
     }
 
 
-
-    void Config::loadFromDatabase(){
+    void Config::loadFromDatabase() {
         loadLLMConfig("router", router, &routerParams);
         loadLLMConfig("executor", executor, &executorParams);
         loadLLMConfig("executorThinking", executorThinking, &executorThinkingParams);

@@ -6,11 +6,11 @@
 #include <spdlog/spdlog.h>
 
 namespace LittleMeowBot {
-    void PromptService::initialize(){
-        auto& db = Database::instance();
+    void PromptService::initialize() {
+        auto &db = Database::instance();
 
         // 定义默认提示词
-        const struct{
+        const struct {
             std::string key;
             std::string content;
             std::string desc;
@@ -100,7 +100,7 @@ reply 的场景：
         };
 
         // 插入默认提示词（如果不存在）
-        for (const auto& [key, content, desc] : defaultPrompts) {
+        for (const auto &[key, content, desc]: defaultPrompts) {
             if (!db.hasPrompt(key)) {
                 db.setPrompt(key, content, desc);
                 spdlog::info("插入默认提示词: {}", key);
@@ -118,11 +118,11 @@ reply 的场景：
         spdlog::info("提示词服务初始化完成");
     }
 
-    std::string PromptService::getPrompt(const std::string& key){
+    std::string PromptService::getPrompt(const std::string &key) {
         std::string content = Database::instance().getPrompt(key, "");
         // 替换 {botName} 占位符
         if (content.find("{botName}") != std::string::npos) {
-            const std::string& botName = Config::instance().botName;
+            const std::string &botName = Config::instance().botName;
             size_t pos = 0;
             while ((pos = content.find("{botName}", pos)) != std::string::npos) {
                 content.replace(pos, 9, botName);
@@ -132,16 +132,16 @@ reply 的场景：
         return content;
     }
 
-    void PromptService::setPrompt(const std::string& key, const std::string& content){
+    void PromptService::setPrompt(const std::string &key, const std::string &content) {
         Database::instance().setPrompt(key, content);
         spdlog::info("提示词已更新: {}", key);
     }
 
-    std::string PromptService::getExecutorSystemPrompt(){
+    std::string PromptService::getExecutorSystemPrompt() {
         return getPrompt("executor_system");
     }
 
-    std::string PromptService::getRouterSystemPrompt(){
+    std::string PromptService::getRouterSystemPrompt() {
         return getPrompt("router_system");
     }
 }

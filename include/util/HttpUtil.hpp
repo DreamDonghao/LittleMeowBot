@@ -27,7 +27,7 @@ namespace LittleMeowBot::HttpUtil {
     /// @param bearerToken Bearer 认证 token（空串则不添加 Authorization 头）
     /// @param timeout 超时秒数
     /// @return 响应；网络异常（含地址解析失败、超时）返回 std::nullopt
-    drogon::Task<std::optional<drogon::HttpResponsePtr>> send(
+    drogon::Task<std::optional<drogon::HttpResponsePtr> > send(
         std::string_view tag,
         const std::string &baseUrl,
         const std::string &path,
