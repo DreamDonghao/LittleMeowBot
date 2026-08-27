@@ -57,14 +57,14 @@ namespace LittleMeowBot {
 
     bool LogWebSocketManager::matches(const LogSubscription &subscription, const Json::Value &log) {
         if (subscription.systemOnly) {
-            if (log.isMember("groupId") && !log["groupId"].isNull()) {
+            if (log.isMember("sessionId") && !log["groupId"].isNull()) {
                 return false;
             }
-        } else if (subscription.groupId.has_value()) {
-            if (!log.isMember("groupId") || log["groupId"].isNull()) {
+        } else if (subscription.sessionId.has_value()) {
+            if (!log.isMember("sessionId") || log["groupId"].isNull()) {
                 return false;
             }
-            if (log["groupId"].asUInt64() != *subscription.groupId) {
+            if (log["groupId"].asUInt64() != *subscription.sessionId) {
                 return false;
             }
         }

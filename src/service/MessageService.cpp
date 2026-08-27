@@ -55,38 +55,43 @@ namespace LittleMeowBot {
         return result;
     }
 
-    drogon::Task<> MessageService::sendGroupMsg(
-        Json::UInt64 groupId,
-        const std::string &message,
-        const ChatRecordManager &chatRecords) {
+namespace {
+    /// @brief 调用 OneBot 发送消息 API 并记录聊天记录、推送 WebSocket（群聊/私聊共用）
+    /// @param apiPath OneBot API 路径（/send_group_msg 或 /send_private_msg）
+    /// @param body 请求体（含目标字段与 message）
+    /// @param chatRecords 聊天记录管理器
+    /// @param sessionId 会话 ID（用于日志）
+    /// @param channelName 日志中的渠道名（"群消息"/"私聊消息"）
+    drogon::Task<> sendOneBotMessage(const std::string &apiPath, const Json::Value &body,
+                                     const ChatRecordManager &chatRecords, const uint64_t sessionId,
+                                     std::string_view channelName) {
         const auto &config = Config::instance();
 
         // 转换 @[QQ:xxx] 为 CQ 码
-        std::string processedMessage = convertAtToCQCode(message);
+        std::string processedMessage = MessageService::convertAtToCQCode(body["message"].asString());
 
-        Json::Value body;
-        body["group_id"] = groupId;
-        body["message"] = processedMessage;
-        body["auto_escape"] = false;
+        Json::Value requestBody = body;
+        requestBody["message"] = processedMessage;
+        requestBody["auto_escape"] = false;
 
-        const auto resp = co_await HttpUtil::send("[Msg]", config.qqHttpHost, "/send_group_msg",
-                                                  drogon::Post, body, config.accessToken, 30.0, groupId);
+        const auto resp = co_await HttpUtil::send("[Msg]", config.qqHttpHost, apiPath,
+                                                  drogon::Post, requestBody, config.accessToken, 30.0, sessionId);
         if (!resp) {
             co_return;
         }
         const auto requestJson = (*resp)->getJsonObject();
 
         if ((*resp)->getStatusCode() != drogon::k200OK || !requestJson) {
-            Logger::group(groupId).error("[Msg] 发送消息错误: status={}",
-                                         static_cast<int>((*resp)->getStatusCode()));
+            Logger::session(sessionId).error("[Msg] 发送消息错误: status={}",
+                                           static_cast<int>((*resp)->getStatusCode()));
             co_return;
         }
 
         std::string status = requestJson->get("status", "").asString();
         if (status != "ok") {
-            Logger::group(groupId).error("发送消息错误: status={}, retcode={}, msgLen={}, preview={}",
-                                         status, requestJson->get("retcode", -1).asInt(),
-                                         processedMessage.size(), processedMessage.substr(0, 200));
+            Logger::session(sessionId).error("发送消息错误: status={}, retcode={}, msgLen={}, preview={}",
+                                           status, requestJson->get("retcode", -1).asInt(),
+                                           processedMessage.size(), processedMessage.substr(0, 200));
             co_return;
         }
 
@@ -113,10 +118,35 @@ namespace LittleMeowBot {
         chatRecords.addAssistantRecord(formattedMsg);
 
         // WebSocket推送（推送原始文本）
-        WebSocketManager::instance().pushMessage(groupId, "assistant", processedMessage);
+        WebSocketManager::instance().pushMessage(sessionId, "assistant", processedMessage);
 
-        Logger::group(groupId).info("成功发送群消息: {} (message_id={})", processedMessage, messageId);
+        Logger::session(sessionId).info("成功发送{}: {} (message_id={})",
+                                      channelName, processedMessage, messageId);
     }
+}
+
+drogon::Task<> MessageService::sendGroupMsg(
+    Json::UInt64 groupId,
+    const std::string &message,
+    const ChatRecordManager &chatRecords) {
+    Json::Value body;
+    body["group_id"] = groupId;
+    body["message"] = message;
+
+    co_await sendOneBotMessage("/send_group_msg", body, chatRecords, groupId, "群消息");
+}
+
+drogon::Task<> MessageService::sendPrivateMsg(
+    Json::UInt64 userId,
+    const std::string &message,
+    const ChatRecordManager &chatRecords) {
+    Json::Value body;
+    body["user_id"] = userId;
+    body["message"] = message;
+
+    co_await sendOneBotMessage("/send_private_msg", body, chatRecords, userId | QQMessage::kPrivateSessionFlag,
+                               "私聊消息");
+}
 
     drogon::Task<bool> MessageService::setGroupBan(
         Json::UInt64 groupId,
@@ -137,24 +167,24 @@ namespace LittleMeowBot {
         const auto requestJson = (*resp)->getJsonObject();
 
         if ((*resp)->getStatusCode() != drogon::k200OK || !requestJson) {
-            Logger::group(groupId).error("[Ban] 禁言请求失败: http_status={}",
+            Logger::session(groupId).error("[Ban] 禁言请求失败: http_status={}",
                                          static_cast<int>((*resp)->getStatusCode()));
             co_return false;
         }
 
         // 打印完整响应便于调试
-        Logger::group(groupId).debug("[Ban] 禁言API响应: {}", (*resp)->getBody());
+        Logger::session(groupId).debug("[Ban] 禁言API响应: {}", (*resp)->getBody());
 
         std::string status = requestJson->get("status", "").asString();
         int retcode = requestJson->get("retcode", -1).asInt();
 
         // status=ok 表示操作成功
         if (status == "ok") {
-            Logger::group(groupId).info("禁言成功: 用户{} 时长{}秒", userId, duration);
+            Logger::session(groupId).info("禁言成功: 用户{} 时长{}秒", userId, duration);
             co_return true;
         }
 
-        Logger::group(groupId).error("禁言失败: status={}, retcode={}", status, retcode);
+        Logger::session(groupId).error("禁言失败: status={}, retcode={}", status, retcode);
         co_return false;
     }
 
@@ -177,16 +207,32 @@ namespace LittleMeowBot {
         co_return result;
     }
 
-    drogon::Task<std::string> MessageService::fetchAndUpdateGroupName(Json::UInt64 groupId) {
-        auto result = co_await getGroupInfo(groupId);
-
-        std::string groupName;
-        if (result.isMember("data") && result["data"].isMember("group_name")) {
-            groupName = result["data"]["group_name"].asString();
-            Database::instance().updateGroupName(groupId, groupName);
+    drogon::Task<std::string> MessageService::fetchAndUpdateSessionName(Json::UInt64 sessionId) {
+        std::string name;
+        if (QQMessage::isPrivateSession(sessionId)) {
+            // 私聊会话取 QQ 昵称，复用 groupName 列存储
+            const auto &config = Config::instance();
+            const uint64_t userId = sessionId & ~QQMessage::kPrivateSessionFlag;
+            const auto resp = co_await HttpUtil::send("[StrangerInfo]", config.qqHttpHost,
+                                                      fmt::format("/get_stranger_info?user_id={}", userId),
+                                                      drogon::Get, Json::Value(Json::nullValue),
+                                                      config.accessToken, 30.0, sessionId);
+            if (resp && (*resp)->getStatusCode() == drogon::k200OK) {
+                const auto body = (*resp)->getJsonObject();
+                if (body && body->isMember("data") && (*body)["data"].isMember("nickname")) {
+                    name = (*body)["data"]["nickname"].asString();
+                    Database::instance().updateSessionName(sessionId, name);
+                }
+            }
+        } else {
+            auto result = co_await getGroupInfo(sessionId);
+            if (result.isMember("data") && result["data"].isMember("group_name")) {
+                name = result["data"]["group_name"].asString();
+                Database::instance().updateSessionName(sessionId, name);
+            }
         }
 
-        co_return groupName;
+        co_return name;
     }
 
     drogon::Task<bool> MessageService::setGroupPoke(Json::UInt64 groupId, Json::UInt64 userId) {
@@ -204,7 +250,7 @@ namespace LittleMeowBot {
         const auto requestJson = (*resp)->getJsonObject();
 
         if ((*resp)->getStatusCode() != drogon::k200OK || !requestJson) {
-            Logger::group(groupId).error("[Poke] 拍一拍请求失败: http_status={}",
+            Logger::session(groupId).error("[Poke] 拍一拍请求失败: http_status={}",
                                          static_cast<int>((*resp)->getStatusCode()));
             co_return false;
         }
@@ -213,11 +259,11 @@ namespace LittleMeowBot {
 
         // status=ok 表示操作成功
         if (status == "ok") {
-            Logger::group(groupId).info("拍一拍成功: 用户{}", userId);
+            Logger::session(groupId).info("拍一拍成功: 用户{}", userId);
             co_return true;
         }
 
-        Logger::group(groupId).error("拍一拍失败: status={}, retcode={}",
+        Logger::session(groupId).error("拍一拍失败: status={}, retcode={}",
                                      status, requestJson->get("retcode", -1).asInt());
         co_return false;
     }
@@ -238,7 +284,7 @@ namespace LittleMeowBot {
 
         if ((*resp)->getStatusCode() != drogon::k200OK || !requestJson) {
             if (groupId) {
-                Logger::group(*groupId).error("[Recall] 撤回消息请求失败: http_status={}",
+                Logger::session(*groupId).error("[Recall] 撤回消息请求失败: http_status={}",
                                               static_cast<int>((*resp)->getStatusCode()));
             } else {
                 spdlog::error("[Recall] 撤回消息请求失败: http_status={}",
@@ -252,7 +298,7 @@ namespace LittleMeowBot {
         // status=ok 表示操作成功
         if (status == "ok") {
             if (groupId) {
-                Logger::group(*groupId).info("撤回消息成功: message_id={}", messageId);
+                Logger::session(*groupId).info("撤回消息成功: message_id={}", messageId);
             } else {
                 spdlog::info("撤回消息成功: message_id={}", messageId);
             }
@@ -260,7 +306,7 @@ namespace LittleMeowBot {
         }
 
         if (groupId) {
-            Logger::group(*groupId).error("撤回消息失败: status={}, retcode={}",
+            Logger::session(*groupId).error("撤回消息失败: status={}, retcode={}",
                                           status, requestJson->get("retcode", -1).asInt());
         } else {
             spdlog::error("撤回消息失败: status={}, retcode={}",

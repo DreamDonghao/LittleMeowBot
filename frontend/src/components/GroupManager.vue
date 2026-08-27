@@ -3,7 +3,7 @@
  * @file GroupManager.vue
  * @brief 群管理组件 - 群启用状态、群记忆与聊天记录
  */
-import {inject, nextTick, onMounted, onUnmounted, ref, type Ref, watch} from 'vue'
+import {computed, inject, nextTick, onMounted, onUnmounted, ref, type Ref, watch} from 'vue'
 import type {ApiResponse, ChatMessage, Group, QQConfig} from '../vite-env.d'
 
 const showToast = inject<(msg: string, isError?: boolean) => void>('showToast')
@@ -12,13 +12,29 @@ const wsConnected = inject<Ref<boolean>>('wsConnected') as Ref<boolean>
 const wsObj = inject<{ get: () => WebSocket | null }>('ws')
 
 // 群列表
-const groups: Ref<(Group & { enabled: boolean })[]> = ref([])
+const groups: Ref<(Group & { enabled?: boolean })[]> = ref([])
 const loading: Ref<boolean> = ref(false)
 const newGroupId: Ref<number | undefined> = ref(undefined)
 const saving: Ref<boolean> = ref(false)
+// 添加与筛选
+const addType: Ref<'group' | 'private'> = ref('group')
+const typeFilter: Ref<'all' | 'group' | 'private'> = ref('all')
+const filteredGroups = computed(() => {
+  if (typeFilter.value === 'all') return groups.value
+  return groups.value.filter(g =>
+      typeFilter.value === 'private' ? isPrivateSession(g) : !isPrivateSession(g))
+})
 
-// 当前查看聊天记录的群
-const selectedGroup: Ref<number | null> = ref(null)
+// 会话 ID 的字符串形式（私聊会话 ID 带标志位，超过 JS Number 安全范围，须以字符串操作）
+const sessionKey = (g: Group): string => g.groupIdStr ?? String(g.groupId)
+const isPrivateSession = (g: Group): boolean => g.sessionType === 'private'
+const sessionLabel = (g: Group): string =>
+    isPrivateSession(g)
+        ? g.groupName ? `${g.groupName} (${g.userId ?? ''})` : `私聊 ${g.userId ?? ''}`
+        : g.groupName || `群 ${g.groupId}`
+
+// 当前查看聊天记录的会话
+const selectedGroup: Ref<string | null> = ref(null)
 const selectedGroupName: Ref<string> = ref('')
 const chatRecords: Ref<(ChatMessage & { id: number })[]> = ref([])
 const chatContainer: Ref<HTMLDivElement | null> = ref(null)
@@ -29,7 +45,7 @@ const editingId: Ref<number | null> = ref(null)
 const editContent: Ref<string> = ref('')
 
 // 记忆弹窗
-const memoryGroupId: Ref<number | null> = ref(null)
+const memoryGroupId: Ref<string | null> = ref(null)
 const memoryGroupName: Ref<string> = ref('')
 const groupMemory: Ref<string> = ref('')
 const memoryLoading: Ref<boolean> = ref(false)
@@ -59,22 +75,25 @@ const loadGroups = async (): Promise<void> => {
   }
 }
 
-// 添加群
+// 添加会话（群聊按群号，私聊按 QQ 号，私聊会话 ID 由后端构造）
 const addGroup = async (): Promise<void> => {
   if (!newGroupId.value) {
-    showToast!('请输入群号', true)
+    showToast!(addType.value === 'private' ? '请输入QQ号' : '请输入群号', true)
     return
   }
   saving.value = true
   try {
+    const body = addType.value === 'private'
+        ? {sessionType: 'private', userId: newGroupId.value}
+        : {groupId: newGroupId.value}
     const resp = await fetch('/admin/api/group', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({groupId: newGroupId.value})
+      body: JSON.stringify(body)
     })
     const data: ApiResponse = await resp.json()
     if (data.success) {
-      showToast!('群已添加')
+      showToast!('会话已添加')
       newGroupId.value = undefined
       await loadGroups()
     } else {
@@ -86,25 +105,25 @@ const addGroup = async (): Promise<void> => {
 }
 
 // 切换启用状态
-const toggleGroup = async (groupId: number): Promise<void> => {
+const toggleGroup = async (groupId: string): Promise<void> => {
   const resp = await fetch(`/admin/api/group/${groupId}/toggle`, {method: 'POST'})
   const data: ApiResponse = await resp.json()
   if (data.success) {
-    const group = groups.value.find(g => g.groupId === groupId)
+    const group = groups.value.find(g => sessionKey(g) === groupId)
     if (group) {
       group.enabled = !group.enabled
-      showToast!(group.enabled ? '群已启用' : '群已禁用')
+      showToast!(group.enabled ? '已启用' : '已禁用')
     }
   }
 }
 
 // 删除群
-const removeGroup = async (groupId: number): Promise<void> => {
-  if (!confirm('确定要删除该群吗？聊天记录将保留。')) return
+const removeGroup = async (groupId: string): Promise<void> => {
+  if (!confirm('确定要删除该会话吗？聊天记录将保留。')) return
   const resp = await fetch(`/admin/api/group/${groupId}`, {method: 'DELETE'})
   const data: ApiResponse = await resp.json()
   if (data.success) {
-    showToast!('群已删除')
+    showToast!('已删除')
     await loadGroups()
   }
 }
@@ -119,21 +138,21 @@ const refreshAllGroupNames = async (): Promise<void> => {
   }
 }
 
-// 选择群查看聊天记录
-const selectGroup = async (groupId: number, groupName: string): Promise<void> => {
-  selectedGroup.value = groupId
-  selectedGroupName.value = groupName
+// 选择会话查看聊天记录
+const selectGroup = async (sessionId: string, sessionName: string): Promise<void> => {
+  selectedGroup.value = sessionId
+  selectedGroupName.value = sessionName
   chatLoading.value = true
   chatRecords.value = []
 
   try {
-    const resp = await fetch(`/admin/api/chat-records/${groupId}?limit=200`)
+    const resp = await fetch(`/admin/api/chat-records/${sessionId}?limit=200`)
     chatRecords.value = await resp.json()
 
-    // 订阅 WebSocket
+    // 订阅 WebSocket（字符串形式传递，后端可正确解析大数）
     const ws = wsObj!.get()
     if (ws && wsConnected.value) {
-      ws.send(JSON.stringify({action: 'subscribe', groupId}))
+      ws.send(JSON.stringify({action: 'subscribe', groupId: sessionId}))
     }
   } finally {
     chatLoading.value = false
@@ -219,14 +238,14 @@ const clearGroupRecords = async (): Promise<void> => {
 }
 
 // 查看记忆
-const viewMemory = async (groupId: number, groupName: string): Promise<void> => {
-  memoryGroupId.value = groupId
-  memoryGroupName.value = groupName || `群 ${groupId}`
+const viewMemory = async (sessionId: string, sessionName: string): Promise<void> => {
+  memoryGroupId.value = sessionId
+  memoryGroupName.value = sessionName
   memoryLoading.value = true
   groupMemory.value = ''
 
   try {
-    const resp = await fetch(`/admin/api/memory/${groupId}`)
+    const resp = await fetch(`/admin/api/memory/${sessionId}`)
     const data = await resp.json()
     groupMemory.value = data.memory || ''
   } finally {
@@ -309,40 +328,56 @@ onUnmounted(restoreWebSocket)
 <template>
   <div>
     <div class="page-header">
-      <h1 class="page-title">群管理</h1>
-      <p class="page-subtitle">管理 Bot 启用的群、群记忆与聊天记录</p>
+      <h1 class="page-title">会话管理</h1>
+      <p class="page-subtitle">管理 Bot 启用的群聊与私聊会话、记忆与聊天记录</p>
     </div>
 
     <template v-if="!selectedGroup">
-      <!-- 添加群 -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">添加群</h3>
+      <!-- 添加会话 -->
+      <div class="card" style="padding: 12px 16px; margin-bottom: 16px;">
+        <div class="card-header" style="padding: 0 0 12px 0; margin-bottom: 0;">
+          <h3 class="card-title" style="font-size: 15px; margin-bottom: 0;">添加会话</h3>
         </div>
-        <div style="display: flex; gap: 12px; align-items: flex-end;">
-          <div class="form-group" style="flex: 1; max-width: 300px; margin: 0;">
-            <label class="form-label">群号</label>
-            <input v-model.number="newGroupId" class="form-input" placeholder="输入群号" type="number">
+        <div style="display: flex; gap: 12px; align-items: flex-end; margin-bottom: 8px;">
+          <div class="form-group" style="width: 140px; margin: 0;">
+            <label class="form-label" style="margin-bottom: 4px;">类型</label>
+            <select v-model="addType" class="form-input" style="height: 36px; padding: 0 8px; font-size: 13px;">
+              <option value="group">群聊</option>
+              <option value="private">私聊</option>
+            </select>
           </div>
-          <button :disabled="saving" class="btn btn-success" @click="addGroup">
-            {{ saving ? '添加中...' : '添加群' }}
+          <div class="form-group" style="flex: 1; max-width: 300px; margin: 0;">
+            <label class="form-label" style="margin-bottom: 4px;">{{ addType === 'private' ? 'QQ号' : '群号' }}</label>
+            <input v-model.number="newGroupId" :placeholder="addType === 'private' ? '输入QQ号' : '输入群号'"
+                   class="form-input" type="number" style="height: 36px; padding: 0 8px; font-size: 13px;">
+          </div>
+          <button :disabled="saving" class="btn btn-success" style="height: 36px; line-height: 36px; padding: 0 16px;" @click="addGroup">
+            {{ saving ? '添加中...' : '添加' }}
           </button>
         </div>
       </div>
 
-      <!-- 群列表 -->
+      <!-- 会话列表 -->
       <div class="card">
         <div class="card-header">
           <div style="display: flex; gap: 12px; align-items: center;">
-            <h3 class="card-title">群列表</h3>
+            <h3 class="card-title">会话列表</h3>
             <div :class="{ connected: wsConnected, disconnected: !wsConnected }" class="connection-status">
               <span class="dot"></span>
               {{ wsConnected ? '实时连接' : '未连接' }}
             </div>
           </div>
           <div style="display: flex; gap: 8px; align-items: center;">
-            <span style="color: var(--text-secondary); font-size: 13px;">共 {{ groups.length }} 个群</span>
-            <button class="btn btn-secondary btn-sm" @click="refreshAllGroupNames">刷新群名</button>
+            <div class="filter-tabs">
+              <button :class="{ active: typeFilter === 'all' }" class="filter-tab"
+                      @click="typeFilter = 'all'">全部</button>
+              <button :class="{ active: typeFilter === 'group' }" class="filter-tab"
+                      @click="typeFilter = 'group'">群聊</button>
+              <button :class="{ active: typeFilter === 'private' }" class="filter-tab"
+                      @click="typeFilter = 'private'">私聊</button>
+            </div>
+            <span style="color: var(--text-secondary); font-size: 13px;">共 {{ filteredGroups.length }} 个会话</span>
+            <button class="btn btn-secondary btn-sm" @click="refreshAllGroupNames">刷新会话名称</button>
           </div>
         </div>
         <div class="table-container">
@@ -351,10 +386,10 @@ onUnmounted(restoreWebSocket)
               <p>加载中...</p>
             </div>
           </template>
-          <template v-else-if="groups.length === 0">
+          <template v-else-if="filteredGroups.length === 0">
             <div class="empty-state">
               <div class="empty-icon">👥</div>
-              <p>暂无群，请添加群号</p>
+              <p>暂无会话，请添加或由用户在私聊中发送 /enable 启用</p>
             </div>
           </template>
           <template v-else>
@@ -362,41 +397,44 @@ onUnmounted(restoreWebSocket)
               <thead>
               <tr>
                 <th style="width: 60px;">状态</th>
-                <th>群名称</th>
-                <th style="width: 120px;">群号</th>
+                <th>会话</th>
+                <th style="width: 120px;">群号/QQ号</th>
                 <th style="width: 70px;">消息</th>
                 <th style="width: 190px;">操作</th>
               </tr>
               </thead>
               <tbody>
-              <tr v-for="group in groups" :key="group.groupId" :class="{ 'row-disabled': !group.enabled }"
+              <tr v-for="group in filteredGroups" :key="sessionKey(group)" :class="{ 'row-disabled': !group.enabled }"
                   class="group-row"
-                  @click="selectGroup(group.groupId, group.groupName || String(group.groupId))">
+                  @click="selectGroup(sessionKey(group), sessionLabel(group))">
                 <td>
                   <span
                       :class="group.enabled ? 'status-enabled' : 'status-disabled'"
                       :title="group.enabled ? '点击禁用' : '点击启用'"
                       class="status-badge"
-                      @click.stop="toggleGroup(group.groupId)"
+                      @click.stop="toggleGroup(sessionKey(group))"
                   >
                     {{ group.enabled ? '启用' : '禁用' }}
                   </span>
                 </td>
                 <td>
-                  <strong v-if="group.groupName">{{ group.groupName }}</strong>
+                  <strong v-if="isPrivateSession(group)">{{ group.groupName || '私聊' }}</strong>
+                  <strong v-else-if="group.groupName">{{ group.groupName }}</strong>
                   <span v-else style="color: var(--text-light)">群 {{ group.groupId }}</span>
                 </td>
-                <td><code>{{ group.groupId }}</code></td>
+                <td><code :title="isPrivateSession(group) ? `QQ ${group.userId}` : ''">{{
+                    isPrivateSession(group) ? group.userId : group.groupId
+                  }}</code></td>
                 <td>{{ group.messageCount || 0 }}</td>
                 <td style="white-space: nowrap;">
                   <button class="btn btn-primary btn-sm"
-                          @click.stop="selectGroup(group.groupId, group.groupName || String(group.groupId))">记录
+                          @click.stop="selectGroup(sessionKey(group), sessionLabel(group))">记录
                   </button>
                   <button class="btn btn-secondary btn-sm" style="margin-left: 6px;"
-                          @click.stop="viewMemory(group.groupId, group.groupName || '')">记忆
+                          @click.stop="viewMemory(sessionKey(group), sessionLabel(group))">记忆
                   </button>
                   <button class="btn btn-danger btn-sm" style="margin-left: 6px;"
-                          @click.stop="removeGroup(group.groupId)">删除
+                          @click.stop="removeGroup(sessionKey(group))">删除
                   </button>
                 </td>
               </tr>
@@ -469,7 +507,7 @@ onUnmounted(restoreWebSocket)
     <div v-if="memoryGroupId" class="modal-overlay" @click.self="closeMemory">
       <div class="modal-content">
         <div class="modal-header">
-          <h2>{{ memoryGroupName }} - 群记忆</h2>
+          <h2>{{ memoryGroupName }} - 会话记忆</h2>
           <button class="btn btn-secondary btn-sm" @click="closeMemory">关闭</button>
         </div>
         <div class="modal-body">
@@ -550,6 +588,35 @@ onUnmounted(restoreWebSocket)
 
 .group-row {
   cursor: pointer;
+}
+
+.filter-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.filter-tab {
+  border: none;
+  background: none;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.2s;
+}
+
+.filter-tab:hover {
+  color: var(--text-primary);
+}
+
+.filter-tab.active {
+  background: var(--card-bg);
+  color: var(--primary);
+  font-weight: 600;
 }
 
 .group-row:hover td {

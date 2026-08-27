@@ -15,7 +15,7 @@ namespace LittleMeowBot {
     struct LogSubscription {
         bool all = true;
         bool systemOnly = false;
-        std::optional<uint64_t> groupId;
+        std::optional<uint64_t> sessionId;
         std::optional<std::string> level;
         std::string keyword;
     };

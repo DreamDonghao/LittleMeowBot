@@ -14,13 +14,13 @@ namespace LittleMeowBot {
         /// @param json RAGFlow API 返回的 JSON
         /// @return 格式化后的检索结果文本
         [[nodiscard]] std::string parseSearchResult(
-            const Json::Value &json, std::optional<uint64_t> groupId);
+            const Json::Value &json, std::optional<uint64_t> sessionId);
     }
 
     drogon::Task<std::optional<std::string> > RAGFlowClient::searchKnowledge(
         const std::string &question,
         int topK,
-        std::optional<uint64_t> groupId) {
+        std::optional<uint64_t> sessionId) {
         const auto &kbConfig = Config::instance().knowledgeBase;
 
         // 检查是否启用 RAGFlow
@@ -44,14 +44,14 @@ namespace LittleMeowBot {
         body["top_k"] = topK;
 
         const auto resp = co_await HttpUtil::send("[RAGFlow]", baseUrl, "/api/v1/retrieval",
-                                                  drogon::Post, body, apiKey, 30.0, groupId);
+                                                  drogon::Post, body, apiKey, 30.0, sessionId);
         if (!resp) {
             co_return std::nullopt;
         }
 
         if ((*resp)->getStatusCode() != drogon::k200OK) {
-            if (groupId) {
-                Logger::group(*groupId).error("[RAGFlow] 知识库检索失败: status={}",
+            if (sessionId) {
+                Logger::session(*sessionId).error("[RAGFlow] 知识库检索失败: status={}",
                                               static_cast<int>((*resp)->getStatusCode()));
             } else {
                 spdlog::error("[RAGFlow] 知识库检索失败: status={}",
@@ -62,15 +62,15 @@ namespace LittleMeowBot {
 
         const auto json = (*resp)->getJsonObject();
         if (!json) {
-            if (groupId) {
-                Logger::group(*groupId).error("RAGFlow 响应解析失败");
+            if (sessionId) {
+                Logger::session(*sessionId).error("RAGFlow 响应解析失败");
             } else {
                 spdlog::error("RAGFlow 响应解析失败");
             }
             co_return std::nullopt;
         }
 
-        std::string result = parseSearchResult(*json, groupId);
+        std::string result = parseSearchResult(*json, sessionId);
         if (result.empty()) {
             co_return std::nullopt;
         }
@@ -81,7 +81,7 @@ namespace LittleMeowBot {
     drogon::Task<std::optional<std::string> > RAGFlowClient::searchMemory(
         const std::string &question,
         int topK,
-        std::optional<uint64_t> groupId) {
+        std::optional<uint64_t> sessionId) {
         const auto &kbConfig = Config::instance().knowledgeBase;
 
         // 检查是否启用 RAGFlow
@@ -105,14 +105,14 @@ namespace LittleMeowBot {
         body["top_k"] = topK;
 
         const auto resp = co_await HttpUtil::send("[RAGFlow]", baseUrl, "/api/v1/retrieval",
-                                                  drogon::Post, body, apiKey, 30.0, groupId);
+                                                  drogon::Post, body, apiKey, 30.0, sessionId);
         if (!resp) {
             co_return std::nullopt;
         }
 
         if ((*resp)->getStatusCode() != drogon::k200OK) {
-            if (groupId) {
-                Logger::group(*groupId).error("[RAGFlow] 记忆库请求失败: status={}",
+            if (sessionId) {
+                Logger::session(*sessionId).error("[RAGFlow] 记忆库请求失败: status={}",
                                               static_cast<int>((*resp)->getStatusCode()));
             } else {
                 spdlog::error("[RAGFlow] 记忆库请求失败: status={}",
@@ -126,11 +126,11 @@ namespace LittleMeowBot {
             co_return std::nullopt;
         }
 
-        co_return parseSearchResult(*json, groupId);
+        co_return parseSearchResult(*json, sessionId);
     }
 
     drogon::Task<bool> RAGFlowClient::addMemory(
-        const std::string &content, std::optional<uint64_t> groupId) {
+        const std::string &content, std::optional<uint64_t> sessionId) {
         const auto &kbConfig = Config::instance().knowledgeBase;
 
         // 检查是否启用 RAGFlow
@@ -160,13 +160,13 @@ namespace LittleMeowBot {
         const auto resp = co_await HttpUtil::send("[RAGFlow]", baseUrl,
                                                   fmt::format("/api/v1/datasets/{}/documents/{}/chunks",
                                                               memoryDatasetId, memoryDocumentId),
-                                                  drogon::Post, body, apiKey, 30.0, groupId);
+                                                  drogon::Post, body, apiKey, 30.0, sessionId);
         if (!resp) {
             co_return false;
         }
         if ((*resp)->getStatusCode() != drogon::k200OK) {
-            if (groupId) {
-                Logger::group(*groupId).error("[RAGFlow] 添加记忆失败: status={}",
+            if (sessionId) {
+                Logger::session(*sessionId).error("[RAGFlow] 添加记忆失败: status={}",
                                               static_cast<int>((*resp)->getStatusCode()));
             } else {
                 spdlog::error("[RAGFlow] 添加记忆失败: status={}",
@@ -180,8 +180,8 @@ namespace LittleMeowBot {
             int code = (*respJson)["code"].asInt();
             if (code != 0) {
                 std::string msg = respJson->get("message", "").asString();
-                if (groupId) {
-                    Logger::group(*groupId).error("RAGFlow 添加记忆失败: code={} message={}", code, msg);
+                if (sessionId) {
+                    Logger::session(*sessionId).error("RAGFlow 添加记忆失败: code={} message={}", code, msg);
                 } else {
                     spdlog::error("RAGFlow 添加记忆失败: code={} message={}", code, msg);
                 }
@@ -189,8 +189,8 @@ namespace LittleMeowBot {
             }
         }
 
-        if (groupId) {
-            Logger::group(*groupId).info("RAGFlow 记忆已添加: {} 字符", content.size());
+        if (sessionId) {
+            Logger::session(*sessionId).info("RAGFlow 记忆已添加: {} 字符", content.size());
         } else {
             spdlog::info("RAGFlow 记忆已添加: {} 字符", content.size());
         }
@@ -198,10 +198,10 @@ namespace LittleMeowBot {
     }
 
     namespace {
-        std::string parseSearchResult(const Json::Value &json, const std::optional<uint64_t> groupId) {
+        std::string parseSearchResult(const Json::Value &json, const std::optional<uint64_t> sessionId) {
             if (!json.isMember("data") || !json["data"].isMember("chunks")) {
-                if (groupId) {
-                    Logger::group(*groupId).warn("RAGFlow 返回格式异常");
+                if (sessionId) {
+                    Logger::session(*sessionId).warn("RAGFlow 返回格式异常");
                 } else {
                     spdlog::warn("RAGFlow 返回格式异常");
                 }

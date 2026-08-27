@@ -19,7 +19,7 @@
 namespace LittleMeowBot {
     /// @brief 工具执行上下文（线程局部存储）
     struct ToolContext {
-        uint64_t groupId = 0;
+        uint64_t sessionId = 0;
         std::string groupName;
     };
 
@@ -56,7 +56,7 @@ namespace LittleMeowBot {
 
         /// @brief 执行工具（异步）
         [[nodiscard]] drogon::Task<std::string> executeTool(const std::string &name, const Json::Value &args,
-                                                            uint64_t groupId = 0) const;
+                                                            uint64_t sessionId = 0) const;
 
         /// @brief 检查工具是否存在
         [[nodiscard]] bool hasTool(const std::string &name) const;

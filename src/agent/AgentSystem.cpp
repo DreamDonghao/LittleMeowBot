@@ -43,103 +43,104 @@ namespace LittleMeowBot {
             co_return std::nullopt;
         }
 
-        const uint64_t groupId = message.getGroupId();
+        const uint64_t sessionId = message.getSessionId();
         if (!m_initialized) {
-            Logger::group(groupId).error("AgentSystem 未初始化");
+            Logger::session(sessionId).error("AgentSystem 未初始化");
             co_return std::nullopt;
         }
 
-        auto generation = tryStartProcessing(groupId);
+        auto generation = tryStartProcessing(sessionId);
         if (generation == 0) {
-            // @消息：取消当前非@消息的处理，排队等待
-            if (message.atMe()) {
-                cancelProcessing(groupId);
+            // @消息/私聊消息：取消当前非@消息的处理，排队等待
+            if (message.atMe() || message.isPrivate()) {
+                cancelProcessing(sessionId);
                 do {
                     co_await drogon::sleepCoro(drogon::app().getLoop(), std::chrono::milliseconds(50));
-                    generation = tryStartProcessing(groupId);
+                    generation = tryStartProcessing(sessionId);
                 } while (generation == 0);
             } else {
-                Logger::group(groupId).debug("正在处理中，跳过");
+                Logger::session(sessionId).debug("正在处理中，跳过");
                 co_return std::nullopt;
             }
         }
 
         struct ProcessingGuard {
             AgentSystem *sys;
-            uint64_t gid;
-            ~ProcessingGuard() { sys->finishProcessing(gid); }
-        } guard{.sys = this, .gid = groupId};
+            uint64_t sid;
+            ~ProcessingGuard() { sys->finishProcessing(sid); }
+        } guard{.sys = this, .sid = sessionId};
 
-        Logger::group(groupId).info("======== 开始处理消息 ========");
+        Logger::session(sessionId).info("======== 开始处理消息 ========");
 
         // ========== Layer 1: Router Agent（判断 + 规划）==========
-        Logger::group(groupId).info("[Router] 分析消息...");
+        Logger::session(sessionId).info("[Router] 分析消息...");
 
-        const auto decision = co_await route(
+        auto decision = co_await route(
             chatRecords, memory, message);
 
-        Logger::group(groupId).info("[Router] 结果: {} | shouldReply={} | thinking={} | maxLength={}",
-                                    decision.action, decision.shouldReply, decision.enableThinking, decision.maxLength);
+        // 会话类型随决策传给 Executor（选择对应人设提示词）
+        decision.isPrivate = message.isPrivate();
+
+        Logger::session(sessionId).info("[Router] 结果: {} | shouldReply={} | thinking={} | maxLength={}",
+                                      decision.action, decision.shouldReply, decision.enableThinking, decision.maxLength);
 
         // 检查处理代际是否被 @消息取消
-        if (!isCurrentGeneration(groupId, generation)) {
-            Logger::group(groupId).info("[Router] 处理被 @消息中断");
+        if (!isCurrentGeneration(sessionId, generation)) {
+            Logger::session(sessionId).info("[Router] 处理被新消息中断");
             co_return std::nullopt;
         }
 
         // Router 决定不回复
         if (!decision.shouldReply) {
-            Logger::group(groupId).info("[Router] 决定不回复: {}", decision.reason);
+            Logger::session(sessionId).info("[Router] 决定不回复: {}", decision.reason);
             co_return std::nullopt;
         }
 
         // ========== Layer 2: Executor Agent（执行回复）==========
-        Logger::group(groupId).info("[Executor] 执行回复...");
+        Logger::session(sessionId).info("[Executor] 执行回复...");
 
         const auto reply = co_await execute(chatRecords, memory, decision);
 
         // 检查处理代际是否被 @消息取消
-        if (!isCurrentGeneration(groupId, generation)) {
-            Logger::group(groupId).info("[Executor] 处理被 @消息中断");
+        if (!isCurrentGeneration(sessionId, generation)) {
+            Logger::session(sessionId).info("[Executor] 处理被新消息中断");
             co_return std::nullopt;
         }
 
         if (!reply || !reply->shouldReply || reply->content.empty()) {
-            Logger::group(groupId).error("[Executor] 执行失败或无回复");
+            Logger::session(sessionId).error("[Executor] 执行失败或无回复");
             co_return std::nullopt;
         }
 
-        Logger::group(groupId).info("======== 处理完成 ========");
+        Logger::session(sessionId).info("======== 处理完成 ========");
         co_return cleanReplyContent(reply->content);
     }
 
-    uint64_t AgentSystem::tryStartProcessing(const uint64_t groupId) {
+    uint64_t AgentSystem::tryStartProcessing(const uint64_t sessionId) {
         std::lock_guard lock(m_processingMutex);
-        auto it = m_processingGroups.find(groupId);
-        if (it != m_processingGroups.end()) {
-            return 0; // 群正在处理中
+        if (const auto it = m_processingSessions.find(sessionId); it != m_processingSessions.end()) {
+            return 0; // 会话正在处理中
         }
-        const uint64_t gen = 1;
-        m_processingGroups[groupId] = gen;
+        constexpr uint64_t gen = 1;
+        m_processingSessions[sessionId] = gen;
         return gen;
     }
 
-    void AgentSystem::cancelProcessing(const uint64_t groupId) {
+    void AgentSystem::cancelProcessing(const uint64_t sessionId) {
         std::lock_guard lock(m_processingMutex);
-        auto it = m_processingGroups.find(groupId);
-        if (it != m_processingGroups.end()) {
+        if (const auto it = m_processingSessions.find(sessionId); it != m_processingSessions.end()) {
             ++it->second; // 递增代际，通知当前处理者中断
         }
     }
 
-    bool AgentSystem::isCurrentGeneration(const uint64_t groupId, const uint64_t generation) {
+    bool AgentSystem::isCurrentGeneration(const uint64_t sessionId, const uint64_t generation) {
         std::lock_guard lock(m_processingMutex);
-        auto it = m_processingGroups.find(groupId);
-        return it != m_processingGroups.end() && it->second == generation;
+        const auto it = m_processingSessions.find(sessionId);
+        return it != m_processingSessions.end() && it->second == generation;
     }
 
-    void AgentSystem::finishProcessing(const uint64_t groupId) {
+    void AgentSystem::finishProcessing(const uint64_t sessionId) {
         std::lock_guard lock(m_processingMutex);
-        m_processingGroups.erase(groupId);
+        m_processingSessions.erase(sessionId);
     }
 }

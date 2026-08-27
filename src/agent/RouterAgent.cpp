@@ -4,14 +4,21 @@
 #include <agent/RouterAgent.hpp>
 #include <api/ApiClient.hpp>
 #include <config/Config.hpp>
+#include <model/QQMessage.hpp>
+#include <model/ChatRecordManager.hpp>
 #include <service/PromptService.hpp>
 #include <util/HttpUtil.hpp>
+#include <util/Logger.hpp>
 #include <spdlog/spdlog.h>
 #include <fmt/core.h>
-#include <util/Logger.hpp>
 #include <regex>
 #include <ranges>
 #include <algorithm>
+#include <string>
+#include <deque>
+#include <string>
+#include <model/QQMessage.hpp>
+#include <model/ChatRecordManager.hpp>
 
 namespace LittleMeowBot {
     namespace {
@@ -24,7 +31,7 @@ namespace LittleMeowBot {
             if (rawMsg.length() <= 2) return true;
 
             // 纯表情包
-            static const std::regex facePattern("^\\[CQ:face.*\\]$");
+            static const std::regex facePattern(R"(^\[CQ:face.*\]$)");
             if (rawMsg.find("[CQ:face") != std::string::npos
                 && std::regex_match(rawMsg, facePattern)) {
                 return true;
@@ -51,8 +58,9 @@ namespace LittleMeowBot {
             std::string context = "【聊天记录】（最后一条是当前消息）\n";
             bool spokeInWindow = false;
             size_t silentCount = 0;
-            for (size_t i = startIdx; i < records.size(); ++i) {
-                const auto &record = records[i];
+
+            // 使用范围循环简化代码
+            for (const auto &record : records | std::views::drop(startIdx)) {
                 if (record["role"].asString() == "assistant") {
                     spokeInWindow = true;
                     silentCount = 0;
@@ -69,23 +77,23 @@ namespace LittleMeowBot {
             const std::string &botName = Config::instance().botName;
             if (spokeInWindow) {
                 context += fmt::format("\n【发言间隔】{} 距上次发言已隔 {} 条消息。\n", botName, silentCount);
-                Logger::group(chatRecords.getGroupId()).info("[Router] 发言间隔: 距上次发言 {} 条消息", silentCount);
+                Logger::session(chatRecords.getSessionId()).info("[Router] 发言间隔: 距上次发言 {} 条消息", silentCount);
             } else {
                 const size_t windowLen = records.size() - startIdx;
                 context += fmt::format("\n【发言间隔】聊天记录中看不到 {} 的发言，已沉默至少 {} 条消息。\n", botName, windowLen);
-                Logger::group(chatRecords.getGroupId()).info("[Router] 发言间隔: 窗口内无发言记录(至少已沉默 {} 条)", windowLen);
+                Logger::session(chatRecords.getSessionId()).info("[Router] 发言间隔: 窗口内无发言记录(至少已沉默 {} 条)", windowLen);
             }
             return context;
         }
 
         /// @brief 解析 LLM 响应
         [[nodiscard]] std::optional<RouterDecision> parseResponse(
-            const std::string &content, const uint64_t groupId) {
+            const std::string &content, const uint64_t sessionId) {
             // 提取 JSON
             size_t start = content.find('{');
             size_t end = content.rfind('}');
             if (start == std::string::npos || end == std::string::npos) {
-                Logger::group(groupId).error("[Router] 未找到JSON: {}", content);
+                Logger::session(sessionId).error("[Router] 未找到JSON: {}", content);
                 return std::nullopt;
             }
 
@@ -93,7 +101,7 @@ namespace LittleMeowBot {
 
             Json::Value root;
             if (Json::Reader reader; !reader.parse(jsonStr, root)) {
-                Logger::group(groupId).error("[Router] JSON解析失败: {}", jsonStr);
+                Logger::session(sessionId).error("[Router] JSON解析失败: {}", jsonStr);
                 return std::nullopt;
             }
 
@@ -126,13 +134,15 @@ namespace LittleMeowBot {
         /// @brief 构建 LLM Prompt
         Json::Value buildPrompt(
             const ChatRecordManager &chatRecords,
-            const MemoryManager &memory) {
+            const MemoryManager &memory,
+            const bool isPrivate) {
             Json::Value messages;
 
-            // System Prompt（数据库存储，管理后台可编辑）
+            // System Prompt（数据库存储，管理后台可编辑；私聊使用独立的私聊路由提示词）
             Json::Value systemMsg;
             systemMsg["role"] = "system";
-            systemMsg["content"] = PromptService::getRouterSystemPrompt();
+            systemMsg["content"] = isPrivate ? PromptService::getRouterPrivateSystemPrompt()
+                                             : PromptService::getRouterSystemPrompt();
             messages.append(systemMsg);
 
             // 短期记忆
@@ -155,10 +165,11 @@ namespace LittleMeowBot {
         /// @brief LLM 路由与规划（合并判断 + 策略）
         [[nodiscard]] drogon::Task<std::optional<RouterDecision> > llmRouteAndPlan(
             const ChatRecordManager &chatRecords,
-            const MemoryManager &memory) {
+            const MemoryManager &memory,
+            const bool isPrivate) {
             const auto &config = Config::instance();
 
-            const Json::Value messages = buildPrompt(chatRecords, memory);
+            const Json::Value messages = buildPrompt(chatRecords, memory, isPrivate);
 
             Json::Value body;
             body["model"] = config.router.model;
@@ -172,24 +183,24 @@ namespace LittleMeowBot {
 
             const auto resp = co_await HttpUtil::send("[Router]", config.router.baseUrl, config.router.path,
                                                       drogon::Post, body, config.router.apiKey, 90.0,
-                                                      chatRecords.getGroupId());
+                                                      chatRecords.getSessionId());
             if (!resp) {
                 co_return std::nullopt;
             }
 
             const auto json = (*resp)->getJsonObject();
             if ((*resp)->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
-                Logger::group(chatRecords.getGroupId()).error("[Router] LLM请求失败: status={}",
+                Logger::session(chatRecords.getSessionId()).error("[Router] LLM请求失败: status={}",
                                                               static_cast<int>((*resp)->getStatusCode()));
                 co_return std::nullopt;
             }
 
-            ApiClient::logUsage(*json, config.router.model, "router", chatRecords.getGroupId());
+            ApiClient::logUsage(*json, config.router.model, "router", chatRecords.getSessionId());
 
             const std::string content = (*json)["choices"][0]["message"]["content"].asString();
-            Logger::group(chatRecords.getGroupId()).debug("[Router] LLM响应: {}", content);
+            Logger::session(chatRecords.getSessionId()).debug("[Router] LLM响应: {}", content);
 
-            co_return parseResponse(content, chatRecords.getGroupId());
+            co_return parseResponse(content, chatRecords.getSessionId());
         }
 
         /// @brief 构造硬规则决策结果
@@ -211,34 +222,34 @@ namespace LittleMeowBot {
         const QQMessage &message) {
         // ========== Step 1: 硬规则检查（无需 LLM）==========
 
-        // 1.1 @提及检测 → 高优先级回复
+        // 1.1 @提及检测 → 高优先级回复（私聊中每条消息都是直接对机器人说的，不适用）
         if (message.atMe()) {
-            Logger::group(chatRecords.getGroupId()).info("[Router] @提及 → 高优先级回复");
+            Logger::session(chatRecords.getSessionId()).info("[Router] @提及 → 高优先级回复");
             co_return makeDecision(RouterDecision::Action::REPLY, "用户@提及", 100, true);
         }
 
-        // 1.2 刷屏检测 → 跳过
-        if (checkSpam(message)) {
-            Logger::group(chatRecords.getGroupId()).info("[Router] 刷屏消息 → 跳过");
+        // 1.2 刷屏检测 → 跳过（仅群聊；私聊中短句如"嗯""哈哈"也应对话，放宽检查）
+        if (!message.isPrivate() && checkSpam(message)) {
+            Logger::session(chatRecords.getSessionId()).info("[Router] 刷屏消息 → 跳过");
             co_return makeDecision(RouterDecision::Action::SKIP, "刷屏/纯表情");
         }
 
         // 1.3 自身消息检测 → 跳过
         if (message.getSelfQQNumber() == message.getSenderQQNumber()) {
-            Logger::group(chatRecords.getGroupId()).info("[Router] 自身消息 → 跳过");
+            Logger::session(chatRecords.getSessionId()).info("[Router] 自身消息 → 跳过");
             co_return makeDecision(RouterDecision::Action::SKIP, "机器人自己发送的消息");
         }
 
-        // ========== Step 2: LLM 路由与规划 ==========
-        auto llmDecision = co_await llmRouteAndPlan(chatRecords, memory);
+        // ========== Step 2: LLM 路由与规划（私聊使用私聊提示词）==========
+        auto llmDecision = co_await llmRouteAndPlan(chatRecords, memory, message.isPrivate());
 
         if (!llmDecision) {
             // LLM 失败时默认回复（保守策略）
-            Logger::group(chatRecords.getGroupId()).warn("[Router] LLM 失败，默认回复");
+            Logger::session(chatRecords.getSessionId()).warn("[Router] LLM 失败，默认回复");
             co_return makeDecision(RouterDecision::Action::REPLY, "LLM调用失败，保守回复");
         }
 
-        Logger::group(chatRecords.getGroupId()).info("[Router] 决策: {} ({})",
+        Logger::session(chatRecords.getSessionId()).info("[Router] 决策: {} ({})",
                                                      llmDecision->action, llmDecision->reason);
 
         co_return llmDecision.value();

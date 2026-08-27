@@ -80,18 +80,20 @@ onMounted(loadAdmins)
       <p class="page-subtitle">添加或移除Bot管理员</p>
     </div>
 
-    <div class="card">
-      <div class="card-header">
-        <h3 class="card-title">添加管理员</h3>
+    <div class="card" style="padding: 12px 16px; margin-bottom: 16px;">
+      <div class="card-header" style="padding: 0 0 12px 0; margin-bottom: 0;">
+        <h3 class="card-title" style="font-size: 15px; margin-bottom: 0;">添加管理员</h3>
       </div>
-      <div class="form-group">
-        <label class="form-label">QQ号</label>
-        <input v-model.number="newAdminQQ" class="form-input" placeholder="输入QQ号" style="max-width:300px"
-               type="number">
+      <div style="display: flex; gap: 12px; align-items: flex-end;">
+        <div class="form-group" style="flex: 1; max-width: 300px; margin: 0;">
+          <label class="form-label" style="margin-bottom: 4px;">QQ号</label>
+          <input v-model.number="newAdminQQ" class="form-input" placeholder="输入QQ号" style="height: 36px; padding: 0 8px; font-size: 13px;"
+                 type="number">
+        </div>
+        <button :disabled="saving" class="btn btn-success" style="height: 36px; line-height: 36px; padding: 0 16px;" @click="addAdmin">
+          {{ saving ? '添加中...' : '添加管理员' }}
+        </button>
       </div>
-      <button :disabled="saving" class="btn btn-success" @click="addAdmin">
-        {{ saving ? '添加中...' : '添加管理员' }}
-      </button>
     </div>
 
     <div class="card">

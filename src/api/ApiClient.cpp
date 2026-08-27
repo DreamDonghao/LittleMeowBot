@@ -34,18 +34,18 @@ namespace LittleMeowBot {
             float top_p,
             int max_tokens,
             const std::string &role,
-            std::optional<uint64_t> groupId) {
+            std::optional<uint64_t> sessionId) {
             const Json::Value body = buildModelReq(messages, model, temperature, top_p, max_tokens);
             const auto resp = co_await HttpUtil::send("[LLM]", base_url, path, drogon::Post, body, api_key, 90.0,
-                                                      groupId);
+                                                      sessionId);
             if (!resp) {
                 co_return std::nullopt;
             }
             const auto json = (*resp)->getJsonObject();
 
             if ((*resp)->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
-                if (groupId) {
-                    Logger::group(*groupId).error("[LLM] 请求出错: status={}",
+                if (sessionId) {
+                    Logger::session(*sessionId).error("[LLM] 请求出错: status={}",
                                                   static_cast<int>((*resp)->getStatusCode()));
                 } else {
                     spdlog::error("[LLM] 请求出错: status={}", static_cast<int>((*resp)->getStatusCode()));
@@ -53,12 +53,12 @@ namespace LittleMeowBot {
                 co_return std::nullopt;
             }
 
-            ApiClient::logUsage(*json, model, role, groupId);
+            ApiClient::logUsage(*json, model, role, sessionId);
 
             const auto &choices = (*json)["choices"];
             if (!choices.isArray() || choices.empty()) {
-                if (groupId) {
-                    Logger::group(*groupId).error("LLM 返回格式错误: choices 不是数组或为空");
+                if (sessionId) {
+                    Logger::session(*sessionId).error("LLM 返回格式错误: choices 不是数组或为空");
                 } else {
                     spdlog::error("LLM 返回格式错误: choices 不是数组或为空");
                 }
@@ -75,7 +75,7 @@ namespace LittleMeowBot {
         const float top_p,
         const int max_tokens,
         const std::string &role,
-        const std::optional<uint64_t> groupId) {
+        const std::optional<uint64_t> sessionId) {
         const auto &config = Config::instance();
         co_return co_await requestStr(
             messages,
@@ -87,12 +87,12 @@ namespace LittleMeowBot {
             top_p,
             max_tokens,
             role,
-            groupId
+            sessionId
         );
     }
 
     void ApiClient::logUsage(const Json::Value &responseJson, const std::string &model, const std::string &role,
-                             const std::optional<uint64_t> groupId) {
+                             const std::optional<uint64_t> sessionId) {
         if (!responseJson.isMember("usage")) return;
         const auto &usage = responseJson["usage"];
         int promptTokens = usage.get("prompt_tokens", 0).asInt();
@@ -114,7 +114,7 @@ namespace LittleMeowBot {
             }
         }
 
-        const auto log = groupId.has_value() ? std::optional<GroupLogger>(Logger::group(*groupId)) : std::nullopt;
+        const auto log = sessionId.has_value() ? std::optional<SessionLogger>(Logger::session(*sessionId)) : std::nullopt;
         if (promptTokens > 0) {
             float hitRate = static_cast<float>(cachedTokens) / static_cast<float>(promptTokens) * 100.0f;
             if (log) {
@@ -149,8 +149,8 @@ namespace LittleMeowBot {
         Json::Value evt;
         evt["role"] = role;
         evt["model"] = model;
-        if (groupId.has_value()) {
-            evt["groupId"] = static_cast<Json::UInt64>(*groupId);
+        if (sessionId.has_value()) {
+            evt["groupId"] = static_cast<Json::UInt64>(*sessionId);
         }
         WebSocketManager::instance().broadcastEvent("usage_updated", evt);
     }

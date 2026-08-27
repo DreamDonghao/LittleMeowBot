@@ -4,10 +4,10 @@
 #include <model/MemoryManager.hpp>
 
 namespace LittleMeowBot {
-    MemoryManager::MemoryManager(uint64_t groupId) : m_groupId(groupId) {
+    MemoryManager::MemoryManager(uint64_t sessionId) : m_sessionId(sessionId) {
     }
 
     std::string MemoryManager::getMemory() const {
-        return Database::instance().getShortTermMemory(m_groupId);
+        return Database::instance().getShortTermMemory(m_sessionId);
     }
 }

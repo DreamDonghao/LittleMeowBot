@@ -14,8 +14,8 @@
 /// @brief 记忆服务 - 短期记忆提取、合并与迁移逻辑
 namespace LittleMeowBot::MemoryService {
     /// @brief 窗口超限时提取记忆并滑动窗口（完整流程：提取+合并 → 原子写记忆+水位线 → 超限迁移）
-    /// @param groupId 群号
+    /// @param sessionId 会话 ID（私聊会话带标志位）
     /// @details 窗口条数超过 windowTriggerCount 时触发，删除至 windowKeepCount 条。
     ///          API 失败时水位线不推进，下条消息自动重试；判定"无"时正常推进水位线。
-    drogon::Task<> appendAndMergeMemory(uint64_t groupId);
+    drogon::Task<> appendAndMergeMemory(uint64_t sessionId);
 }

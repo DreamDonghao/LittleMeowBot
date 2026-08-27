@@ -56,9 +56,13 @@ export interface Admin {
 
 export interface Group {
     groupId: number
+    /** 会话 ID 的字符串形式（私聊会话 ID 带标志位，超过 Number 安全范围） */
+    groupIdStr?: string
     groupName: string
     messageCount: number
     enabled?: boolean
+    sessionType?: 'private'
+    userId?: number
 }
 
 export interface ChatMessage {
@@ -78,7 +82,8 @@ export interface LogEntry {
     timestamp: string
     level: string
     message: string
-    groupId?: number | null
+    /** 会话 ID 的字符串形式（私聊会话 ID 带标志位） */
+    groupId?: string | null
 }
 
 export interface LogQueryResult {

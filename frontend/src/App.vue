@@ -42,7 +42,7 @@ const dailyNavItems: NavItem[] = [
   {key: 'dashboard', label: '首页', icon: 'home'},
   {key: 'emojis', label: '表情库', icon: 'emojis'},
   {key: 'admins', label: '管理员', icon: 'admins'},
-  {key: 'groups', label: '群管理', icon: 'groups'},
+  {key: 'groups', label: '会话管理', icon: 'groups'},
   {key: 'logs', label: '运行日志', icon: 'logs'},
   {key: 'usage', label: '用量统计', icon: 'memory'}
 ]

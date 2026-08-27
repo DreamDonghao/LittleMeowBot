@@ -20,7 +20,7 @@
 
 namespace LittleMeowBot {
     /// @brief 群组配置结构
-    struct GroupConfig {
+    struct SessionConfig {
         uint64_t allMesCount = 0;
         uint64_t allCharCount = 0;
     };
@@ -40,43 +40,43 @@ namespace LittleMeowBot {
         //                      群组配置操作
         // ============================================================
 
-        GroupConfig getGroupConfig(uint64_t groupId) const;
+        SessionConfig getSessionConfig(uint64_t sessionId) const;
 
-        void saveGroupConfig(uint64_t groupId, const GroupConfig &config) const;
+        void saveSessionConfig(uint64_t sessionId, const SessionConfig &config) const;
 
-        void incrementMessageCount(uint64_t groupId, size_t charCount) const;
+        void incrementMessageCount(uint64_t sessionId, size_t charCount) const;
 
-        bool hasGroupConfig(uint64_t groupId) const;
+        bool hasSessionConfig(uint64_t sessionId) const;
 
         // ============================================================
         //                      聊天记录操作
         // ============================================================
 
-        void addChatRecord(uint64_t groupId, const std::string &role, const std::string &content) const;
+        void addChatRecord(uint64_t sessionId, const std::string &role, const std::string &content) const;
 
-        std::vector<Json::Value> getChatRecords(uint64_t groupId, int limit = 50) const;
+        std::vector<Json::Value> getChatRecords(uint64_t sessionId, int limit = 50) const;
 
-        std::vector<Json::Value> getChatRecordsWithIds(uint64_t groupId, int limit = 50) const;
+        std::vector<Json::Value> getChatRecordsWithIds(uint64_t sessionId, int limit = 50) const;
 
         /// @brief 获取水位线之后的最新记录（旧→新），limit<=0 表示不限
-        std::vector<Json::Value> getChatRecordsSince(uint64_t groupId, uint64_t watermarkId, int limit = 0) const;
+        std::vector<Json::Value> getChatRecordsSince(uint64_t sessionId, uint64_t watermarkId, int limit = 0) const;
 
         /// @brief 统计水位线之后的记录条数
-        size_t getChatRecordCountSince(uint64_t groupId, uint64_t watermarkId) const;
+        size_t getChatRecordCountSince(uint64_t sessionId, uint64_t watermarkId) const;
 
         // ============================================================
         //                      长期记忆操作
         // ============================================================
 
-        std::string getShortTermMemory(uint64_t groupId) const;
+        std::string getShortTermMemory(uint64_t sessionId) const;
 
-        void updateShortTermMemory(uint64_t groupId, const std::string &memory) const;
+        void updateShortTermMemory(uint64_t sessionId, const std::string &memory) const;
 
         /// @brief 获取群记忆水位线（最后已提取的聊天记录 id，无记录时为 0）
-        uint64_t getMemoryWatermark(uint64_t groupId) const;
+        uint64_t getMemoryWatermark(uint64_t sessionId) const;
 
         /// @brief 原子更新记忆与水位线（单条 upsert 语句，崩溃安全）
-        void updateShortTermMemoryWithWatermark(uint64_t groupId, const std::string &memory,
+        void updateShortTermMemoryWithWatermark(uint64_t sessionId, const std::string &memory,
                                                 uint64_t watermarkId) const;
 
         // ============================================================
@@ -95,22 +95,22 @@ namespace LittleMeowBot {
         //                      启用群聊操作
         // ============================================================
 
-        bool isGroupEnabled(uint64_t groupId) const;
+        bool isSessionEnabled(uint64_t sessionId) const;
 
-        void enableGroup(uint64_t groupId) const;
+        void enableSession(uint64_t sessionId) const;
 
-        void disableGroup(uint64_t groupId) const;
+        void disableSession(uint64_t sessionId) const;
 
         std::vector<uint64_t> getEnabledGroups() const;
 
         /// @brief 获取所有有聊天记录的群（用于聊天记录页面）
-        std::vector<std::tuple<uint64_t, std::string, int> > getGroupsWithChatRecords() const;
+        std::vector<std::tuple<uint64_t, std::string, int> > getSessionsWithChatRecords() const;
 
         /// @brief 获取所有群（包括已禁用的）
-        std::vector<std::tuple<uint64_t, std::string, bool, int> > getAllGroupsWithStatus() const;
+        std::vector<std::tuple<uint64_t, std::string, bool, int> > getAllSessionsWithStatus() const;
 
         /// @brief 切换群启用状态
-        void toggleGroupStatus(uint64_t groupId) const;
+        void toggleSessionStatus(uint64_t sessionId) const;
 
         /// @brief 更新聊天记录内容
         void updateChatRecord(int recordId, const std::string &content) const;
@@ -119,11 +119,11 @@ namespace LittleMeowBot {
         void deleteChatRecord(int recordId) const;
 
         /// @brief 清空群的所有聊天记录
-        void clearGroupChatRecords(uint64_t groupId) const;
+        void clearSessionChatRecords(uint64_t sessionId) const;
 
-        void updateGroupName(uint64_t groupId, const std::string &name) const;
+        void updateSessionName(uint64_t sessionId, const std::string &name) const;
 
-        std::string getGroupName(uint64_t groupId) const;
+        std::string getSessionName(uint64_t sessionId) const;
 
         // ============================================================
         //                      管理员操作

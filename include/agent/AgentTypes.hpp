@@ -29,6 +29,7 @@ namespace LittleMeowBot {
         std::string tone = "friendly";
         int maxLength = 25;
         bool isPriority = false;
+        bool isPrivate = false; ///< 是否私聊会话（决定 Executor 使用私聊人设提示词）
 
         [[nodiscard]] static constexpr std::string_view actionToString(Action a) {
             constexpr std::array names = {"skip", "reply"};

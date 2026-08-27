@@ -16,10 +16,14 @@
 namespace LittleMeowBot {
     namespace {
         constexpr size_t kMaxEntries = 5000;
-        const std::regex kGroupPatterns[] = {
-            std::regex(R"((?:群|groupId|group_id)[ =:：]+([0-9]{1,20}))", std::regex::icase),
+        // 与 QQMessage::kPrivateSessionFlag 保持一致（util 层不反向依赖 model）
+        constexpr uint64_t kPrivateSessionFlag = 1ULL << 63;
+        const std::regex kSessionPatterns[] = {
+            std::regex(R"((?:群|sessionId|group_id)[ =:：]+([0-9]{1,20}))", std::regex::icase),
             std::regex(R"(群([0-9]{1,20}))")
         };
+        // 私聊日志前缀（Logger 对私聊会话输出 [private_id=QQ]），QQ 号需还原为带标志位的会话 ID
+        const std::regex kPrivatePattern(R"(private_id[ =:：]+([0-9]{1,11}))");
     }
 
     LogBuffer &LogBuffer::instance() {
@@ -62,7 +66,7 @@ namespace LittleMeowBot {
         if (entry.level == "warning") entry.level = "warn";
         if (entry.level == "err") entry.level = "error";
         entry.message = std::string(message.payload.data(), message.payload.size());
-        entry.groupId = extractGroupId(entry.message);
+        entry.sessionId = extractSessionId(entry.message);
 
         Json::Value evt;
         {
@@ -75,8 +79,9 @@ namespace LittleMeowBot {
             evt["timestamp"] = entry.timestamp;
             evt["level"] = entry.level;
             evt["message"] = entry.message;
-            evt["groupId"] = entry.groupId.has_value()
-                                 ? Json::Value(static_cast<Json::UInt64>(*entry.groupId))
+            // 会话 ID 可能带私聊标志位（超过 JS 安全整数范围），序列化为字符串
+            evt["groupId"] = entry.sessionId.has_value()
+                                 ? Json::Value(std::to_string(*entry.sessionId))
                                  : Json::Value(Json::nullValue);
             m_entries.push_back(entry);
         }
@@ -152,13 +157,20 @@ namespace LittleMeowBot {
         entry.timestamp = match[1].str();
         entry.level = match[2].str();
         entry.message = match[3].str();
-        entry.groupId = extractGroupId(entry.message);
+        entry.sessionId = extractSessionId(entry.message);
         return entry;
     }
 
-    std::optional<uint64_t> LogBuffer::extractGroupId(const std::string &message) {
+    std::optional<uint64_t> LogBuffer::extractSessionId(const std::string &message) {
         std::smatch match;
-        for (const auto &pattern: kGroupPatterns) {
+        if (std::regex_search(message, match, kPrivatePattern)) {
+            try {
+                return std::stoull(match[1].str()) | kPrivateSessionFlag;
+            } catch (const std::exception &) {
+                return std::nullopt;
+            }
+        }
+        for (const auto &pattern: kSessionPatterns) {
             if (std::regex_search(message, match, pattern)) {
                 try {
                     return std::stoull(match[1].str());
@@ -184,10 +196,10 @@ namespace LittleMeowBot {
     }
 
     bool LogBuffer::matches(const LogEntry &entry, const LogQuery &query) {
-        if (query.systemOnly && entry.groupId.has_value()) {
+        if (query.systemOnly && entry.sessionId.has_value()) {
             return false;
         }
-        if (query.groupId.has_value() && entry.groupId != query.groupId) {
+        if (query.sessionId.has_value() && entry.sessionId != query.sessionId) {
             return false;
         }
         if (query.level.has_value() && entry.level != *query.level) {

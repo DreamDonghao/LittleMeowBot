@@ -130,9 +130,9 @@ Task<> AdminController::savePrompt(
     std::string content = (*json)["content"].asString();
     std::string description = json->isMember("description") ? (*json)["description"].asString() : "";
 
-    // 防护: router_system 的 JSON 格式示例若含双花括号(fmt 转义残留/旧页面缓存内容),模型会照抄导致解析失败
-    if (key == "router_system" && (content.find("{{") != std::string::npos
-                                   || content.find("}}") != std::string::npos)) {
+    // 防护: router 提示词的 JSON 格式示例若含双花括号(fmt 转义残留/旧页面缓存内容),模型会照抄导致解析失败
+    if ((key == "router_system" || key == "router_private_system")
+        && (content.find("{{") != std::string::npos || content.find("}}") != std::string::npos)) {
         Json::Value err;
         err["success"] = false;
         err["error"] = "提示词包含双花括号{{ }}，JSON 格式示例应为单花括号，请刷新页面后重试";
@@ -158,11 +158,11 @@ Task<> AdminController::getLogs(
 ) const {
     LogQuery query;
 
-    if (const std::string groupIdParam = req->getParameter("groupId"); !groupIdParam.empty()) {
+    if (const std::string groupIdParam = req->getParameter("sessionId"); !groupIdParam.empty()) {
         if (groupIdParam == "system") {
             query.systemOnly = true;
         } else {
-            query.groupId = parseUInt64(groupIdParam);
+            query.sessionId = parseUInt64(groupIdParam);
         }
     }
 
@@ -185,8 +185,9 @@ Task<> AdminController::getLogs(
         item["timestamp"] = entry.timestamp;
         item["level"] = entry.level;
         item["message"] = entry.message;
-        if (entry.groupId.has_value()) {
-            item["groupId"] = static_cast<Json::UInt64>(*entry.groupId);
+        if (entry.sessionId.has_value()) {
+            // 字符串形式：会话 ID 可能带私聊标志位，超过 JS 安全整数范围
+            item["groupId"] = std::to_string(*entry.sessionId);
         } else {
             item["groupId"] = Json::nullValue;
         }
@@ -400,12 +401,18 @@ Task<> AdminController::getGroups(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr &)> callback
 ) const {
-    auto groups = Database::instance().getAllGroupsWithStatus();
+    auto groups = Database::instance().getAllSessionsWithStatus();
 
     Json::Value result(Json::arrayValue);
-    for (const auto &[groupId, groupName, enabled, messageCount]: groups) {
+    for (const auto &[sessionId, groupName, enabled, messageCount]: groups) {
         Json::Value group;
-        group["groupId"] = static_cast<Json::UInt64>(groupId);
+        // 会话 ID 可能带私聊标志位（超过 JS Number 安全范围），同步提供字符串形式
+        group["groupId"] = static_cast<Json::UInt64>(sessionId);
+        group["groupIdStr"] = std::to_string(sessionId);
+        if (QQMessage::isPrivateSession(sessionId)) {
+            group["sessionType"] = "private";
+            group["userId"] = static_cast<Json::UInt64>(sessionId & ~QQMessage::kPrivateSessionFlag);
+        }
         group["groupName"] = groupName;
         group["enabled"] = enabled;
         group["messageCount"] = messageCount;
@@ -415,39 +422,52 @@ Task<> AdminController::getGroups(
     co_return;
 }
 
-Task<> AdminController::enableGroup(
+Task<> AdminController::enableSession(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr &)> callback
 ) const {
     auto json = req->getJsonObject();
-    if (!json || !json->isMember("groupId")) {
+    if (!json || (!json->isMember("sessionId") && !json->isMember("userId"))) {
         Json::Value err;
-        err["error"] = "缺少groupId字段";
+        err["error"] = "缺少groupId或userId字段";
         callback(HttpResponse::newHttpJsonResponse(err));
         co_return;
     }
 
-    const uint64_t groupId = (*json)["groupId"].asUInt64();
-    Database::instance().enableGroup(groupId);
+    uint64_t sessionId = 0;
+    if (json->isMember("sessionType") && (*json)["sessionType"].asString() == "private") {
+        // 私聊会话 ID 带标志位，由后端按 QQ 号构造（前端无法安全表示超出 JS 精度的大数）
+        const uint64_t userId = (*json)["userId"].asUInt64();
+        if (userId == 0) {
+            Json::Value err;
+            err["error"] = "QQ号无效";
+            callback(HttpResponse::newHttpJsonResponse(err));
+            co_return;
+        }
+        sessionId = userId | QQMessage::kPrivateSessionFlag;
+    } else {
+        sessionId = (*json)["groupId"].asUInt64();
+    }
+    Database::instance().enableSession(sessionId);
 
-    // 自动获取群名称
-    auto groupName = co_await MessageService::fetchAndUpdateGroupName(groupId);
+    // 自动获取会话名称（群聊为群名，私聊为 QQ 昵称）
+    std::string groupName = co_await MessageService::fetchAndUpdateSessionName(sessionId);
 
     Json::Value resp;
     resp["success"] = true;
-    resp["message"] = "群已启用";
+    resp["message"] = QQMessage::isPrivateSession(sessionId) ? "私聊已启用" : "群已启用";
     resp["groupName"] = groupName;
     callback(HttpResponse::newHttpJsonResponse(resp));
     co_return;
 }
 
-Task<> AdminController::toggleGroup(
+Task<> AdminController::toggleSession(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &groupId
+    const std::string &sessionId
 ) const {
-    const uint64_t gid = std::stoull(groupId);
-    Database::instance().toggleGroupStatus(gid);
+    const uint64_t gid = std::stoull(sessionId);
+    Database::instance().toggleSessionStatus(gid);
 
     Json::Value resp;
     resp["success"] = true;
@@ -456,13 +476,13 @@ Task<> AdminController::toggleGroup(
     co_return;
 }
 
-Task<> AdminController::removeGroup(
+Task<> AdminController::removeSession(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &groupId
+    const std::string &sessionId
 ) const {
-    uint64_t gid = std::stoull(groupId);
-    Database::instance().disableGroup(gid);
+    uint64_t gid = std::stoull(sessionId);
+    Database::instance().disableSession(gid);
 
     Json::Value resp;
     resp["success"] = true;
@@ -471,13 +491,13 @@ Task<> AdminController::removeGroup(
     co_return;
 }
 
-Task<> AdminController::refreshGroupName(
+Task<> AdminController::refreshSessionName(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &groupId
+    const std::string &sessionId
 ) const {
-    uint64_t gid = std::stoull(groupId);
-    auto groupName = co_await MessageService::fetchAndUpdateGroupName(gid);
+    uint64_t gid = std::stoull(sessionId);
+    auto groupName = co_await MessageService::fetchAndUpdateSessionName(gid);
 
     Json::Value resp;
     resp["success"] = true;
@@ -486,35 +506,40 @@ Task<> AdminController::refreshGroupName(
     co_return;
 }
 
-Task<> AdminController::refreshAllGroupNames(
+Task<> AdminController::refreshAllSessionNames(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr &)> callback
 ) const {
-    auto groups = Database::instance().getAllGroupsWithStatus();
+    auto groups = Database::instance().getAllSessionsWithStatus();
 
-    for (const auto &[groupId, groupName, enabled, messageCount]: groups) {
-        co_await MessageService::fetchAndUpdateGroupName(groupId);
+    for (const auto &[sessionId, groupName, enabled, messageCount]: groups) {
+        co_await MessageService::fetchAndUpdateSessionName(sessionId);
     }
 
     Json::Value resp;
     resp["success"] = true;
-    resp["message"] = "所有群名称已刷新";
+    resp["message"] = "所有会话名称已刷新";
     callback(HttpResponse::newHttpJsonResponse(resp));
     co_return;
 }
 
 // ==================== 聊天记录 ====================
 
-Task<> AdminController::getChatGroups(
+Task<> AdminController::getChatSessions(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr &)> callback
 ) const {
-    auto groups = Database::instance().getGroupsWithChatRecords();
+    auto groups = Database::instance().getSessionsWithChatRecords();
 
     Json::Value result(Json::arrayValue);
-    for (const auto &[groupId, groupName, messageCount]: groups) {
+    for (const auto &[sessionId, groupName, messageCount]: groups) {
         Json::Value group;
-        group["groupId"] = static_cast<Json::UInt64>(groupId);
+        group["groupId"] = static_cast<Json::UInt64>(sessionId);
+        group["groupIdStr"] = std::to_string(sessionId);
+        if (QQMessage::isPrivateSession(sessionId)) {
+            group["sessionType"] = "private";
+            group["userId"] = static_cast<Json::UInt64>(sessionId & ~QQMessage::kPrivateSessionFlag);
+        }
         group["groupName"] = groupName;
         group["messageCount"] = messageCount;
         result.append(group);
@@ -526,9 +551,9 @@ Task<> AdminController::getChatGroups(
 Task<> AdminController::getChatRecords(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &groupId
+    const std::string &sessionId
 ) const {
-    uint64_t gid = std::stoull(groupId);
+    uint64_t gid = std::stoull(sessionId);
 
     // 支持limit参数
     int limit = 50;
@@ -588,13 +613,13 @@ Task<> AdminController::deleteChatRecord(
     co_return;
 }
 
-Task<> AdminController::clearGroupChatRecords(
+Task<> AdminController::clearSessionChatRecords(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &groupId
+    const std::string &sessionId
 ) const {
-    uint64_t gid = std::stoull(groupId);
-    Database::instance().clearGroupChatRecords(gid);
+    uint64_t gid = std::stoull(sessionId);
+    Database::instance().clearSessionChatRecords(gid);
 
     Json::Value resp;
     resp["success"] = true;
@@ -646,12 +671,12 @@ Task<> AdminController::saveKBConfig(
 
 // ==================== 群记忆 ====================
 
-Task<> AdminController::getGroupMemory(
+Task<> AdminController::getSessionMemory(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &groupId
+    const std::string &sessionId
 ) const {
-    const uint64_t gid = std::stoull(groupId);
+    const uint64_t gid = std::stoull(sessionId);
     const std::string memory = Database::instance().getShortTermMemory(gid);
 
     Json::Value resp;
@@ -661,10 +686,10 @@ Task<> AdminController::getGroupMemory(
     co_return;
 }
 
-Task<> AdminController::updateGroupMemory(
+Task<> AdminController::updateSessionMemory(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &groupId
+    const std::string &sessionId
 ) const {
     auto json = req->getJsonObject();
     if (!json || !json->isMember("memory")) {
@@ -674,7 +699,7 @@ Task<> AdminController::updateGroupMemory(
         co_return;
     }
 
-    uint64_t gid = std::stoull(groupId);
+    uint64_t gid = std::stoull(sessionId);
     std::string memory = (*json)["memory"].asString();
     Database::instance().updateShortTermMemory(gid, memory);
 

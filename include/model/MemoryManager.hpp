@@ -16,14 +16,14 @@ namespace LittleMeowBot {
     class MemoryManager {
     public:
         /// @brief 构造函数
-        /// @param groupId 群号
-        explicit MemoryManager(uint64_t groupId);
+        /// @param sessionId 会话 ID（私聊会话带标志位）
+        explicit MemoryManager(uint64_t sessionId);
 
         /// @brief 获取短期记忆
         /// @return 记忆内容（每行一条）
         [[nodiscard]] std::string getMemory() const;
 
     private:
-        uint64_t m_groupId; ///< 群号
+        uint64_t m_sessionId; ///< 群号
     };
 }

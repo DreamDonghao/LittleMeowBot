@@ -53,9 +53,9 @@ namespace LittleMeowBot::HttpUtil {
         const Json::Value &body,
         const std::string &bearerToken,
         const double timeout,
-        std::optional<uint64_t> groupId) {
-        const auto prefix = groupId.has_value()
-                                ? fmt::format("[group_id={}] {}", *groupId, tag)
+        std::optional<uint64_t> sessionId) {
+        const auto prefix = sessionId.has_value()
+                                ? fmt::format("[group_id={}] {}", *sessionId, tag)
                                 : std::string(tag);
         // 正常请求详情仅记录到 debug，避免每条消息多次请求刷屏
         spdlog::debug("{} [HTTP] {} {}{}", prefix, methodName(method), baseUrl, path);

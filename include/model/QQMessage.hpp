@@ -29,6 +29,25 @@ namespace LittleMeowBot {
         /// @return 群号
         [[nodiscard]] Json::UInt64 getGroupId() const;
 
+        /// @brief 私聊会话标志位：私聊会话 ID = 用户QQ号 | kPrivateSessionFlag，
+        /// 与群号共享同一 uint64 键空间（群号不会用到最高位），下游存储/Map 无需区分
+        static constexpr uint64_t kPrivateSessionFlag = 1ULL << 63;
+
+        /// @brief 判断会话 ID 是否为私聊会话
+        /// @param sessionId 会话 ID
+        /// @return 是否私聊
+        [[nodiscard]] static constexpr bool isPrivateSession(const uint64_t sessionId) {
+            return (sessionId & kPrivateSessionFlag) != 0;
+        }
+
+        /// @brief 是否私聊消息
+        /// @return OneBot message_type == "private"
+        [[nodiscard]] bool isPrivate() const;
+
+        /// @brief 获取会话 ID（群聊=群号；私聊=用户QQ号|kPrivateSessionFlag）
+        /// @return 会话 ID，可作下游存储与并发控制的统一键
+        [[nodiscard]] uint64_t getSessionId() const;
+
         /// @brief 获取机器人自己的 QQ 号
         /// @return 机器人 QQ 号
         [[nodiscard]] Json::UInt64 getSelfQQNumber() const;

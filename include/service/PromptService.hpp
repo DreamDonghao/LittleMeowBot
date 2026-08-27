@@ -26,12 +26,20 @@ namespace LittleMeowBot {
         /// @param content 提示词内容
         void setPrompt(const std::string &key, const std::string &content);
 
-        /// @brief 获取 Executor 系统提示词
+        /// @brief 获取 Executor 系统提示词（群聊）
         /// @return Executor 角色系统提示词
         [[nodiscard]] std::string getExecutorSystemPrompt();
 
-        /// @brief 获取 Router 系统提示词
+        /// @brief 获取 Executor 系统提示词（私聊）
+        /// @return Executor 私聊角色系统提示词
+        [[nodiscard]] std::string getExecutorPrivateSystemPrompt();
+
+        /// @brief 获取 Router 系统提示词（群聊）
         /// @return Router 消息路由决策提示词
         [[nodiscard]] std::string getRouterSystemPrompt();
+
+        /// @brief 获取 Router 系统提示词（私聊）
+        /// @return Router 私聊消息路由决策提示词
+        [[nodiscard]] std::string getRouterPrivateSystemPrompt();
     }
 }

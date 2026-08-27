@@ -27,11 +27,30 @@ const scrollToBottom = async (): Promise<void> => {
   }
 }
 
+// 会话展示辅助：私聊会话 ID 带标志位（超过 JS Number 安全范围），需按字符串/BigInt 处理
+const PRIVATE_FLAG = 1n << 63n
+const sessionKey = (g: Group): string => g.groupIdStr ?? String(g.groupId)
+const sessionLabel = (g: Group): string =>
+    g.sessionType === 'private'
+        ? g.groupName ? `${g.groupName} (${g.userId ?? ''})` : `私聊 ${g.userId ?? ''}`
+        : g.groupName || `群 ${g.groupId}`
+const groupTag = (sessionId: string): string => {
+  const g = groups.value.find(item => sessionKey(item) === sessionId)
+  if (g) return sessionLabel(g)
+  try {
+    return (BigInt(sessionId) & PRIVATE_FLAG) !== 0n
+        ? `私聊 ${BigInt(sessionId) & ~PRIVATE_FLAG}`
+        : `群 ${sessionId}`
+  } catch {
+    return `群 ${sessionId}`
+  }
+}
+
 const currentGroupLabel = computed(() => {
   if (groupId.value === 'all') return '全部日志'
   if (groupId.value === 'system') return '系统日志'
-  const group = groups.value.find(item => String(item.groupId) === groupId.value)
-  return group ? `${group.groupName}（${group.groupId}）` : `群 ${groupId.value}`
+  const group = groups.value.find(item => sessionKey(item) === groupId.value)
+  return group ? sessionLabel(group) : groupTag(groupId.value)
 })
 
 const levelClass = (entryLevel: string): string => `level-${entryLevel}`
@@ -185,8 +204,8 @@ onUnmounted(() => disconnectWebSocket())
           <select v-model="groupId" class="form-input" @change="refresh">
             <option value="all">全部日志</option>
             <option value="system">系统日志</option>
-            <option v-for="group in groups" :key="group.groupId" :value="String(group.groupId)">
-              {{ group.groupName }}（{{ group.groupId }}）
+            <option v-for="g in groups" :key="sessionKey(g)" :value="sessionKey(g)">
+              {{ sessionLabel(g) }}
             </option>
           </select>
         </div>
@@ -221,7 +240,7 @@ onUnmounted(() => disconnectWebSocket())
         <div v-for="entry in entries" :key="entry.id" :class="['log-line', levelClass(entry.level)]">
           <span class="log-time">{{ entry.timestamp }}</span>
           <span class="log-level">{{ entry.level }}</span>
-          <span class="log-group">{{ entry.groupId ? `群 ${entry.groupId}` : '系统' }}</span>
+          <span class="log-group">{{ entry.groupId ? groupTag(entry.groupId) : '系统' }}</span>
           <span class="log-message">{{ entry.message }}</span>
         </div>
       </div>

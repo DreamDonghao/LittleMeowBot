@@ -12,42 +12,53 @@
 #include <utility>
 
 namespace LittleMeowBot {
-    class GroupLogger {
+    class SessionLogger {
     public:
-        explicit GroupLogger(uint64_t groupId) : m_groupId(groupId) {
+        explicit SessionLogger(uint64_t sessionId) : m_sessionId(sessionId) {
         }
 
         template<typename... Args>
         void trace(fmt::format_string<Args...> format, Args &&... args) const {
-            write(spdlog::level::trace, fmt::format(format, std::forward<Args>(args)...));
+            write(spdlog::level::trace, format, std::forward<Args>(args)...);
         }
 
         template<typename... Args>
         void debug(fmt::format_string<Args...> format, Args &&... args) const {
-            write(spdlog::level::debug, fmt::format(format, std::forward<Args>(args)...));
+            write(spdlog::level::debug, format, std::forward<Args>(args)...);
         }
 
         template<typename... Args>
         void info(fmt::format_string<Args...> format, Args &&... args) const {
-            write(spdlog::level::info, fmt::format(format, std::forward<Args>(args)...));
+            write(spdlog::level::info, format, std::forward<Args>(args)...);
         }
 
         template<typename... Args>
         void warn(fmt::format_string<Args...> format, Args &&... args) const {
-            write(spdlog::level::warn, fmt::format(format, std::forward<Args>(args)...));
+            write(spdlog::level::warn, format, std::forward<Args>(args)...);
         }
 
         template<typename... Args>
         void error(fmt::format_string<Args...> format, Args &&... args) const {
-            write(spdlog::level::err, fmt::format(format, std::forward<Args>(args)...));
+            write(spdlog::level::err, format, std::forward<Args>(args)...);
         }
 
     private:
-        void write(spdlog::level::level_enum level, const std::string &message) const {
-            spdlog::log(level, "[group_id={}] {}", m_groupId, message);
+        // 与 QQMessage::kPrivateSessionFlag 保持一致（util 层不反向依赖 model）
+        static constexpr uint64_t kPrivateSessionFlag = 1ULL << 63;
+
+        template<typename... Args>
+        void write(spdlog::level::level_enum level, fmt::format_string<Args...> format, Args &&... args) const {
+            // 私聊会话用可读的 QQ 号展示；LogBuffer 按 private_id 前缀还原为完整会话 ID
+            if (m_sessionId & kPrivateSessionFlag) {
+                spdlog::log(level, "[private_id={}] {}", m_sessionId & ~kPrivateSessionFlag,
+                           fmt::format(format, std::forward<Args>(args)...));
+            } else {
+                spdlog::log(level, "[group_id={}] {}", m_sessionId,
+                           fmt::format(format, std::forward<Args>(args)...));
+            }
         }
 
-        uint64_t m_groupId;
+        uint64_t m_sessionId;
     };
 
     /// @brief 日志系统生命周期管理
@@ -66,7 +77,7 @@ namespace LittleMeowBot {
         static std::string level();
 
         /// @brief 创建带群聊上下文的日志记录器
-        static GroupLogger group(uint64_t groupId);
+        static SessionLogger session(uint64_t sessionId);
 
         /// @brief 刷新并关闭日志系统，应在程序退出前调用
         static void shutdown();

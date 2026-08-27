@@ -49,22 +49,22 @@ namespace LittleMeowBot {
         bool m_initialized = false;
         std::atomic_bool m_running{true};
 
-        // 正在处理中的群聊（groupId → generation），用于防止并发处理
-        // @消息到达时递增代际，非@消息在关键点检查代际是否被取消
-        std::unordered_map<uint64_t, uint64_t> m_processingGroups;
+        // 正在处理中的会话（sessionId → generation），用于防止并发处理
+        // @消息/私聊消息到达时递增代际，其余消息在关键点检查代际是否被取消
+        std::unordered_map<uint64_t, uint64_t> m_processingSessions;
         std::mutex m_processingMutex;
 
-        /// @brief 尝试开始处理群消息
-        /// @return 代际号（>0 成功），0 表示群正在处理中
-        uint64_t tryStartProcessing(uint64_t groupId);
+        /// @brief 尝试开始处理会话消息
+        /// @return 代际号（>0 成功），0 表示会话正在处理中
+        uint64_t tryStartProcessing(uint64_t sessionId);
 
-        /// @brief 取消群当前处理（@消息到达时调用，递增代际通知当前处理者中断）
-        void cancelProcessing(uint64_t groupId);
+        /// @brief 取消会话当前处理（@消息/私聊新消息到达时调用，递增代际通知当前处理者中断）
+        void cancelProcessing(uint64_t sessionId);
 
         /// @brief 检查代际是否仍然有效
-        bool isCurrentGeneration(uint64_t groupId, uint64_t generation);
+        bool isCurrentGeneration(uint64_t sessionId, uint64_t generation);
 
-        /// @brief 完成处理，移除群标记
-        void finishProcessing(uint64_t groupId);
+        /// @brief 完成处理，移除会话标记
+        void finishProcessing(uint64_t sessionId);
     };
 }

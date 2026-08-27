@@ -187,11 +187,11 @@ namespace LittleMeowBot {
     //                      群组配置操作
     // ============================================================
 
-    GroupConfig Database::getGroupConfig(uint64_t groupId) const {
+    SessionConfig Database::getSessionConfig(uint64_t sessionId) const {
         std::shared_lock lock(m_mutex);
-        GroupConfig config;
+        SessionConfig config;
         Statement stmt(m_db, "SELECT all_mes_count, all_char_count FROM group_config WHERE group_id = ?");
-        stmt.bind(1, groupId);
+        stmt.bind(1, sessionId);
         if (stmt.step()) {
             config.allMesCount = stmt.getInt64(0);
             config.allCharCount = stmt.getInt64(1);
@@ -199,42 +199,42 @@ namespace LittleMeowBot {
         return config;
     }
 
-    void Database::saveGroupConfig(uint64_t groupId, const GroupConfig &config) const {
+    void Database::saveSessionConfig(uint64_t sessionId, const SessionConfig &config) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(
             m_db, "INSERT OR REPLACE INTO group_config (group_id, all_mes_count, all_char_count) VALUES (?, ?, ?)");
-        stmt.bind(1, groupId);
+        stmt.bind(1, sessionId);
         stmt.bind(2, config.allMesCount);
         stmt.bind(3, config.allCharCount);
         stmt.exec();
     }
 
-    void Database::incrementMessageCount(uint64_t groupId, size_t charCount) const {
+    void Database::incrementMessageCount(uint64_t sessionId, size_t charCount) const {
         std::unique_lock lock(m_mutex);
 
         Statement stmt(
             m_db,
             "UPDATE group_config SET all_mes_count = all_mes_count + 1, all_char_count = all_char_count + ? WHERE group_id = ?");
         stmt.bind(1, charCount);
-        stmt.bind(2, groupId);
+        stmt.bind(2, sessionId);
         stmt.exec();
 
         if (Statement::changes(m_db) == 0) {
-            // 首条消息：配置行不存在，直接插入（不能调用 saveGroupConfig，避免重复加锁）
+            // 首条消息：配置行不存在，直接插入（不能调用 saveSessionConfig，避免重复加锁）
             Statement insert(
                 m_db,
                 "INSERT OR REPLACE INTO group_config (group_id, all_mes_count, all_char_count) VALUES (?, ?, ?)");
-            insert.bind(1, groupId);
+            insert.bind(1, sessionId);
             insert.bind(2, 1);
             insert.bind(3, charCount);
             insert.exec();
         }
     }
 
-    bool Database::hasGroupConfig(uint64_t groupId) const {
+    bool Database::hasSessionConfig(uint64_t sessionId) const {
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT 1 FROM group_config WHERE group_id = ?");
-        stmt.bind(1, groupId);
+        stmt.bind(1, sessionId);
         return stmt.step();
     }
 
@@ -242,21 +242,21 @@ namespace LittleMeowBot {
     //                      聊天记录操作
     // ============================================================
 
-    void Database::addChatRecord(uint64_t groupId, const std::string &role, const std::string &content) const {
+    void Database::addChatRecord(uint64_t sessionId, const std::string &role, const std::string &content) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db, "INSERT INTO chat_records (group_id, role, content) VALUES (?, ?, ?)");
-        stmt.bind(1, groupId);
+        stmt.bind(1, sessionId);
         stmt.bind(2, role);
         stmt.bind(3, content);
         stmt.exec();
     }
 
-    std::vector<Json::Value> Database::getChatRecords(uint64_t groupId, int limit) const {
+    std::vector<Json::Value> Database::getChatRecords(uint64_t sessionId, int limit) const {
         std::shared_lock lock(m_mutex);
         std::vector<Json::Value> records;
 
         Statement stmt(m_db, "SELECT role, content FROM chat_records WHERE group_id = ? ORDER BY id DESC LIMIT ?");
-        stmt.bind(1, groupId);
+        stmt.bind(1, sessionId);
         stmt.bind(2, limit);
 
         while (stmt.step()) {
@@ -270,12 +270,12 @@ namespace LittleMeowBot {
         return records;
     }
 
-    std::vector<Json::Value> Database::getChatRecordsWithIds(uint64_t groupId, int limit) const {
+    std::vector<Json::Value> Database::getChatRecordsWithIds(uint64_t sessionId, int limit) const {
         std::shared_lock lock(m_mutex);
         std::vector<Json::Value> records;
 
         Statement stmt(m_db, "SELECT id, role, content FROM chat_records WHERE group_id = ? ORDER BY id DESC LIMIT ?");
-        stmt.bind(1, groupId);
+        stmt.bind(1, sessionId);
         stmt.bind(2, limit);
 
         while (stmt.step()) {
@@ -290,14 +290,14 @@ namespace LittleMeowBot {
     }
 
     std::vector<Json::Value> Database::getChatRecordsSince(
-        uint64_t groupId, uint64_t watermarkId, int limit) const {
+        uint64_t sessionId, uint64_t watermarkId, int limit) const {
         std::shared_lock lock(m_mutex);
         std::vector<Json::Value> records;
 
         Statement stmt(
             m_db,
             "SELECT id, role, content FROM chat_records WHERE group_id = ? AND id > ? ORDER BY id DESC LIMIT ?");
-        stmt.bind(1, groupId);
+        stmt.bind(1, sessionId);
         stmt.bind(2, watermarkId);
         stmt.bind(3, limit <= 0 ? INT64_MAX : static_cast<int64_t>(limit));
 
@@ -314,10 +314,10 @@ namespace LittleMeowBot {
         return records;
     }
 
-    size_t Database::getChatRecordCountSince(uint64_t groupId, uint64_t watermarkId) const {
+    size_t Database::getChatRecordCountSince(uint64_t sessionId, uint64_t watermarkId) const {
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT COUNT(*) FROM chat_records WHERE group_id = ? AND id > ?");
-        stmt.bind(1, groupId);
+        stmt.bind(1, sessionId);
         stmt.bind(2, watermarkId);
         return stmt.step() ? stmt.getInt64(0) : 0;
     }
@@ -326,34 +326,34 @@ namespace LittleMeowBot {
     //                      长期记忆操作
     // ============================================================
 
-    std::string Database::getShortTermMemory(uint64_t groupId) const {
+    std::string Database::getShortTermMemory(uint64_t sessionId) const {
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT memory_content FROM short_term_memory WHERE group_id = ?");
-        stmt.bind(1, groupId);
+        stmt.bind(1, sessionId);
         return stmt.step() ? stmt.getText(0) : "";
     }
 
     // upsert 而非 REPLACE：手动编辑记忆(后台)时不能重置水位线
-    void Database::updateShortTermMemory(uint64_t groupId, const std::string &memory) const {
+    void Database::updateShortTermMemory(uint64_t sessionId, const std::string &memory) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(
             m_db,
             "INSERT INTO short_term_memory (group_id, memory_content) VALUES (?, ?) "
             "ON CONFLICT(group_id) DO UPDATE SET memory_content = excluded.memory_content, updated_at = CURRENT_TIMESTAMP");
-        stmt.bind(1, groupId);
+        stmt.bind(1, sessionId);
         stmt.bind(2, memory);
         stmt.exec();
     }
 
-    uint64_t Database::getMemoryWatermark(uint64_t groupId) const {
+    uint64_t Database::getMemoryWatermark(uint64_t sessionId) const {
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT watermark_id FROM short_term_memory WHERE group_id = ?");
-        stmt.bind(1, groupId);
+        stmt.bind(1, sessionId);
         return stmt.step() ? static_cast<uint64_t>(stmt.getInt64(0)) : 0;
     }
 
     void Database::updateShortTermMemoryWithWatermark(
-        uint64_t groupId, const std::string &memory, uint64_t watermarkId) const {
+        uint64_t sessionId, const std::string &memory, uint64_t watermarkId) const {
         std::unique_lock lock(m_mutex);
         // 单条 upsert 语句天然原子：记忆与水位线要么一起生效要么都不生效
         Statement stmt(
@@ -361,7 +361,7 @@ namespace LittleMeowBot {
             "INSERT INTO short_term_memory (group_id, memory_content, watermark_id) VALUES (?, ?, ?) "
             "ON CONFLICT(group_id) DO UPDATE SET memory_content = excluded.memory_content, "
             "watermark_id = excluded.watermark_id, updated_at = CURRENT_TIMESTAMP");
-        stmt.bind(1, groupId);
+        stmt.bind(1, sessionId);
         stmt.bind(2, memory);
         stmt.bind(3, watermarkId);
         stmt.exec();
@@ -410,27 +410,27 @@ namespace LittleMeowBot {
     //                      启用群聊操作
     // ============================================================
 
-    bool Database::isGroupEnabled(uint64_t groupId) const {
+    bool Database::isSessionEnabled(uint64_t sessionId) const {
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT enabled FROM enabled_groups WHERE group_id = ?");
-        stmt.bind(1, groupId);
+        stmt.bind(1, sessionId);
         return stmt.step() && stmt.getInt(0) == 1;
     }
 
-    void Database::enableGroup(uint64_t groupId) const {
+    void Database::enableSession(uint64_t sessionId) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db, "INSERT OR REPLACE INTO enabled_groups (group_id, enabled) VALUES (?, 1)");
-        stmt.bind(1, groupId);
+        stmt.bind(1, sessionId);
         stmt.exec();
-        spdlog::info("已启用群: {}", groupId);
+        spdlog::info("已启用群: {}", sessionId);
     }
 
-    void Database::disableGroup(uint64_t groupId) const {
+    void Database::disableSession(uint64_t sessionId) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db, "DELETE FROM enabled_groups WHERE group_id = ?");
-        stmt.bind(1, groupId);
+        stmt.bind(1, sessionId);
         stmt.exec();
-        spdlog::info("已禁用群: {}", groupId);
+        spdlog::info("已禁用群: {}", sessionId);
     }
 
     std::vector<uint64_t> Database::getEnabledGroups() const {
@@ -443,7 +443,7 @@ namespace LittleMeowBot {
         return groups;
     }
 
-    std::vector<std::tuple<uint64_t, std::string, int> > Database::getGroupsWithChatRecords() const {
+    std::vector<std::tuple<uint64_t, std::string, int> > Database::getSessionsWithChatRecords() const {
         std::shared_lock lock(m_mutex);
         std::vector<std::tuple<uint64_t, std::string, int> > groups;
         Statement stmt(m_db,
@@ -458,7 +458,7 @@ namespace LittleMeowBot {
         return groups;
     }
 
-    std::vector<std::tuple<uint64_t, std::string, bool, int> > Database::getAllGroupsWithStatus() const {
+    std::vector<std::tuple<uint64_t, std::string, bool, int> > Database::getAllSessionsWithStatus() const {
         std::shared_lock lock(m_mutex);
         std::vector<std::tuple<uint64_t, std::string, bool, int> > groups;
         Statement stmt(m_db,
@@ -472,10 +472,10 @@ namespace LittleMeowBot {
         return groups;
     }
 
-    void Database::toggleGroupStatus(uint64_t groupId) const {
+    void Database::toggleSessionStatus(uint64_t sessionId) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db, "UPDATE enabled_groups SET enabled = NOT enabled WHERE group_id = ?");
-        stmt.bind(1, groupId);
+        stmt.bind(1, sessionId);
         stmt.exec();
     }
 
@@ -494,27 +494,27 @@ namespace LittleMeowBot {
         stmt.exec();
     }
 
-    void Database::clearGroupChatRecords(uint64_t groupId) const {
+    void Database::clearSessionChatRecords(uint64_t sessionId) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db, "DELETE FROM chat_records WHERE group_id = ?");
-        stmt.bind(1, groupId);
+        stmt.bind(1, sessionId);
         stmt.exec();
-        spdlog::info("已清空群 {} 的聊天记录", groupId);
+        spdlog::info("已清空群 {} 的聊天记录", sessionId);
     }
 
-    void Database::updateGroupName(uint64_t groupId, const std::string &name) const {
+    void Database::updateSessionName(uint64_t sessionId, const std::string &name) const {
         std::unique_lock lock(m_mutex);
         Statement stmt(m_db, "UPDATE enabled_groups SET group_name = ? WHERE group_id = ?");
         stmt.bind(1, name);
-        stmt.bind(2, groupId);
+        stmt.bind(2, sessionId);
         stmt.exec();
-        spdlog::info("更新群名称: {} -> {}", groupId, name);
+        spdlog::info("更新群名称: {} -> {}", sessionId, name);
     }
 
-    std::string Database::getGroupName(uint64_t groupId) const {
+    std::string Database::getSessionName(uint64_t sessionId) const {
         std::shared_lock lock(m_mutex);
         Statement stmt(m_db, "SELECT group_name FROM enabled_groups WHERE group_id = ?");
-        stmt.bind(1, groupId);
+        stmt.bind(1, sessionId);
         return stmt.step() ? stmt.getText(0) : "";
     }
 

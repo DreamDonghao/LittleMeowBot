@@ -33,13 +33,13 @@ namespace LittleMeowBot {
                 co_return "无法识别图片";
             }
             if ((*resp)->getStatusCode() != drogon::k200OK) {
-                Logger::group(groupId).error("[Image] 图像描述请求失败: status={}",
+                Logger::session(groupId).error("[Image] 图像描述请求失败: status={}",
                                              static_cast<int>((*resp)->getStatusCode()));
                 co_return "无法识别图片";
             }
             const auto json = (*resp)->getJsonObject();
             if (!json || !json->isMember("choices")) {
-                Logger::group(groupId).error("[Image] 图像描述响应格式错误");
+                Logger::session(groupId).error("[Image] 图像描述响应格式错误");
                 co_return "图片识别失败";
             }
             const auto &choices = (*json)["choices"];
@@ -80,6 +80,13 @@ namespace LittleMeowBot {
 
     Json::UInt64 QQMessage::getGroupId() const { return jsonToUInt64(m_qqMessageJson["group_id"]); }
 
+    bool QQMessage::isPrivate() const { return m_qqMessageJson["message_type"].asString() == "private"; }
+
+    uint64_t QQMessage::getSessionId() const {
+        if (isPrivate()) return getSenderQQNumber() | kPrivateSessionFlag;
+        return getGroupId();
+    }
+
     Json::UInt64 QQMessage::getSelfQQNumber() const { return jsonToUInt64(m_qqMessageJson["self_id"]); }
 
     Json::UInt64 QQMessage::getSenderQQNumber() const { return jsonToUInt64(m_qqMessageJson["sender"]["user_id"]); }
@@ -107,7 +114,7 @@ namespace LittleMeowBot {
                 textContent += item["data"]["raw"]["faceText"].asString();
             } else if (item["type"] == "image") {
                 textContent += "[图片：" + co_await getImageDescribe(
-                    item["data"]["url"].asString(), getGroupId()) + "]";
+                    item["data"]["url"].asString(), getSessionId()) + "]";
                 Json::Value imgInfo;
                 imgInfo["file"] = item["data"].get("file", "").asString();
                 imgInfo["url"] = item["data"].get("url", "").asString();

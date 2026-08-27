@@ -5,25 +5,25 @@
 #include <config/Config.hpp>
 
 namespace LittleMeowBot {
-    ChatRecordManager::ChatRecordManager(uint64_t groupId) : m_groupId(groupId) {
+    ChatRecordManager::ChatRecordManager(uint64_t sessionId) : m_sessionId(sessionId) {
     }
 
-    uint64_t ChatRecordManager::getGroupId() const {
-        return m_groupId;
+    uint64_t ChatRecordManager::getSessionId() const {
+        return m_sessionId;
     }
 
     void ChatRecordManager::addUserRecord(const std::string &content) const {
-        Database::instance().addChatRecord(m_groupId, "user", content);
+        Database::instance().addChatRecord(m_sessionId, "user", content);
     }
 
     void ChatRecordManager::addAssistantRecord(const std::string &content) const {
-        Database::instance().addChatRecord(m_groupId, "assistant", content);
+        Database::instance().addChatRecord(m_sessionId, "assistant", content);
     }
 
     std::deque<Json::Value> ChatRecordManager::getRecords() const {
-        const uint64_t watermark = Database::instance().getMemoryWatermark(m_groupId);
+        const uint64_t watermark = Database::instance().getMemoryWatermark(m_sessionId);
         const auto records = Database::instance().getChatRecordsSince(
-            m_groupId, watermark, Config::instance().windowTriggerCount);
+            m_sessionId, watermark, Config::instance().windowTriggerCount);
         return {records.begin(), records.end()};
     }
 }

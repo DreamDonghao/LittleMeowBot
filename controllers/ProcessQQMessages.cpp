@@ -3,7 +3,7 @@
 #include <agent/AgentSystem.hpp>
 #include <handler/CommandHandler.hpp>
 #include <model/ChatRecordManager.hpp>
-#include <model/GroupConfigManager.hpp>
+#include <model/SessionConfigManager.hpp>
 #include <model/MemoryManager.hpp>
 #include <model/QQMessage.hpp>
 #include <service/MemoryService.hpp>
@@ -36,6 +36,19 @@ namespace {
         }
         return {cqPart, textPart};
     }
+
+    /// @brief 按会话类型分派消息发送（群聊走 /send_group_msg，私聊走 /send_private_msg）
+    /// @param message 触发回复的原始消息
+    /// @param content 回复内容
+    /// @param chatRecords 聊天记录管理器
+    Task<> sendReply(const QQMessage &message, const std::string &content,
+                     const ChatRecordManager &chatRecords) {
+        if (message.isPrivate()) {
+            co_await MessageService::sendPrivateMsg(message.getSenderQQNumber(), content, chatRecords);
+        } else {
+            co_await MessageService::sendGroupMsg(message.getGroupId(), content, chatRecords);
+        }
+    }
 } // namespace
 
 Task<> ProcessQQMessages::receiveMessages(const HttpRequestPtr req,
@@ -65,45 +78,45 @@ Task<> ProcessQQMessages::receiveMessages(const HttpRequestPtr req,
     }
 
     QQMessage qqMessage(*json);
-    uint64_t groupId = qqMessage.getGroupId(); ///< 当前消息的群号
-    // 确保群配置存在
-    if (!GroupConfigManager::contains(groupId)) {
-        GroupConfigManager::addConfig(groupId);
+    const uint64_t sessionId = qqMessage.getSessionId(); ///< 会话 ID（群聊=群号；私聊=用户QQ号|私聊标志位）
+    // 确保会话配置存在
+    if (!SessionConfigManager::contains(sessionId)) {
+        SessionConfigManager::addConfig(sessionId);
     }
     // 格式化消息
     co_await qqMessage.formatMessage();
 
-    // 检查是否是命令消息（@ 且以 / 开头）- 不受群启用状态影响
-    const auto log = Logger::group(groupId);
+    // 检查是否是命令消息（群聊需 @ 且以 / 开头，私聊直接以 / 开头）- 不受启用状态影响
+    const auto log = Logger::session(sessionId);
 
     if (isCommand(qqMessage)) {
         log.info("收到命令消息: {}", qqMessage.getRawMessage());
 
-        ChatRecordManager chatRecords(groupId);
+        ChatRecordManager chatRecords(sessionId);
 
         std::string cmdResponse = co_await handleCommand(qqMessage, chatRecords);
-        co_await MessageService::sendGroupMsg(groupId, cmdResponse, chatRecords);
+        co_await sendReply(qqMessage, cmdResponse, chatRecords);
         co_return;
     }
 
-    // 只处理启用的群（从数据库读取）
-    if (auto &database = Database::instance(); !database.isGroupEnabled(groupId)) {
+    // 只处理启用的会话（从数据库读取）
+    if (auto &database = Database::instance(); !database.isSessionEnabled(sessionId)) {
         co_return;
     }
 
     // 创建聊天记录和记忆管理器
-    ChatRecordManager chatRecords(groupId);
-    MemoryManager memory(groupId);
+    ChatRecordManager chatRecords(sessionId);
+    MemoryManager memory(sessionId);
 
     auto &webSocketManager = WebSocketManager::instance();
 
     // 记录新的聊天消息
     if (qqMessage.getSelfQQNumber() == qqMessage.getSenderQQNumber()) {
         chatRecords.addAssistantRecord(qqMessage.getFormatMessage());
-        webSocketManager.pushMessage(groupId, "assistant", qqMessage.getFormatMessage());
+        webSocketManager.pushMessage(sessionId, "assistant", qqMessage.getFormatMessage());
     } else {
         chatRecords.addUserRecord(qqMessage.getFormatMessage());
-        webSocketManager.pushMessage(groupId, "user", qqMessage.getFormatMessage());
+        webSocketManager.pushMessage(sessionId, "user", qqMessage.getFormatMessage());
     }
 
     // 处理消息回复 - 使用多层代理架构
@@ -119,10 +132,10 @@ Task<> ProcessQQMessages::receiveMessages(const HttpRequestPtr req,
             const auto [cqPart, textPart] = splitCqAndText(result.value());
 
             if (!cqPart.empty()) {
-                co_await MessageService::sendGroupMsg(groupId, cqPart, chatRecords);
+                co_await sendReply(qqMessage, cqPart, chatRecords);
             }
             if (!textPart.empty()) {
-                co_await MessageService::sendGroupMsg(groupId, textPart, chatRecords);
+                co_await sendReply(qqMessage, textPart, chatRecords);
             }
         } else {
             log.info("多层代理决定不回复");
@@ -132,13 +145,13 @@ Task<> ProcessQQMessages::receiveMessages(const HttpRequestPtr req,
     }
 
     // 更新统计
-    GroupConfigManager::incrementMessageCount(groupId, qqMessage.getFormatMessage().size());
-    auto [allMesCount, allCharCount] = GroupConfigManager::getConfig(groupId);
-    log.info("群聊统计数据: 接收总消息数{}条,接收总字符(字节)数{}个", allMesCount, allCharCount);
+    SessionConfigManager::incrementMessageCount(sessionId, qqMessage.getFormatMessage().size());
+    auto [allMesCount, allCharCount] = SessionConfigManager::getConfig(sessionId);
+    log.info("会话统计数据: 接收总消息数{}条,接收总字符(字节)数{}个", allMesCount, allCharCount);
 
     // 记忆提取与窗口滑动 - 窗口超限时触发（失败自愈：下条消息重试）
     try {
-        co_await MemoryService::appendAndMergeMemory(groupId);
+        co_await MemoryService::appendAndMergeMemory(sessionId);
     } catch (const std::exception &e) {
         log.error("记忆提取异常: {}", e.what());
     }

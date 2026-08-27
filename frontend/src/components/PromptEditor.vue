@@ -8,7 +8,12 @@ import type {ApiResponse} from '../vite-env.d'
 
 const showToast = inject<(msg: string, isError?: boolean) => void>('showToast')
 
-const promptKeys = ['executor_system', 'router_system']
+const promptList = [
+  {key: 'executor_system', label: '群聊 · 人设'},
+  {key: 'router_system', label: '群聊 · 路由'},
+  {key: 'executor_private_system', label: '私聊 · 人设'},
+  {key: 'router_private_system', label: '私聊 · 路由'},
+]
 const selectedPrompt: Ref<string> = ref('executor_system')
 const prompts = reactive<Record<string, string>>({})
 const promptContent: Ref<string> = ref('')
@@ -52,12 +57,12 @@ const savePrompt = async (): Promise<void> => {
 
     <div class="tabs">
       <button
-          v-for="key in promptKeys"
-          :key="key"
-          :class="{ active: selectedPrompt === key }"
+          v-for="p in promptList"
+          :key="p.key"
+          :class="{ active: selectedPrompt === p.key }"
           class="tab"
-          @click="selectedPrompt = key"
-      >{{ key }}
+          @click="selectedPrompt = p.key"
+      >{{ p.label }}
       </button>
     </div>
 

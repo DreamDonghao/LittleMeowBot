@@ -65,8 +65,8 @@ namespace LittleMeowBot {
         return {level.data(), level.size()};
     }
 
-    GroupLogger Logger::group(const uint64_t groupId) {
-        return GroupLogger(groupId);
+    SessionLogger Logger::session(const uint64_t sessionId) {
+        return SessionLogger(sessionId);
     }
 
     void Logger::shutdown() {

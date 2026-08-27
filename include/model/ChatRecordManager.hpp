@@ -1,8 +1,8 @@
 /// @file ChatRecordManager.hpp
-/// @brief 聊天记录管理器 - 群聊历史记录存储与检索
+/// @brief 聊天记录管理器 - 会话历史记录存储与检索
 /// @author donghao
 /// @date 2026-04-02
-/// @details 管理单个群组的聊天记录，使用 SQLite 持久化存储。
+/// @details 管理单个会话的聊天记录，使用 SQLite 持久化存储。
 ///          支持用户消息和 AI 回复的记录与检索。
 
 #pragma once
@@ -12,17 +12,17 @@
 
 namespace LittleMeowBot {
     /// @brief 聊天记录管理类
-    /// @details 管理单个群组的聊天记录，使用 SQLite 存储。
-    ///          每个群组对应一个 ChatRecordManager 实例。
+    /// @details 管理单个会话的聊天记录，使用 SQLite 存储。
+    ///          每个会话对应一个 ChatRecordManager 实例。
     class ChatRecordManager {
     public:
         /// @brief 构造函数
-        /// @param groupId 群号
-        explicit ChatRecordManager(uint64_t groupId);
+        /// @param sessionId 会话 ID（私聊会话带标志位）
+        explicit ChatRecordManager(uint64_t sessionId);
 
-        /// @brief 获取群号
+        /// @brief 获取会话 ID
         /// @return 群号
-        [[nodiscard]] uint64_t getGroupId() const;
+        [[nodiscard]] uint64_t getSessionId() const;
 
         /// @brief 添加用户消息记录
         /// @param content 消息内容
@@ -37,6 +37,6 @@ namespace LittleMeowBot {
         [[nodiscard]] std::deque<Json::Value> getRecords() const;
 
     private:
-        uint64_t m_groupId; ///< 群号
+        uint64_t m_sessionId; ///< 群号
     };
 }

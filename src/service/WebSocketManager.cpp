@@ -28,25 +28,26 @@ namespace LittleMeowBot {
         spdlog::info("WebSocket连接已断开，当前连接数: {}", m_connections.size());
     }
 
-    void WebSocketManager::subscribeGroup(const drogon::WebSocketConnectionPtr &conn, uint64_t groupId) {
+    void WebSocketManager::subscribeSession(const drogon::WebSocketConnectionPtr &conn, uint64_t sessionId) {
         std::lock_guard<std::mutex> lock(m_mutex);
-        m_subscriptions[groupId].insert(conn);
-        spdlog::info("WebSocket订阅群: {}", groupId);
+        m_subscriptions[sessionId].insert(conn);
+        spdlog::info("WebSocket订阅会话: {}", sessionId);
     }
 
-    void WebSocketManager::unsubscribeGroup(const drogon::WebSocketConnectionPtr &conn, const uint64_t groupId) {
+    void WebSocketManager::unsubscribeSession(const drogon::WebSocketConnectionPtr &conn, const uint64_t sessionId) {
         std::lock_guard lock(m_mutex);
-        if (m_subscriptions.contains(groupId)) {
-            m_subscriptions[groupId].erase(conn);
+        if (m_subscriptions.contains(sessionId)) {
+            m_subscriptions[sessionId].erase(conn);
         }
     }
 
-    void WebSocketManager::pushMessage(const uint64_t groupId, const std::string &role, const std::string &content) {
+    void WebSocketManager::pushMessage(const uint64_t sessionId, const std::string &role, const std::string &content) {
         std::lock_guard lock(m_mutex);
 
         Json::Value msg;
         msg["type"] = "new_message";
-        msg["groupId"] = groupId;
+        // 字符串形式：会话 ID 可能带私聊标志位，超出 JS Number 安全整数范围
+        msg["groupId"] = std::to_string(sessionId);
         msg["data"]["role"] = role;
         msg["data"]["content"] = content;
         msg["data"]["timestamp"] = currentDateTime();
@@ -55,8 +56,8 @@ namespace LittleMeowBot {
         const std::string jsonStr = Json::writeString(builder, msg);
 
         // 发送给订阅该群的连接
-        if (m_subscriptions.contains(groupId)) {
-            for (const auto &conn: m_subscriptions[groupId]) {
+        if (m_subscriptions.contains(sessionId)) {
+            for (const auto &conn: m_subscriptions[sessionId]) {
                 conn->send(jsonStr);
             }
         }

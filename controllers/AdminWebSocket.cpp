@@ -40,23 +40,23 @@ void AdminWebSocket::handleNewMessage(
 
     // 处理订阅请求
     if (msg.isMember("action")) {
-        if (std::string action = msg["action"].asString(); action == "subscribe" && msg.isMember("groupId")) {
-            uint64_t groupId = msg["groupId"].asUInt64();
-            wsMgr.subscribeGroup(conn, groupId);
+        if (std::string action = msg["action"].asString(); action == "subscribe" && msg.isMember("sessionId")) {
+            uint64_t sessionId = msg["groupId"].asUInt64();
+            wsMgr.subscribeSession(conn, sessionId);
 
             // 发送确认
             Json::Value resp;
             resp["type"] = "subscribed";
-            resp["groupId"] = groupId;
+            resp["groupId"] = sessionId;
             Json::StreamWriterBuilder builder;
             conn->send(Json::writeString(builder, resp));
-        } else if (action == "unsubscribe" && msg.isMember("groupId")) {
-            uint64_t groupId = msg["groupId"].asUInt64();
-            wsMgr.unsubscribeGroup(conn, groupId);
+        } else if (action == "unsubscribe" && msg.isMember("sessionId")) {
+            uint64_t sessionId = msg["groupId"].asUInt64();
+            wsMgr.unsubscribeSession(conn, sessionId);
 
             Json::Value resp;
             resp["type"] = "unsubscribed";
-            resp["groupId"] = groupId;
+            resp["groupId"] = sessionId;
             Json::StreamWriterBuilder builder;
             conn->send(Json::writeString(builder, resp));
         }

@@ -35,5 +35,5 @@ namespace LittleMeowBot::HttpUtil {
         const Json::Value &body,
         const std::string &bearerToken,
         double timeout,
-        std::optional<uint64_t> groupId = std::nullopt);
+        std::optional<uint64_t> sessionId = std::nullopt);
 } // namespace LittleMeowBot::HttpUtil

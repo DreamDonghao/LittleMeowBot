@@ -23,9 +23,9 @@ namespace LittleMeowBot {
         ///          改用标记集合 + RAII，协程销毁时自动清除标记
         class EvictionGuard {
         public:
-            explicit EvictionGuard(const uint64_t groupId) : m_groupId(groupId) {
+            explicit EvictionGuard(const uint64_t sessionId) : m_groupId(sessionId) {
                 std::lock_guard lock(s_mutex);
-                m_acquired = s_evicting.insert(groupId).second;
+                m_acquired = s_evicting.insert(sessionId).second;
             }
 
             ~EvictionGuard() {
@@ -61,7 +61,7 @@ namespace LittleMeowBot {
             const std::string &existingMemory,
             const std::string &chatRecords,
             int maxTokens,
-            const uint64_t groupId) {
+            const uint64_t sessionId) {
             Json::Value messages;
             Json::Value item;
             item["role"] = "system";
@@ -99,9 +99,9 @@ namespace LittleMeowBot {
                               + "\n\n请直接输出合并后的记忆列表，每行一条，不要解释：";
             messages.append(item);
 
-            auto result = co_await ApiClient::requestLLM(messages, 0.4f, 0.9f, maxTokens, "memory", groupId);
+            auto result = co_await ApiClient::requestLLM(messages, 0.4f, 0.9f, maxTokens, "memory", sessionId);
             if (!result) {
-                Logger::group(groupId).error("maintainMemory: API 请求失败");
+                Logger::session(sessionId).error("maintainMemory: API 请求失败");
                 co_return std::nullopt;
             }
             co_return trim(result.value());
@@ -157,7 +157,7 @@ namespace LittleMeowBot {
 
         /// @brief 筛选值得长期保存的记忆
         drogon::Task<std::string> selectMemoriesToMigrate(
-            const std::string &shortTermMemory, const uint64_t groupId) {
+            const std::string &shortTermMemory, const uint64_t sessionId) {
             const int migrateCount = Config::instance().memoryMigrateCount;
 
             Json::Value messages;
@@ -188,9 +188,9 @@ namespace LittleMeowBot {
             item["content"] = "请输出值得长期保存的记忆：";
             messages.append(item);
 
-            auto result = co_await ApiClient::requestLLM(messages, 0.3f, 0.9f, 256, "memory", groupId);
+            auto result = co_await ApiClient::requestLLM(messages, 0.3f, 0.9f, 256, "memory", sessionId);
             if (!result) {
-                Logger::group(groupId).error("selectMemoriesToMigrate: API 请求失败");
+                Logger::session(sessionId).error("selectMemoriesToMigrate: API 请求失败");
                 co_return "无";
             }
             co_return result.value();
@@ -233,31 +233,31 @@ namespace LittleMeowBot {
 
         /// @brief 从短期记忆迁移到长期记忆库
         drogon::Task<std::string> migrateToLongTermMemory(
-            uint64_t groupId, const std::string &shortTermMemory) {
+            uint64_t sessionId, const std::string &shortTermMemory) {
             const int maxLines = Config::instance().shortTermMemoryMax;
 
             // 检查 RAGFlow 是否实际可用（不仅 enabled，还需要配置了必要参数）
             const auto &kb = Config::instance().knowledgeBase;
             if (!kb.enabled || kb.memoryDatasetId.empty() || kb.memoryDocumentId.empty()) {
-                Logger::group(groupId).info("短期记忆超限，RAGFlow 未配置或未启用，仅保留 {} 条", maxLines);
+                Logger::session(sessionId).info("短期记忆超限，RAGFlow 未配置或未启用，仅保留 {} 条", maxLines);
                 std::string trimmed = trimToMaxLines(shortTermMemory, maxLines);
-                Database::instance().updateShortTermMemory(groupId, trimmed);
+                Database::instance().updateShortTermMemory(sessionId, trimmed);
                 co_return trimmed;
             }
 
             // 获取群名
-            std::string groupName = Database::instance().getGroupName(groupId);
+            std::string groupName = Database::instance().getSessionName(sessionId);
             if (groupName.empty()) {
-                groupName = std::to_string(groupId);
+                groupName = std::to_string(sessionId);
             }
 
             // 1. 让 LLM 筛选值得长期保存的记忆
-            const std::string toMigrate = co_await selectMemoriesToMigrate(shortTermMemory, groupId);
+            const std::string toMigrate = co_await selectMemoriesToMigrate(shortTermMemory, sessionId);
 
             if (toMigrate.empty() || toMigrate == "无") {
-                Logger::group(groupId).info("无记忆需要迁移");
+                Logger::session(sessionId).info("无记忆需要迁移");
                 std::string trimmed = trimToMaxLines(shortTermMemory, maxLines);
-                Database::instance().updateShortTermMemory(groupId, trimmed);
+                Database::instance().updateShortTermMemory(sessionId, trimmed);
                 co_return trimmed;
             }
 
@@ -270,19 +270,19 @@ namespace LittleMeowBot {
 
                 // 每条记忆单独存储，加上群名前缀
                 if (std::string prefixedMemory = "[" + groupName + "] " + line;
-                    co_await RAGFlowClient::addMemory(prefixedMemory, groupId)
+                    co_await RAGFlowClient::addMemory(prefixedMemory, sessionId)
                 ) {
-                    Logger::group(groupId).info("迁移记忆 [{}]: {}", groupName, line);
+                    Logger::session(sessionId).info("迁移记忆 [{}]: {}", groupName, line);
                     successCount++;
                 } else {
-                    Logger::group(groupId).warn("迁移记忆 [{}] 失败: {}", groupName, line);
+                    Logger::session(sessionId).warn("迁移记忆 [{}] 失败: {}", groupName, line);
                 }
             }
 
             if (successCount == 0) {
-                Logger::group(groupId).warn("迁移到 RAGFlow 全部失败，保留短期记忆");
+                Logger::session(sessionId).warn("迁移到 RAGFlow 全部失败，保留短期记忆");
                 std::string trimmed = trimToMaxLines(shortTermMemory, maxLines);
-                Database::instance().updateShortTermMemory(groupId, trimmed);
+                Database::instance().updateShortTermMemory(sessionId, trimmed);
                 co_return trimmed;
             }
 
@@ -291,15 +291,15 @@ namespace LittleMeowBot {
 
             // 4. 确保不超过maxLines
             remaining = trimToMaxLines(remaining, maxLines);
-            Database::instance().updateShortTermMemory(groupId, remaining);
+            Database::instance().updateShortTermMemory(sessionId, remaining);
 
-            Logger::group(groupId).info("迁移完成，成功 {} 条，短期记忆保留 {} 条", successCount, countLines(remaining));
+            Logger::session(sessionId).info("迁移完成，成功 {} 条，短期记忆保留 {} 条", successCount, countLines(remaining));
             co_return remaining;
         }
     }
 
-    drogon::Task<void> MemoryService::appendAndMergeMemory(uint64_t groupId) {
-        EvictionGuard guard(groupId);
+    drogon::Task<void> MemoryService::appendAndMergeMemory(uint64_t sessionId) {
+        EvictionGuard guard(sessionId);
         if (!guard.acquired()) {
             co_return; // 该群正在提取中，等下一轮消息触发
         }
@@ -308,8 +308,8 @@ namespace LittleMeowBot {
         auto &config = Config::instance();
 
         // 1. 检查窗口是否超限
-        const uint64_t watermark = db.getMemoryWatermark(groupId);
-        const size_t count = db.getChatRecordCountSince(groupId, watermark);
+        const uint64_t watermark = db.getMemoryWatermark(sessionId);
+        const size_t count = db.getChatRecordCountSince(sessionId, watermark);
         if (count <= static_cast<size_t>(config.windowTriggerCount)) {
             co_return;
         }
@@ -319,14 +319,14 @@ namespace LittleMeowBot {
             toDrop = 1; // 配置异常兜底（keep >= trigger），至少推进一条，保证触发循环能终止
         }
 
-        const auto records = db.getChatRecordsSince(groupId, watermark, 0);
+        const auto records = db.getChatRecordsSince(sessionId, watermark, 0);
         if (records.size() < toDrop) {
-            Logger::group(groupId).warn("窗口记录数与计数不一致，跳过本轮");
+            Logger::session(sessionId).warn("窗口记录数与计数不一致，跳过本轮");
             co_return;
         }
 
         // 2. 分批提取+合并，逐批推进水位线
-        std::string existingMemory = db.getShortTermMemory(groupId);
+        std::string existingMemory = db.getShortTermMemory(sessionId);
         uint64_t chunkEndId = watermark;
         size_t processed = 0;
         int successChunks = 0;
@@ -337,13 +337,13 @@ namespace LittleMeowBot {
             const size_t overlapEnd = std::min(records.size(), batchEnd + kOverlapCount);
             const std::string chunkText = formatRecordsText(records, processed, overlapEnd);
 
-            Logger::group(groupId).info("记忆提取: 待删第 {}-{} 条（共 {} 条）", processed + 1, batchEnd, toDrop);
+            Logger::session(sessionId).info("记忆提取: 待删第 {}-{} 条（共 {} 条）", processed + 1, batchEnd, toDrop);
 
             const auto result = co_await maintainMemory(
-                existingMemory, chunkText, config.memoryExtractMaxTokens, groupId);
+                existingMemory, chunkText, config.memoryExtractMaxTokens, sessionId);
             if (!result) {
                 // API 失败：水位线停在本批之前，下条消息自动重试
-                Logger::group(groupId).warn("记忆提取失败，水位线保持 {}，下条消息将重试", chunkEndId);
+                Logger::session(sessionId).warn("记忆提取失败，水位线保持 {}，下条消息将重试", chunkEndId);
                 break;
             }
             if (!result->empty() && *result != "无") {
@@ -352,7 +352,7 @@ namespace LittleMeowBot {
 
             // 原子写记忆+水位线，崩溃后重提取同批记录，LLM 合并去重保证幂等
             chunkEndId = records[batchEnd - 1]["id"].asUInt64();
-            db.updateShortTermMemoryWithWatermark(groupId, existingMemory, chunkEndId);
+            db.updateShortTermMemoryWithWatermark(sessionId, existingMemory, chunkEndId);
             processed = batchEnd;
             successChunks++;
         }
@@ -361,14 +361,14 @@ namespace LittleMeowBot {
             co_return;
         }
 
-        Logger::group(groupId).info("窗口已滑动: 滑出 {} 条，水位线 -> {}，记忆 {} 条",
+        Logger::session(sessionId).info("窗口已滑动: 滑出 {} 条，水位线 -> {}，记忆 {} 条",
                                     processed, chunkEndId, countLines(existingMemory));
 
         // 3. 检查是否需要迁移到长期记忆
         if (countLines(existingMemory) > config.shortTermMemoryMax) {
-            Logger::group(groupId).info("短期记忆超限({}>{})，触发迁移",
+            Logger::session(sessionId).info("短期记忆超限({}>{})，触发迁移",
                                         countLines(existingMemory), config.shortTermMemoryMax);
-            co_await migrateToLongTermMemory(groupId, existingMemory);
+            co_await migrateToLongTermMemory(sessionId, existingMemory);
         }
 
         co_return;

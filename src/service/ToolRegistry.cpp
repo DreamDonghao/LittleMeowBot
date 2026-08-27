@@ -108,12 +108,12 @@ namespace LittleMeowBot {
     }
 
     drogon::Task<std::string> ToolRegistry::executeTool(const std::string &name, const Json::Value &args,
-                                                        uint64_t groupId) const {
+                                                        uint64_t sessionId) const {
         // 设置上下文
         auto &ctx = currentToolContext();
-        ctx.groupId = groupId;
-        if (groupId != 0) {
-            ctx.groupName = Database::instance().getGroupName(groupId);
+        ctx.sessionId = sessionId;
+        if (sessionId != 0) {
+            ctx.groupName = Database::instance().getSessionName(sessionId);
         }
 
         // 查找所有分类

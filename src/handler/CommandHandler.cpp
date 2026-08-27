@@ -10,13 +10,14 @@
 #include <sstream>
 #include <vector>
 #include <drogon/HttpClient.h>
-#include <model/GroupConfigManager.hpp>
+#include <model/SessionConfigManager.hpp>
 #include <util/tool.h>
 #include <util/HttpUtil.hpp>
 
 namespace LittleMeowBot {
     bool isCommand(const QQMessage &message) {
-        if (!message.atMe()) return false;
+        // 群聊命令需要 @ 机器人；私聊消息本身就是对机器人说的，无需 @
+        if (!message.atMe() && !message.isPrivate()) return false;
         std::string rawMsg = message.getRawMessage();
 
         size_t pos = 0;
@@ -41,7 +42,7 @@ namespace LittleMeowBot {
         const QQMessage &message,
         ChatRecordManager &chatRecords) {
         std::string rawMsg = message.getRawMessage();
-        uint64_t groupId = message.getGroupId();
+        uint64_t sessionId = message.getSessionId(); ///< 会话 ID（群聊=群号；私聊=用户QQ号|私聊标志位）
         uint64_t senderQQ = message.getSenderQQNumber();
 
         auto &database = Database::instance();
@@ -75,11 +76,11 @@ namespace LittleMeowBot {
 
         if (cmd == "/help" || cmd == "/帮助") {
             response = "可用命令:\n"
-                    "【群聊管理】\n"
-                    "/enable [群号] - 启用群聊\n"
-                    "/disable [群号] - 禁用群聊\n"
-                    "/groups - 查看启用的群列表\n"
-                    "/status - 查看当前群状态\n"
+                    "【会话管理】\n"
+                    "/enable [会话ID] - 启用当前会话（群聊传群号，私聊可不带参数）\n"
+                    "/disable [会话ID] - 禁用当前会话（私聊可不带参数）\n"
+                    "/groups - 查看启用的会话列表\n"
+                    "/status - 查看当前会话状态\n"
                     "【管理员】\n"
                     "/admins - 查看管理员列表\n"
                     "/addadmin <QQ号> - 添加管理员\n"
@@ -92,14 +93,14 @@ namespace LittleMeowBot {
                     "/about - 关于本项目\n\n"
                     "注意: 管理命令仅限管理员使用";
         } else if (cmd == "/status" || cmd == "/状态") {
-            bool enabled = database.isGroupEnabled(groupId);
-            auto [allMesCount, allCharCount] = GroupConfigManager::getConfig(groupId);
+            bool enabled = database.isSessionEnabled(sessionId);
+            auto [allMesCount, allCharCount] = SessionConfigManager::getConfig(sessionId);
             response = fmt::format(
-                "群 {} 状态:\n"
+                "会话 {} 状态:\n"
                 "- 启用: {}\n"
                 "- 消息数: {}\n"
                 "- 字符数: {}",
-                groupId,
+                sessionId,
                 enabled ? "是" : "否",
                 allMesCount,
                 allCharCount
@@ -122,27 +123,27 @@ namespace LittleMeowBot {
         } else if (!hasPermission) {
             response = fmt::format("权限不足，你({})不是管理员", senderQQ);
         } else if (cmd == "/enable" || cmd == "/启用") {
-            uint64_t targetGroup = groupId;
+            uint64_t targetSession = sessionId;
             if (std::string arg; iss >> arg) {
                 if (const auto parsed = tryParseUInt64(arg)) {
-                    targetGroup = *parsed;
+                    targetSession = *parsed;
                 } else {
-                    co_return "无效的群号格式";
+                    co_return "无效的ID格式";
                 }
             }
-            database.enableGroup(targetGroup);
-            response = fmt::format("已启用群: {}", targetGroup);
+            database.enableSession(targetSession);
+            response = fmt::format("已启用会话: {}", targetSession);
         } else if (cmd == "/disable" || cmd == "/禁用") {
-            uint64_t targetGroup = groupId;
+            uint64_t targetSession = sessionId;
             if (std::string arg; iss >> arg) {
                 if (const auto parsed = tryParseUInt64(arg)) {
-                    targetGroup = *parsed;
+                    targetSession = *parsed;
                 } else {
-                    co_return "无效的群号格式";
+                    co_return "无效的ID格式";
                 }
             }
-            database.disableGroup(targetGroup);
-            response = fmt::format("已禁用群: {}", targetGroup);
+            database.disableSession(targetSession);
+            response = fmt::format("已禁用会话: {}", targetSession);
         } else if (cmd == "/groups" || cmd == "/群列表") {
             auto groups = database.getEnabledGroups();
             response = "启用的群聊列表:\n";

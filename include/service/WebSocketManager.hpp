@@ -35,19 +35,19 @@ namespace LittleMeowBot {
 
         /// @brief 订阅特定群的消息
         /// @param conn WebSocket 连接指针
-        /// @param groupId 群号
-        void subscribeGroup(const drogon::WebSocketConnectionPtr &conn, uint64_t groupId);
+        /// @param sessionId 会话 ID（私聊会话带标志位）
+        void subscribeSession(const drogon::WebSocketConnectionPtr &conn, uint64_t sessionId);
 
         /// @brief 取消订阅群
         /// @param conn WebSocket 连接指针
-        /// @param groupId 群号
-        void unsubscribeGroup(const drogon::WebSocketConnectionPtr &conn, uint64_t groupId);
+        /// @param sessionId 会话 ID（私聊会话带标志位）
+        void unsubscribeSession(const drogon::WebSocketConnectionPtr &conn, uint64_t sessionId);
 
         /// @brief 推送新消息到订阅该群的连接
-        /// @param groupId 群号
+        /// @param sessionId 会话 ID（私聊会话带标志位）
         /// @param role 角色（user/assistant）
         /// @param content 消息内容
-        void pushMessage(uint64_t groupId, const std::string &role, const std::string &content);
+        void pushMessage(uint64_t sessionId, const std::string &role, const std::string &content);
 
         /// @brief 广播事件到所有连接
         /// @param type 事件类型

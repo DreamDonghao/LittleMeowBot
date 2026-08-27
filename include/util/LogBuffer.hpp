@@ -16,11 +16,11 @@ namespace LittleMeowBot {
         std::string timestamp;
         std::string level;
         std::string message;
-        std::optional<uint64_t> groupId;
+        std::optional<uint64_t> sessionId;
     };
 
     struct LogQuery {
-        std::optional<uint64_t> groupId;
+        std::optional<uint64_t> sessionId;
         bool systemOnly = false;
         std::optional<std::string> level;
         std::string keyword;
@@ -55,7 +55,7 @@ namespace LittleMeowBot {
 
         static std::optional<LogEntry> parseLine(const std::string &line);
 
-        static std::optional<uint64_t> extractGroupId(const std::string &message);
+        static std::optional<uint64_t> extractSessionId(const std::string &message);
 
         static std::string formatTimestamp(const spdlog::log_clock::time_point &timestamp);
 
