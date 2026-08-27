@@ -420,7 +420,7 @@ a {
 
 .log-line {
     display: grid;
-    grid-template-columns: 190px 70px 110px 1fr;
+    grid-template-columns: 190px 70px 140px minmax(0, 1fr);
     gap: 12px;
     padding: 8px 16px;
     border-bottom: 1px solid var(--border);
@@ -432,10 +432,16 @@ a {
 }
 
 .log-time,
-.log-level,
+.log-level {
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
 .log-group {
     color: var(--text-secondary);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .log-message {

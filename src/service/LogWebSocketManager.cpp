@@ -2,6 +2,7 @@
 /// @brief 运行日志 WebSocket 管理器 - 实现
 
 #include <service/LogWebSocketManager.hpp>
+#include <util/tool.h>
 #include <json/writer.h>
 #include <spdlog/spdlog.h>
 #include <utility>
@@ -56,15 +57,14 @@ namespace LittleMeowBot {
     }
 
     bool LogWebSocketManager::matches(const LogSubscription &subscription, const Json::Value &log) {
+        // 日志条目的会话字段线上名为 "groupId"（字符串，可能带私聊标志位超出 int64）
+        const bool hasSession = log.isMember("groupId") && !log["groupId"].isNull();
         if (subscription.systemOnly) {
-            if (log.isMember("sessionId") && !log["groupId"].isNull()) {
+            if (hasSession) {
                 return false;
             }
         } else if (subscription.sessionId.has_value()) {
-            if (!log.isMember("sessionId") || log["groupId"].isNull()) {
-                return false;
-            }
-            if (log["groupId"].asUInt64() != *subscription.sessionId) {
+            if (!hasSession || parseUInt64(log["groupId"].asString()) != *subscription.sessionId) {
                 return false;
             }
         }

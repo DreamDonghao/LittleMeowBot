@@ -6,7 +6,7 @@
 ///          - 终端工具：no_reply, reply
 ///          - 信息工具：list_stickers, search_knowledge, recall_memory, get_group_name
 ///          - 动作工具：send_face, send_image, send_sticker, save_sticker, rename_sticker, delete_sticker,
-///                    at_user, ban_user, send_poke, recall_message
+///                    at_user, ban_user, send_poke, recall_message, create_scheduled_task
 ///          - 自定义工具：从数据库加载用户定义的工具（支持Python/HTTP）
 
 #pragma once

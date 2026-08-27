@@ -1,0 +1,246 @@
+/// @file TaskScheduler.cpp
+/// @brief 定时任务调度器 - 实现
+/// @author donghao
+/// @date 2026-08-27
+
+#include <service/TaskScheduler.hpp>
+#include <config/Config.hpp>
+#include <model/QQMessage.hpp>
+#include <util/HttpUtil.hpp>
+#include <util/Logger.hpp>
+#include <drogon/drogon.h>
+#include <spdlog/spdlog.h>
+#include <iomanip>
+#include <sstream>
+
+namespace LittleMeowBot {
+    namespace {
+        /// @brief 触发提前量：提前这么多秒注入消息，补偿 Router+Executor 的回复生成耗时。
+        /// 不宜过大，否则提醒会比用户指定时刻明显提前
+        constexpr std::chrono::seconds kFireLead{5};
+
+        /// @brief 注入事件使用的本机接收接口地址（与 main.cpp 监听端口一致）
+        constexpr const char *kSelfBaseUrl = "http://127.0.0.1:7778";
+
+        /// @brief 合成系统消息的发送者昵称与正文前缀
+        constexpr std::string_view kSystemTaskLabel = "系统定时任务";
+
+        /// @brief 提醒内容长度上限
+        constexpr size_t kMaxContentLen = 500;
+
+        std::string formatUnixTime(const int64_t unixSec) {
+            const std::time_t t = static_cast<std::time_t>(unixSec);
+            std::tm tm{};
+            localtime_r(&t, &tm);
+            std::ostringstream oss;
+            oss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
+            return oss.str();
+        }
+
+        std::string buildText(const Database::ScheduledTask &task, const bool delayed) {
+            // 正文必须是对机器人下达的指令而非对用户的陈述，
+            // content 是备忘而非现成回复，具体怎么说由到点时的 AI 结合上下文自行决定
+            std::string text =
+                fmt::format("【{}】{}，你在 {} 设定的定时任务到点了。你留下的备忘：「{}」。"
+                            "请结合会话上下文自行决定如何完成这件事并作出回应",
+                            kSystemTaskLabel, Config::instance().botName, formatUnixTime(task.remindTime),
+                            task.content);
+            if (delayed) {
+                text += "（已超过原定时刻送达，因程序当时未运行）";
+            }
+            return text;
+        }
+
+        Json::Value buildSystemEvent(const Database::ScheduledTask &task, const bool delayed) {
+            const auto &config = Config::instance();
+            const std::string text = buildText(task, delayed);
+
+            // 合成消息 ID 用远离真实 ID 的固定区段，避免与 NapCat 分配的冲突
+            static std::atomic<int64_t> s_syntheticMsgId{0};
+            const auto msgId = 9000000000LL + s_syntheticMsgId.fetch_add(1);
+
+            Json::Value body;
+            body["post_type"] = "message";
+            body["self_id"] = static_cast<Json::UInt64>(config.selfQQNumber);
+            body["time"] = static_cast<Json::Int64>(std::time(nullptr));
+            body["message_id"] = fmt::to_string(msgId);
+            body["raw_message"] = text;
+            body["sender"]["user_id"] = static_cast<Json::UInt64>(QQMessage::kSystemAccountId);
+            body["sender"]["nickname"] = std::string(kSystemTaskLabel);
+            if (task.sessionType == "private") {
+                body["message_type"] = "private";
+                body["user_id"] = static_cast<Json::UInt64>(task.targetId);
+            } else {
+                body["message_type"] = "group";
+                body["group_id"] = static_cast<Json::UInt64>(task.targetId);
+            }
+            Json::Value item;
+            item["type"] = "text";
+            item["data"]["text"] = text;
+            body["message"].append(item);
+            return body;
+        }
+    } // namespace
+
+    TaskScheduler &TaskScheduler::instance() {
+        static TaskScheduler scheduler;
+        return scheduler;
+    }
+
+    TaskScheduler::~TaskScheduler() { stop(); }
+
+    void TaskScheduler::start() {
+        bool expected = false;
+        if (!m_running.compare_exchange_strong(expected, true)) {
+            return;
+        }
+
+        restorePendingTasks();
+        m_thread = std::jthread([this] { runLoop(); });
+    }
+
+    void TaskScheduler::stop() {
+        {
+            std::lock_guard lock(m_mutex);
+            if (!m_running.exchange(false)) {
+                return;
+            }
+        }
+        m_cv.notify_all();
+        if (m_thread.joinable()) {
+            m_thread.join();
+        }
+    }
+
+    int64_t TaskScheduler::schedule(Database::ScheduledTask task) {
+        const int64_t id = Database::instance().addScheduledTask(task);
+
+        Entry entry;
+        entry.task = std::move(task);
+        entry.task.id = id;
+        entry.fireTime = entry.task.remindTime - kFireLead.count();
+
+        {
+            std::lock_guard lock(m_mutex);
+            m_heap.push(std::move(entry));
+        }
+        m_cv.notify_all();
+
+        spdlog::info("[Scheduler] 已创建定时任务 #{}: {}({}) 于 {}", id,
+                     entry.task.sessionType == "private" ? "私聊" : "群聊",
+                     entry.task.targetId, formatUnixTime(entry.task.remindTime));
+        return id;
+    }
+
+    void TaskScheduler::restorePendingTasks() {
+        const auto tasks = Database::instance().getPendingScheduledTasks();
+        size_t overdue = 0;
+        {
+            std::lock_guard lock(m_mutex);
+            const std::time_t now =
+                std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::system_clock::now().time_since_epoch())
+                    .count();
+            for (auto &task: tasks) {
+                Entry entry;
+                entry.task = std::move(task);
+                // 已过期的任务钳制到当前时刻：恢复后立即补发，而不是按过期时间连发
+                entry.fireTime = std::max<std::time_t>(
+                    entry.task.remindTime - kFireLead.count(), now);
+                if (entry.task.remindTime <= now) {
+                    overdue++;
+                }
+                m_heap.push(std::move(entry));
+            }
+        }
+        spdlog::info("[Scheduler] 恢复待触发定时任务 {} 条（其中已过期 {} 条）", tasks.size(), overdue);
+        if (!tasks.empty()) {
+            m_cv.notify_all();
+        }
+    }
+
+    void TaskScheduler::runLoop() {
+        using Clock = std::chrono::system_clock;
+        std::unique_lock lock(m_mutex);
+        while (m_running.load()) {
+            if (m_heap.empty()) {
+                m_cv.wait(lock, [this] { return !m_heap.empty() || !m_running.load(); });
+                continue;
+            }
+            m_cv.wait_until(lock, Clock::from_time_t(m_heap.top().fireTime));
+            if (!m_running.load()) {
+                break;
+            }
+
+            // 到期任务全部弹出再逐个触发；触发期间锁短暂放开，新创建的任务可同时入堆。
+            // async_run 在本线程启动协程，首个真正的挂起点（HTTP 发送）之后续转到主循环执行，
+            // 不会阻塞调度线程
+            while (!m_heap.empty() && m_heap.top().fireTime <= Clock::to_time_t(Clock::now())) {
+                Database::ScheduledTask task = std::move(const_cast<Entry &>(m_heap.top()).task);
+                m_heap.pop();
+                lock.unlock();
+                drogon::async_run([task = std::move(task)]() -> drogon::Task<> {
+                    co_await trigger(task);
+                });
+                lock.lock();
+            }
+        }
+    }
+
+    drogon::Task<> TaskScheduler::trigger(Database::ScheduledTask task) {
+        const uint64_t logSessionId = task.sessionType == "private"
+                                          ? task.targetId | QQMessage::kPrivateSessionFlag
+                                          : task.targetId;
+
+        const bool delayed = std::time(nullptr) > task.remindTime;
+        Logger::session(logSessionId).info("[Scheduler] 触发定时任务 #{} ({}{})", task.id,
+                                           delayed ? "延时，" : "", task.content.substr(0, 50));
+
+        const auto body = buildSystemEvent(task, delayed);
+        const auto resp = co_await HttpUtil::send("[Scheduler]", kSelfBaseUrl, "/", drogon::Post,
+                                                  body, "", 10.0, logSessionId);
+        if (!resp || (*resp)->getStatusCode() != drogon::k200OK) {
+            // HTTP 异常细节由 HttpUtil 记录；无论成败都标记完成，防止反复重发
+            spdlog::error("[Scheduler] 定时任务 #{} 注入失败（任务仍标记为已完成）", task.id);
+        } else {
+            Logger::session(logSessionId).info("[Scheduler] 定时任务 #{} 已注入消息接口", task.id);
+        }
+
+        Database::instance().finishScheduledTask(task.id);
+    }
+
+    std::optional<std::time_t> TaskScheduler::parseTimeString(const std::string &input) {
+        // 规整输入：去首尾空白、ISO 分隔符 T 视同空格
+        const size_t begin = input.find_first_not_of(" \t\r\n");
+        if (begin == std::string::npos) {
+            return std::nullopt;
+        }
+        std::string text = input.substr(begin, input.find_last_not_of(" \t\r\n") - begin + 1);
+        std::ranges::replace(text, 'T', ' ');
+
+        static constexpr std::array formats{
+            "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M"
+        };
+        for (const char *format: formats) {
+            std::tm tm{};
+            tm.tm_isdst = -1;
+            std::istringstream stream(text);
+            stream >> std::get_time(&tm, format);
+            if (stream.fail()) {
+                continue;
+            }
+            // get_time 对超范围数值不一定置错位，显式校验字段合法性
+            if (tm.tm_mon < 0 || tm.tm_mon > 11 || tm.tm_mday < 1 || tm.tm_mday > 31 //
+                || tm.tm_hour < 0 || tm.tm_hour > 23 || tm.tm_min < 0 || tm.tm_min > 59
+                || tm.tm_sec < 0 || tm.tm_sec > 60) {
+                return std::nullopt;
+            }
+            const std::time_t result = mktime(&tm);
+            if (result == -1) {
+                return std::nullopt;
+            }
+            return result;
+        }
+        return std::nullopt;
+    }
+} // namespace LittleMeowBot

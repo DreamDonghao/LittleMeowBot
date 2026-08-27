@@ -997,6 +997,48 @@ namespace LittleMeowBot {
     }
 
     // ============================================================
+    //                      定时任务操作
+    // ============================================================
+
+    int64_t Database::addScheduledTask(const ScheduledTask &task) const {
+        std::unique_lock lock(m_mutex);
+        Statement stmt(m_db,
+                       "INSERT INTO scheduled_tasks (session_type, target_id, remind_time, content) "
+                       "VALUES (?, ?, ?, ?)");
+        stmt.bind(1, task.sessionType);
+        stmt.bind(2, task.targetId);
+        stmt.bind(3, task.remindTime);
+        stmt.bind(4, task.content);
+        stmt.exec();
+        return sqlite3_last_insert_rowid(m_db);
+    }
+
+    std::vector<Database::ScheduledTask> Database::getPendingScheduledTasks() const {
+        std::shared_lock lock(m_mutex);
+        std::vector<ScheduledTask> tasks;
+        Statement stmt(m_db,
+                       "SELECT id, session_type, target_id, remind_time, content FROM scheduled_tasks "
+                       "WHERE status = 'pending' ORDER BY remind_time ASC");
+        while (stmt.step()) {
+            ScheduledTask task;
+            task.id = stmt.getInt64(0);
+            task.sessionType = stmt.getText(1);
+            task.targetId = stmt.getInt64(2);
+            task.remindTime = stmt.getInt64(3);
+            task.content = stmt.getText(4);
+            tasks.push_back(std::move(task));
+        }
+        return tasks;
+    }
+
+    void Database::finishScheduledTask(int64_t id) const {
+        std::unique_lock lock(m_mutex);
+        Statement stmt(m_db, "UPDATE scheduled_tasks SET status='done' WHERE id=?");
+        stmt.bind(1, id);
+        stmt.exec();
+    }
+
+    // ============================================================
     //                      私有方法
     // ============================================================
 
@@ -1095,6 +1137,15 @@ namespace LittleMeowBot {
         enabled INTEGER DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ))",
+            R"(CREATE TABLE IF NOT EXISTS scheduled_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_type TEXT NOT NULL CHECK(session_type IN ('group', 'private')),
+        target_id INTEGER NOT NULL,
+        remind_time INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'done')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ))",
             R"(CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value TEXT
@@ -1112,7 +1163,8 @@ namespace LittleMeowBot {
         // 创建索引
         constexpr std::array indexes = {
             "CREATE INDEX IF NOT EXISTS idx_chat_records_group ON chat_records(group_id)",
-            "CREATE INDEX IF NOT EXISTS idx_chat_records_time ON chat_records(group_id, created_at DESC)"
+            "CREATE INDEX IF NOT EXISTS idx_chat_records_time ON chat_records(group_id, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_status ON scheduled_tasks(status, remind_time)"
         };
         for (const auto *sql: indexes) {
             sqlite3_exec(m_db, sql, nullptr, nullptr, nullptr);

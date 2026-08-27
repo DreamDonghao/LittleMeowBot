@@ -158,7 +158,8 @@ Task<> AdminController::getLogs(
 ) const {
     LogQuery query;
 
-    if (const std::string groupIdParam = req->getParameter("sessionId"); !groupIdParam.empty()) {
+    // 线上参数沿用 "groupId"（内部语义为 sessionId）
+    if (const std::string groupIdParam = req->getParameter("groupId"); !groupIdParam.empty()) {
         if (groupIdParam == "system") {
             query.systemOnly = true;
         } else {
@@ -437,7 +438,7 @@ Task<> AdminController::enableSession(
     uint64_t sessionId = 0;
     if (json->isMember("sessionType") && (*json)["sessionType"].asString() == "private") {
         // 私聊会话 ID 带标志位，由后端按 QQ 号构造（前端无法安全表示超出 JS 精度的大数）
-        const uint64_t userId = (*json)["userId"].asUInt64();
+        const uint64_t userId = jsonToUInt64((*json)["userId"]);
         if (userId == 0) {
             Json::Value err;
             err["error"] = "QQ号无效";
@@ -446,7 +447,14 @@ Task<> AdminController::enableSession(
         }
         sessionId = userId | QQMessage::kPrivateSessionFlag;
     } else {
-        sessionId = (*json)["groupId"].asUInt64();
+        // 前端以字符串传递（避免 JS 大数精度丢失），需安全解析而非 asUInt64()
+        sessionId = jsonToUInt64((*json)["groupId"]);
+        if (sessionId == 0 || QQMessage::isPrivateSession(sessionId)) {
+            Json::Value err;
+            err["error"] = "群号无效";
+            callback(HttpResponse::newHttpJsonResponse(err));
+            co_return;
+        }
     }
     Database::instance().enableSession(sessionId);
 

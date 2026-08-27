@@ -25,6 +25,12 @@ namespace LittleMeowBot {
         /// @return 是否 @ 了机器人
         [[nodiscard]] bool atMe() const;
 
+        /// @brief 检查是否高优先级消息：@机器人、私聊或系统定时任务触发。
+        /// 此类消息在并发控制中不允许被静默丢弃，而是取消当前处理并等待接管
+        /// （AgentSystem 抢占判断与 Router 硬规则共用该语义）
+        /// @return 是否高优先级
+        [[nodiscard]] bool isPriorityMessage() const;
+
         /// @brief 获取群号
         /// @return 群号
         [[nodiscard]] Json::UInt64 getGroupId() const;
@@ -32,6 +38,10 @@ namespace LittleMeowBot {
         /// @brief 私聊会话标志位：私聊会话 ID = 用户QQ号 | kPrivateSessionFlag，
         /// 与群号共享同一 uint64 键空间（群号不会用到最高位），下游存储/Map 无需区分
         static constexpr uint64_t kPrivateSessionFlag = 1ULL << 63;
+
+        /// @brief 系统定时任务虚拟账号：现网不存在的保留 QQ 号。
+        /// 调度器用它作为 sender 合成【系统定时任务】消息注入消息接口，Router 据此确定性放行
+        static constexpr uint64_t kSystemAccountId = 10000000000ULL;
 
         /// @brief 判断会话 ID 是否为私聊会话
         /// @param sessionId 会话 ID
@@ -55,6 +65,12 @@ namespace LittleMeowBot {
         /// @brief 获取发送者 QQ 号
         /// @return 发送者 QQ 号
         [[nodiscard]] Json::UInt64 getSenderQQNumber() const;
+
+        /// @brief 获取消息归属用户的 QQ 号（顶层 user_id 字段，缺失时回退 sender）。
+        /// 私聊会话以该字段为准：定时任务合成的私聊事件中 sender 是系统账号，
+        /// 会话与回复目标必须指向真实的用户 QQ
+        /// @return 用户 QQ 号
+        [[nodiscard]] Json::UInt64 getUserId() const;
 
         /// @brief 获取消息 ID
         /// @return 消息 ID

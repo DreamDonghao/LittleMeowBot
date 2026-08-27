@@ -44,7 +44,7 @@ namespace {
     Task<> sendReply(const QQMessage &message, const std::string &content,
                      const ChatRecordManager &chatRecords) {
         if (message.isPrivate()) {
-            co_await MessageService::sendPrivateMsg(message.getSenderQQNumber(), content, chatRecords);
+            co_await MessageService::sendPrivateMsg(message.getUserId(), content, chatRecords);
         } else {
             co_await MessageService::sendGroupMsg(message.getGroupId(), content, chatRecords);
         }

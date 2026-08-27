@@ -38,10 +38,11 @@ namespace LittleMeowBot {
         }
 
         if (msg.get("action", "") == "subscribe") {
+            // 线上 JSON 字段沿用 "groupId"（内部语义为 sessionId）
             LogSubscription sub;
-            sub.all = !msg.isMember("sessionId") || msg["groupId"].isNull()
+            sub.all = !msg.isMember("groupId") || msg["groupId"].isNull()
                       || (msg["groupId"].isString() && msg["groupId"].asString() == "all");
-            if (msg.isMember("sessionId") && msg["groupId"].isString() && msg["groupId"].asString() == "system") {
+            if (msg.isMember("groupId") && msg["groupId"].isString() && msg["groupId"].asString() == "system") {
                 sub.all = false;
                 sub.systemOnly = true;
             } else if (!sub.all) {

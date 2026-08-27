@@ -51,8 +51,8 @@ namespace LittleMeowBot {
 
         auto generation = tryStartProcessing(sessionId);
         if (generation == 0) {
-            // @消息/私聊消息：取消当前非@消息的处理，排队等待
-            if (message.atMe() || message.isPrivate()) {
+            // 高优先级消息（@/私聊/系统定时任务）：取消当前非优先消息的处理，排队等待
+            if (message.isPriorityMessage()) {
                 cancelProcessing(sessionId);
                 do {
                     co_await drogon::sleepCoro(drogon::app().getLoop(), std::chrono::milliseconds(50));

@@ -19,6 +19,7 @@
 #include <config/Config.hpp>
 #include <agent/AgentSystem.hpp>
 #include <model/QQMessage.hpp>
+#include <service/TaskScheduler.hpp>
 
 int main() {
     using namespace LittleMeowBot;
@@ -36,6 +37,9 @@ int main() {
 
         // 初始化 Agent 系统
         AgentSystem::instance().initialize();
+
+        // 启动定时任务调度器
+        TaskScheduler::instance().start();
 
         spdlog::info("系统初始化完成 - 启用群: {}, 管理员: {}", std::ssize(database.getEnabledGroups()),
                      std::ssize(database.getAdmins()));
@@ -72,6 +76,8 @@ int main() {
 
         drogon::app().run();
 
+        // 先停调度线程再关库，避免触发中的任务写已关闭的数据库
+        TaskScheduler::instance().stop();
         database.close();
         spdlog::info("系统正常退出");
     } catch (const std::exception &e) {

@@ -222,6 +222,13 @@ namespace LittleMeowBot {
         const QQMessage &message) {
         // ========== Step 1: 硬规则检查（无需 LLM）==========
 
+        // 1.0 系统定时任务触发 → 高优先级回复（调度器以系统账号合成的消息，确定性放行；
+        //     需置于@提及检查之前，否则合成消息携带的@段会先命中导致此处日志不可见）
+        if (message.getSenderQQNumber() == QQMessage::kSystemAccountId) {
+            Logger::session(chatRecords.getSessionId()).info("[Router] 定时任务触发 → 高优先级回复");
+            co_return makeDecision(RouterDecision::Action::REPLY, "系统定时任务触发", 100, true);
+        }
+
         // 1.1 @提及检测 → 高优先级回复（私聊中每条消息都是直接对机器人说的，不适用）
         if (message.atMe()) {
             Logger::session(chatRecords.getSessionId()).info("[Router] @提及 → 高优先级回复");

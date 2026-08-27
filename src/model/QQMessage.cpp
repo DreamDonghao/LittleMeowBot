@@ -78,13 +78,21 @@ namespace LittleMeowBot {
 
     bool QQMessage::atMe() const { return m_isAtMe; }
 
+    bool QQMessage::isPriorityMessage() const {
+        return m_isAtMe || isPrivate() || getSenderQQNumber() == kSystemAccountId;
+    }
+
     Json::UInt64 QQMessage::getGroupId() const { return jsonToUInt64(m_qqMessageJson["group_id"]); }
 
     bool QQMessage::isPrivate() const { return m_qqMessageJson["message_type"].asString() == "private"; }
 
     uint64_t QQMessage::getSessionId() const {
-        if (isPrivate()) return getSenderQQNumber() | kPrivateSessionFlag;
+        if (isPrivate()) return getUserId() | kPrivateSessionFlag;
         return getGroupId();
+    }
+
+    Json::UInt64 QQMessage::getUserId() const {
+        return jsonToUInt64(m_qqMessageJson["user_id"], getSenderQQNumber());
     }
 
     Json::UInt64 QQMessage::getSelfQQNumber() const { return jsonToUInt64(m_qqMessageJson["self_id"]); }

@@ -25,6 +25,7 @@
 #include "service/MessageService.hpp"
 #include "service/RAGFlowClient.hpp"
 #include "service/ToolRegistry.hpp"
+#include "service/TaskScheduler.hpp"
 
 namespace LittleMeowBot {
     void AgentToolManager::registerAllTools() {
@@ -609,7 +610,76 @@ namespace LittleMeowBot {
             }, ToolCategory::ACTION
         );
 
-        spdlog::info("ToolManager: 工具注册完成（共19个工具）");
+        // create_scheduled_task - 创建定时提醒任务
+        Json::Value scheduleParams;
+        scheduleParams["type"] = "object";
+        scheduleParams["properties"]["time"]["type"] = "string";
+        scheduleParams["properties"]["time"]["description"] =
+                "触发时间，必须是 YYYY-MM-DD HH:MM:SS 格式的绝对时间。根据聊天记录中最新消息的 time 字段推算当前时间，"
+                "把用户说的『明天6点』『一小时后』换算成完整日期时间再传入";
+        scheduleParams["properties"]["content"]["type"] = "string";
+        scheduleParams["properties"]["content"]["description"] =
+                fmt::format("到点时留给自己（{}）的备忘说明，不是最终的回复文本：写清楚要提醒谁（带上对方昵称及sender.qq）、要做什么事、"
+                            "以及创建时对话里的相关背景。到点后你会看到这段备忘并结合当时的聊天上下文自行组织回复",
+                            Config::instance().botName);
+        scheduleParams["required"].append("time");
+        scheduleParams["required"].append("content");
+        registry.registerTool(
+            {
+                .name = "create_scheduled_task",
+                .description =
+                "创建定时提醒任务。当用户明确要求在未来某个时刻提醒/通知某事时使用（如'明天6点叫我起床''两小时后提醒我开会'）。"
+                "到点后会以【系统定时任务】消息回到当前会话，你再据此生成提醒回复。",
+                .parameters = scheduleParams,
+                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
+                    const std::string content = args.isMember("content") ? args["content"].asString() : "";
+                    if (content.empty()) co_return std::string("请提供提醒内容(content)");
+                    if (content.size() > 500) co_return std::string("提醒内容过长（最多500字符），请精简");
+
+                    const auto remindTime =
+                            TaskScheduler::parseTimeString(args.isMember("time") ? args["time"].asString() : "");
+                    if (!remindTime) {
+                        co_return std::string(
+                            "无法识别时间格式，请按 YYYY-MM-DD HH:MM:SS 提供换算后的完整绝对时间");
+                    }
+
+                    const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+                    if (*remindTime <= now + 10) {
+                        co_return fmt::format("时间无效：必须晚于当前时间10秒以上。当前时间是 {}", currentDateTime());
+                    }
+                    if (*remindTime > now + 366LL * 24 * 3600) {
+                        co_return std::string("时间过早远：不允许设置超过一年后的提醒");
+                    }
+
+                    const uint64_t sessionId = currentToolContext().sessionId;
+                    if (sessionId == 0) co_return std::string("会话上下文缺失，无法确定提醒目标");
+                    const bool isPrivateSession = QQMessage::isPrivateSession(sessionId);
+
+                    Database::ScheduledTask task;
+                    task.sessionType = isPrivateSession ? "private" : "group";
+                    task.targetId = isPrivateSession ? sessionId & ~QQMessage::kPrivateSessionFlag
+                                                     : sessionId;
+                    task.remindTime = *remindTime;
+                    task.content = content;
+
+                    try {
+                        const int64_t id = TaskScheduler::instance().schedule(std::move(task));
+                        const std::time_t t = *remindTime;
+                        std::tm tm{};
+                        localtime_r(&t, &tm);
+                        char buffer[32];
+                        strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &tm);
+                        co_return fmt::format("定时任务 #{} 已创建，将于 {} 在{}触发提醒",
+                                              id, buffer, isPrivateSession ? "私聊" : "本群");
+                    } catch (const std::exception &e) {
+                        spdlog::error("[Scheduler] 创建定时任务入库失败: {}", e.what());
+                        co_return std::string("创建定时任务失败，请稍后重试");
+                    }
+                }
+            }, ToolCategory::ACTION
+        );
+
+        spdlog::info("ToolManager: 工具注册完成（共20个工具）");
     }
 
     void AgentToolManager::registerCustomTools() {

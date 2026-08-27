@@ -1,4 +1,5 @@
 #include "AdminWebSocket.h"
+#include <util/tool.h>
 #include <spdlog/spdlog.h>
 
 using namespace LittleMeowBot;
@@ -38,10 +39,10 @@ void AdminWebSocket::handleNewMessage(
 
     auto &wsMgr = WebSocketManager::instance();
 
-    // 处理订阅请求
+    // 处理订阅请求（线上 JSON 字段沿用 "groupId"，字符串形式可承载大数，内部语义为 sessionId）
     if (msg.isMember("action")) {
-        if (std::string action = msg["action"].asString(); action == "subscribe" && msg.isMember("sessionId")) {
-            uint64_t sessionId = msg["groupId"].asUInt64();
+        if (std::string action = msg["action"].asString(); action == "subscribe" && msg.isMember("groupId")) {
+            const uint64_t sessionId = parseUInt64(msg["groupId"].asString());
             wsMgr.subscribeSession(conn, sessionId);
 
             // 发送确认
@@ -50,8 +51,8 @@ void AdminWebSocket::handleNewMessage(
             resp["groupId"] = sessionId;
             Json::StreamWriterBuilder builder;
             conn->send(Json::writeString(builder, resp));
-        } else if (action == "unsubscribe" && msg.isMember("sessionId")) {
-            uint64_t sessionId = msg["groupId"].asUInt64();
+        } else if (action == "unsubscribe" && msg.isMember("groupId")) {
+            const uint64_t sessionId = parseUInt64(msg["groupId"].asString());
             wsMgr.unsubscribeSession(conn, sessionId);
 
             Json::Value resp;
