@@ -24,8 +24,8 @@ namespace LittleMeowBot::ApiClient {
     /// @return 响应文本，失败返回 std::nullopt
     drogon::Task<std::optional<std::string> > requestLLM(
         const Json::Value &messages,
-        float temperature = 1.35f,
-        float top_p = 0.92f,
+        double temperature = 1.35,
+        double top_p = 0.92,
         int max_tokens = 1024,
         const std::string &role = "memory",
         std::optional<uint64_t> sessionId = std::nullopt);

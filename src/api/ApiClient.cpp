@@ -12,7 +12,8 @@
 namespace LittleMeowBot {
     namespace {
         /// @brief 构建模型请求体
-        Json::Value buildModelReq(const Json::Value &messages, const std::string &model, float temperature, float top_p,
+        Json::Value buildModelReq(const Json::Value &messages, const std::string &model, double temperature,
+                                  double top_p,
                                   int max_tokens) {
             Json::Value body;
             body["model"] = model;
@@ -30,8 +31,8 @@ namespace LittleMeowBot {
             const std::string &path,
             const std::string &api_key,
             const std::string &model,
-            float temperature,
-            float top_p,
+            double temperature,
+            double top_p,
             int max_tokens,
             const std::string &role,
             std::optional<uint64_t> sessionId) {
@@ -71,8 +72,8 @@ namespace LittleMeowBot {
 
     drogon::Task<std::optional<std::string> > ApiClient::requestLLM(
         const Json::Value &messages,
-        const float temperature,
-        const float top_p,
+        const double temperature,
+        const double top_p,
         const int max_tokens,
         const std::string &role,
         const std::optional<uint64_t> sessionId) {

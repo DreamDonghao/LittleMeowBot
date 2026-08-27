@@ -17,8 +17,9 @@ namespace LittleMeowBot {
 
     struct LLMModelParams {
         int maxTokens = 1024;
-        float temperature = 0.7f;
-        float topP = 0.9f;
+        // 用 double 保证 JSON 序列化输出 0.7 而非 0.699999988079071
+        double temperature = 0.7;
+        double topP = 0.9;
     };
 
     struct KBApiConfig {

@@ -28,7 +28,6 @@ namespace LittleMeowBot {
         std::string getSystemPrompt(const RouterDecision &decision) {
             std::string prompt = decision.isPrivate ? PromptService::getExecutorPrivateSystemPrompt()
                                                     : PromptService::getExecutorSystemPrompt();
-            prompt += "\n\n" + ToolRegistry::instance().getToolsDescription();
 
             if (decision.isPrivate) {
                 prompt += fmt::format(
@@ -117,7 +116,7 @@ namespace LittleMeowBot {
             body["messages"] = thinkingMessages;
             body["temperature"] = config.executorThinkingParams.temperature;
             body["max_tokens"] = config.executorThinkingParams.maxTokens;
-            body["top_p"] = 0.9f;
+            body["top_p"] = 0.9;
             if (!config.executorThinking.reasoningEffort.empty()) {
                 body["reasoning_effort"] = config.executorThinking.reasoningEffort;
             }
@@ -252,27 +251,20 @@ namespace LittleMeowBot {
             systemMsg["content"] = getSystemPrompt(decision);
             messages.append(systemMsg);
 
-            // 短期记忆
+            // 短期记忆+聊天记录+回复要求合并为单条 user 消息，避免连续多条 user（部分 OpenAI 兼容后端不支持）
+            std::string userContent;
             if (std::string shortMemory = memory.getMemory(); !shortMemory.empty()) {
-                Json::Value memoryMsg;
-                memoryMsg["role"] = "user";
-                memoryMsg["content"] = fmt::format("【短期记忆】\n{}\n\n结合记忆处理下面的对话。", shortMemory);
-                messages.append(memoryMsg);
+                userContent += fmt::format("【短期记忆】\n{}\n\n结合记忆处理下面的对话。\n\n", shortMemory);
             }
-
-            // 聊天记录（窗口内：最近8条原文 + 更早的每条截断到500字）
-            Json::Value chatMsg;
-            chatMsg["role"] = "user";
-            chatMsg["content"] = buildChatContextText(chatRecords);
-            messages.append(chatMsg);
-
-            // 策略提示
-            Json::Value strategyMsg;
-            strategyMsg["role"] = "user";
-            strategyMsg["content"] = fmt::format(
-                "【回复要求】\n语气: {}\n字数限制: {} 字\n原因: {}",
+            userContent += buildChatContextText(chatRecords);
+            userContent += fmt::format(
+                "\n\n【回复要求】\n语气: {}\n字数限制: {} 字\n原因: {}",
                 decision.tone, decision.maxLength, decision.reason);
-            messages.append(strategyMsg);
+
+            Json::Value userMsg;
+            userMsg["role"] = "user";
+            userMsg["content"] = userContent;
+            messages.append(userMsg);
 
             co_return messages;
         }

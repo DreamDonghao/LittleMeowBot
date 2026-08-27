@@ -5,7 +5,6 @@
 
 #include <service/ToolRegistry.hpp>
 #include <spdlog/spdlog.h>
-#include <fmt/core.h>
 #include <ranges>
 #include <storage/Database.hpp>
 
@@ -153,30 +152,6 @@ namespace LittleMeowBot {
         if (!std::ranges::contains(m_customToolNames, name)) {
             m_customToolNames.push_back(name);
         }
-    }
-
-    std::string ToolRegistry::getToolsDescription() const {
-        std::string desc = "可用工具：\n";
-
-        // 终端工具
-        desc += "【终端工具】\n";
-        for (const auto &[name, tool]: m_terminalTools) {
-            desc += fmt::format("- {}: {}\n", name, tool.description);
-        }
-
-        // 信息工具
-        desc += "【信息工具】\n";
-        for (const auto &[name, tool]: m_infoTools) {
-            desc += fmt::format("- {}: {}\n", name, tool.description);
-        }
-
-        // 动作工具
-        desc += "【动作工具】\n";
-        for (const auto &[name, tool]: m_actionTools) {
-            desc += fmt::format("- {}: {}\n", name, tool.description);
-        }
-
-        return desc;
     }
 
     std::string ToolRegistry::categoryToString(ToolCategory category) {

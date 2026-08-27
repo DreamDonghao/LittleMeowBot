@@ -26,8 +26,8 @@ namespace LittleMeowBot {
 
             if (modelParams) {
                 modelParams->maxTokens = cfg["maxTokens"].asInt();
-                modelParams->temperature = cfg["temperature"].asFloat();
-                modelParams->topP = cfg["topP"].asFloat();
+                modelParams->temperature = cfg["temperature"].asDouble();
+                modelParams->topP = cfg["topP"].asDouble();
             }
         }
     }

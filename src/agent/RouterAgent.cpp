@@ -145,19 +145,17 @@ namespace LittleMeowBot {
                                              : PromptService::getRouterSystemPrompt();
             messages.append(systemMsg);
 
-            // 短期记忆
+            // 短期记忆与聊天记录合并为单条 user 消息，避免连续多条 user（部分 OpenAI 兼容后端不支持）
+            std::string userContent;
             if (std::string shortMemory = memory.getMemory(); !shortMemory.empty()) {
-                Json::Value memoryMsg;
-                memoryMsg["role"] = "user";
-                memoryMsg["content"] = "【短期记忆】\n" + shortMemory;
-                messages.append(memoryMsg);
+                userContent += "【短期记忆】\n" + shortMemory + "\n\n";
             }
+            userContent += buildChatContext(chatRecords);
 
-            // 聊天记录（Router 子窗口）
-            Json::Value chatMsg;
-            chatMsg["role"] = "user";
-            chatMsg["content"] = buildChatContext(chatRecords);
-            messages.append(chatMsg);
+            Json::Value userMsg;
+            userMsg["role"] = "user";
+            userMsg["content"] = userContent;
+            messages.append(userMsg);
 
             return messages;
         }

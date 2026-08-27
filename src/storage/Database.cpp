@@ -598,8 +598,8 @@ namespace LittleMeowBot {
         stmt.bind(4, config["path"].asString());
         stmt.bind(5, config["model"].asString());
         stmt.bind(6, config["maxTokens"].asInt());
-        stmt.bind(7, config["temperature"].asFloat());
-        stmt.bind(8, config["topP"].asFloat());
+        stmt.bind(7, config["temperature"].asDouble());
+        stmt.bind(8, config["topP"].asDouble());
         stmt.bind(9, config.get("reasoningEffort", "").asString());
         stmt.exec();
     }
@@ -1304,19 +1304,19 @@ namespace LittleMeowBot {
         struct DefaultConfig {
             const char *name, *apiKey, *baseUrl, *path, *model;
             int maxTokens;
-            float temperature, topP;
+            double temperature, topP;
         };
 
         constexpr DefaultConfig defaults[] = {
-            {"router", "", "http://127.0.0.1:3001", "/v1/chat/completions", "deepseek-chat", 100, 0.3f, 0.9f},
-            {"executor", "", "http://127.0.0.1:3001", "/v1/chat/completions", "deepseek-chat", 150, 0.7f, 0.9f},
+            {"router", "", "http://127.0.0.1:3001", "/v1/chat/completions", "deepseek-chat", 100, 0.3, 0.9},
+            {"executor", "", "http://127.0.0.1:3001", "/v1/chat/completions", "deepseek-chat", 150, 0.7, 0.9},
             {
-                "executorThinking", "", "http://127.0.0.1:3001", "/v1/chat/completions", "deepseek-reasoner", 512, 0.7f,
-                0.9f
+                "executorThinking", "", "http://127.0.0.1:3001", "/v1/chat/completions", "deepseek-reasoner", 512,
+                0.7, 0.9
             },
             {
                 "image", "", "https://dashscope.aliyuncs.com", "/compatible-mode/v1/chat/completions",
-                "qwen-vl-plus", 1024, 0.7f, 0.9f
+                "qwen-vl-plus", 1024, 0.7, 0.9
             }
         };
 

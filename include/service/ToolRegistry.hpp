@@ -11,7 +11,7 @@
 
 #include <json/value.h>
 #include <drogon/utils/coroutine.h>
-#include <unordered_map>
+#include <map>
 #include <string>
 #include <functional>
 #include <vector>
@@ -70,15 +70,13 @@ namespace LittleMeowBot {
         /// @brief 记录自定义工具名称（注册时调用）
         void recordCustomTool(const std::string &name);
 
-        /// @brief 生成工具说明文本（用于 Executor Prompt）
-        [[nodiscard]] std::string getToolsDescription() const;
-
     private:
         ToolRegistry() = default;
 
-        std::unordered_map<std::string, Tool> m_terminalTools;
-        std::unordered_map<std::string, Tool> m_infoTools;
-        std::unordered_map<std::string, Tool> m_actionTools;
+        // 有序容器保证 tools 数组顺序跨重启稳定，避免破坏 provider 的 prompt cache
+        std::map<std::string, Tool> m_terminalTools;
+        std::map<std::string, Tool> m_infoTools;
+        std::map<std::string, Tool> m_actionTools;
         std::vector<std::string> m_customToolNames; // 记录已注册的自定义工具名称
 
         static std::string categoryToString(ToolCategory category);
