@@ -6,6 +6,7 @@
 #include <spdlog/spdlog.h>
 #include <config/Config.hpp>
 #include <util/HttpUtil.hpp>
+#include <util/HttpTrace.hpp>
 #include <util/Logger.hpp>
 #include <util/tool.h>
 #include <algorithm>
@@ -201,6 +202,51 @@ Task<> AdminController::getLogs(
     resp["newestId"] = static_cast<Json::UInt64>(result.newestId);
     resp["size"] = static_cast<Json::UInt64>(LogBuffer::instance().size());
     resp["currentLevel"] = Logger::level();
+    callback(HttpResponse::newHttpJsonResponse(resp));
+    co_return;
+}
+
+// ==================== HTTP 请求调试 ====================
+
+Task<> AdminController::getHttpTraces(
+    HttpRequestPtr req,
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
+    const auto afterId = parseQueryUInt64(req, "afterId");
+    const auto limit = std::clamp<size_t>(parseQueryUInt64(req, "limit", 50), 1, 500);
+
+    Json::Value resp;
+    resp["entries"] = Json::arrayValue;
+    resp["total"] = static_cast<Json::UInt64>(HttpTrace::instance().size());
+    for (auto &entry: HttpTrace::instance().query(afterId, limit)) {
+        Json::Value item;
+        item["id"] = static_cast<Json::UInt64>(entry.id);
+        item["timestamp"] = entry.timestamp;
+        item["tag"] = entry.tag;
+        item["method"] = entry.method;
+        item["url"] = entry.url;
+        item["status"] = entry.status;
+        // 字符串形式：会话 ID 可能带私聊标志位，超过 JS 安全整数范围
+        if (entry.sessionId.has_value()) {
+            item["groupId"] = std::to_string(*entry.sessionId);
+        } else {
+            item["groupId"] = Json::nullValue;
+        }
+        item["requestBody"] = entry.requestBody;
+        item["responseBody"] = entry.responseBody;
+        resp["entries"].append(item);
+    }
+    callback(HttpResponse::newHttpJsonResponse(resp));
+    co_return;
+}
+
+Task<> AdminController::clearHttpTraces(
+    HttpRequestPtr req,
+    std::function<void(const HttpResponsePtr &)> callback
+) const {
+    HttpTrace::instance().clear();
+    Json::Value resp;
+    resp["success"] = true;
     callback(HttpResponse::newHttpJsonResponse(resp));
     co_return;
 }

@@ -45,6 +45,11 @@ namespace LittleMeowBot {
         // 运行日志
         ADD_METHOD_TO(AdminController::getLogs, "/admin/api/logs", drogon::Get);
 
+        // HTTP 请求调试（最近请求的完整请求/响应体）
+        ADD_METHOD_TO(AdminController::getHttpTraces, "/admin/api/http-traces", drogon::Get);
+
+        ADD_METHOD_TO(AdminController::clearHttpTraces, "/admin/api/http-traces", drogon::Delete);
+
         // 运行信息（启动时间/运行时长）
         ADD_METHOD_TO(AdminController::getSystemInfo, "/admin/api/system-info", drogon::Get);
 
@@ -188,6 +193,17 @@ namespace LittleMeowBot {
 
         /// @brief 查询运行日志
         drogon::Task<> getLogs(
+            drogon::HttpRequestPtr req,
+            std::function<void(const drogon::HttpResponsePtr &)> callback) const;
+
+        /// @brief 查询最近的 HTTP 请求记录（含完整请求/响应体）
+        /// @param req query: afterId / limit（可选）
+        drogon::Task<> getHttpTraces(
+            drogon::HttpRequestPtr req,
+            std::function<void(const drogon::HttpResponsePtr &)> callback) const;
+
+        /// @brief 清空 HTTP 请求记录
+        drogon::Task<> clearHttpTraces(
             drogon::HttpRequestPtr req,
             std::function<void(const drogon::HttpResponsePtr &)> callback) const;
 

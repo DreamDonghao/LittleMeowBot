@@ -96,3 +96,22 @@ export interface LogQueryResult {
     size: number
     currentLevel: string
 }
+
+export interface HttpTraceEntry {
+    id: number
+    timestamp: string
+    tag: string
+    method: string
+    url: string
+    /** 0 表示请求未得到响应（超时/异常） */
+    status: number
+    /** 会话 ID 的字符串形式（私聊会话 ID 带标志位），null 表示系统级请求 */
+    groupId?: string | null
+    requestBody?: string | null
+    responseBody?: string | null
+}
+
+export interface HttpTraceListResult {
+    entries: HttpTraceEntry[]
+    total: number
+}

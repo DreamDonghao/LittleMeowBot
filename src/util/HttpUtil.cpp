@@ -2,6 +2,7 @@
 /// @brief HTTP 请求工具 - 实现
 
 #include <util/HttpUtil.hpp>
+#include <util/HttpTrace.hpp>
 #include <spdlog/spdlog.h>
 #include <json/writer.h>
 #include <string>
@@ -57,17 +58,30 @@ namespace LittleMeowBot::HttpUtil {
         const auto prefix = sessionId.has_value()
                                 ? fmt::format("[group_id={}] {}", *sessionId, tag)
                                 : std::string(tag);
-        // 正常请求详情仅记录到 debug，避免每条消息多次请求刷屏
+        // 请求体完整序列化一次：日志里截断展示，HttpTrace 里存全量供调试查询
+        const auto bodyText = body.isNull() ? std::string{} : serializeBody(body);
+        const auto bodyLog = truncate(bodyText, kBodyLogMax);
+
         spdlog::debug("{} [HTTP] {} {}{}", prefix, methodName(method), baseUrl, path);
-        if (!body.isNull()) {
-            spdlog::debug("{} [HTTP] body={}", prefix, truncate(serializeBody(body), kBodyLogMax));
+        if (!bodyLog.empty()) {
+            spdlog::debug("{} [HTTP] body={}", prefix, bodyLog);
         }
         if (!bearerToken.empty()) {
             spdlog::debug("{} [HTTP] Authorization: Bearer {}", prefix, maskToken(bearerToken));
         }
 
-        // 失败时才附带完整地址与 body 打日志，确保凭日志即可定位问题
-        const auto bodyLog = body.isNull() ? std::string{} : truncate(serializeBody(body), kBodyLogMax);
+        HttpTraceEntry trace;
+        trace.tag = std::string(tag);
+        trace.method = methodName(method);
+        trace.url = baseUrl + path;
+        trace.sessionId = sessionId;
+        trace.requestBody = std::move(bodyText);
+
+        const auto finishTrace = [&](const int statusCode, std::string responseBody) {
+            trace.status = statusCode;
+            trace.responseBody = std::move(responseBody);
+            HttpTrace::instance().append(std::move(trace));
+        };
 
         drogon::HttpClientPtr client;
         try {
@@ -75,6 +89,7 @@ namespace LittleMeowBot::HttpUtil {
         } catch (const std::exception &e) {
             spdlog::error("{} [HTTP] 创建客户端失败: {} ({} {}{}) body={}",
                           prefix, e.what(), methodName(method), baseUrl, path, bodyLog);
+            finishTrace(0, e.what());
             co_return std::nullopt;
         }
 
@@ -93,14 +108,22 @@ namespace LittleMeowBot::HttpUtil {
         } catch (const std::exception &e) {
             spdlog::error("{} [HTTP] 请求异常: {} ({} {}{}) body={}",
                           prefix, e.what(), methodName(method), baseUrl, path, bodyLog);
+            finishTrace(0, e.what());
+            co_return std::nullopt;
+        }
+
+        if (!resp) {
+            finishTrace(0, "");
             co_return std::nullopt;
         }
 
         // 非 2xx（如 DNS 解析失败、连接被拒等）同样把地址打出来，方便定位
-        if (resp && resp->getStatusCode() >= drogon::k400BadRequest) {
+        if (resp->getStatusCode() >= drogon::k400BadRequest) {
             spdlog::warn("{} [HTTP] 响应异常: status={} ({} {}{})",
                          prefix, static_cast<int>(resp->getStatusCode()), methodName(method), baseUrl, path);
         }
+
+        finishTrace(static_cast<int>(resp->getStatusCode()), std::string{resp->body()});
 
         co_return resp;
     }
