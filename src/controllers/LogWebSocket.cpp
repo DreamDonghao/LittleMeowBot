@@ -1,13 +1,13 @@
 /// @file LogWebSocket.cpp
 /// @brief 运行日志 WebSocket 控制器 - 实现
 
-#include <controllers/LogWebSocket.h>
-#include <service/LogWebSocketManager.hpp>
-#include <util/tool.h>
-#include <spdlog/spdlog.h>
 #include <sstream>
+#include <controllers/LogWebSocket.hpp>
+#include <service/LogWebSocketManager.hpp>
+#include <spdlog/spdlog.h>
+#include <util/tool.h>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     void LogWebSocket::handleNewConnection(
         const drogon::HttpRequestPtr &req,
         const drogon::WebSocketConnectionPtr &conn

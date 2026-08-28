@@ -1,4 +1,4 @@
-/// @file ProcessQQMessages.h
+/// @file ProcessQQMessages.hpp
 /// @brief QQ 消息处理控制器
 /// @author donghao
 /// @date 2026-04-02
@@ -8,7 +8,7 @@
 #include <drogon/HttpController.h>
 #include <drogon/utils/coroutine.h>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     /// @brief QQ 消息处理控制器
     /// @details 接收来自 OneBot 协议的 QQ 消息，通过两层 Agent 架构处理：
     ///          1. Router Agent - 判断是否需要回复并规划回复策略
@@ -37,4 +37,4 @@ namespace LittleMeowBot {
             drogon::HttpRequestPtr req,
             std::function<void(const drogon::HttpResponsePtr &)> callback);
     };
-} // namespace LittleMeowBot
+} // namespace insoulforge

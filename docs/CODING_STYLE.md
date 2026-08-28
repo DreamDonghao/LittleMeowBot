@@ -1,4 +1,4 @@
-# LittleMeowBot 项目编码规范
+# insoulforge 项目编码规范
 
 ## 命名规范
 
@@ -36,11 +36,11 @@
 
 ### 命名空间
 
-- **PascalCase**: `LittleMeowBot`
+- **PascalCase**: `insoulforge`
 
 ### 宏命名
 
-- **UPPER_SNAKE_CASE**: `LITTLE_MEOW_BOT_MEMORY_MANAGER_HPP`
+- **UPPER_SNAKE_CASE**: `INSOULFORGE_MEMORY_MANAGER_HPP`
 
 ## Doxygen 注释规范
 

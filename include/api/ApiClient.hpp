@@ -15,7 +15,7 @@
 
 
 /// @brief API 客户端 - 封装 LLM API 请求与用量统计
-namespace LittleMeowBot::ApiClient {
+namespace insoulforge::ApiClient {
     /// @brief 请求 LLM API（使用 Executor 配置）
     /// @param messages 消息列表
     /// @param temperature 温度参数

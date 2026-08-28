@@ -16,7 +16,7 @@
 #include <functional>
 #include <vector>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     /// @brief 工具执行上下文（线程局部存储）
     struct ToolContext {
         uint64_t sessionId = 0;
@@ -81,4 +81,4 @@ namespace LittleMeowBot {
 
         static std::string categoryToString(ToolCategory category);
     };
-} // namespace LittleMeowBot
+} // namespace insoulforge

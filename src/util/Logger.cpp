@@ -15,7 +15,7 @@
 #include <util/LogBuffer.hpp>
 #include <util/LogSink.hpp>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     namespace {
         constexpr std::string_view kLogDir = "logs";
         constexpr std::string_view kLogFile = "logs/bot.log";
@@ -72,4 +72,4 @@ namespace LittleMeowBot {
     void Logger::shutdown() {
         spdlog::shutdown();
     }
-} // namespace LittleMeowBot
+} // namespace insoulforge

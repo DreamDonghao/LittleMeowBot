@@ -10,7 +10,7 @@
 #include <json/value.h>
 #include <deque>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     /// @brief 聊天记录管理类
     /// @details 管理单个会话的聊天记录，使用 SQLite 存储。
     ///          每个会话对应一个 ChatRecordManager 实例。

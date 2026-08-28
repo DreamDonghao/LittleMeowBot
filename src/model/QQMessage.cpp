@@ -11,7 +11,7 @@
 #include <util/Logger.hpp>
 #include <utility>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     namespace {
         drogon::Task<std::string> getImageDescribe(const std::string &imageUrl, const uint64_t groupId) {
             const auto &config = Config::instance();

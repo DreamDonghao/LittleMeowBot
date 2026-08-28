@@ -1,5 +1,5 @@
 /// @file main.cpp
-/// @brief 程序入口 - LittleMeowBot 主程序
+/// @brief 程序入口 - insoulforge 主程序
 /// @author donghao
 /// @date 2026-04-02
 /// @details 初始化并启动 QQ 群聊机器人服务：
@@ -22,12 +22,12 @@
 #include <service/TaskScheduler.hpp>
 
 int main() {
-    using namespace LittleMeowBot;
+    using namespace insoulforge;
     try {
         // 系统初始化
         Logger::init();
         auto &database = Database::instance();
-        database.initialize("data/little_meow_bot.db");
+        database.initialize("data/insoulforge.db");
 
         auto &config = Config::instance();
         config.loadFromDatabase();

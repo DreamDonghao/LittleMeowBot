@@ -4,7 +4,7 @@
 #include <model/ChatRecordManager.hpp>
 #include <config/Config.hpp>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     ChatRecordManager::ChatRecordManager(uint64_t sessionId) : m_sessionId(sessionId) {
     }
 

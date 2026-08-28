@@ -1,8 +1,8 @@
-#include "AdminWebSocket.h"
-#include <util/tool.h>
+#include <controllers/AdminWebSocket.hpp>
 #include <spdlog/spdlog.h>
+#include <util/tool.h>
 
-using namespace LittleMeowBot;
+using namespace insoulforge;
 using namespace drogon;
 
 void AdminWebSocket::handleNewConnection(const HttpRequestPtr &req, const WebSocketConnectionPtr &conn) {

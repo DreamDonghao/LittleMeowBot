@@ -144,7 +144,7 @@ onMounted(async () => {
             </svg>
           </div>
           <div>
-            <div class="sidebar-title">LittleMeowBot</div>
+            <div class="sidebar-title">InSoulForge</div>
             <div class="sidebar-subtitle">管理后台</div>
           </div>
         </div>

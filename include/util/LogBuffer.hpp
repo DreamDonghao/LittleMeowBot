@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     struct LogEntry {
         uint64_t id = 0;
         std::string timestamp;

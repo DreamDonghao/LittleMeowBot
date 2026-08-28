@@ -17,7 +17,7 @@
 
 
 /// @brief RAGFlow 知识库检索客户端 - 封装 RAGFlow API 调用，支持知识检索和记忆存储
-namespace LittleMeowBot::RAGFlowClient {
+namespace insoulforge::RAGFlowClient {
     /// @brief 检索知识库
     /// @param question 查询问题
     /// @param topK 返回结果数量，默认3

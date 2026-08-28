@@ -19,7 +19,7 @@
 #include <unordered_map>
 #include <mutex>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     /// @brief Agent 系统单例类
     /// @details 协调两层代理流程，提供统一的消息处理接口
     class AgentSystem {

@@ -22,7 +22,7 @@
 #include <model/QQMessage.hpp>
 #include <model/ChatRecordManager.hpp>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     namespace {
         /// @brief 获取系统提示词（私聊与群聊使用各自的人设提示词）
         std::string getSystemPrompt(const RouterDecision &decision) {

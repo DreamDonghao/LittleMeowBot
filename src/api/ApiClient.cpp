@@ -9,7 +9,7 @@
 #include <util/HttpUtil.hpp>
 #include <util/Logger.hpp>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     namespace {
         /// @brief 构建模型请求体
         Json::Value buildModelReq(const Json::Value &messages, const std::string &model, double temperature,

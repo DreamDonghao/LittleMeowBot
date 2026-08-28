@@ -20,7 +20,7 @@
 #include <model/QQMessage.hpp>
 #include <model/ChatRecordManager.hpp>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     namespace {
         /// @brief 刷屏检测
         [[nodiscard]] bool checkSpam(const QQMessage &message) {
@@ -40,10 +40,37 @@ namespace LittleMeowBot {
             return false;
         }
 
+        /// @brief 压缩文本中的 CQ 码为语义标记（Router 只需语义，URL/ID 无用）
+        [[nodiscard]] std::string compressCQCodes(std::string text) {
+            static const std::regex replyPattern(R"(\[CQ:reply,id=\d+\])");
+            static const std::regex stickerPattern(R"(\[CQ:image,[^\]]*summary=([^,\]]+)[^\]]*\])");
+            static const std::regex imagePattern(R"(\[CQ:image,[^\]]*\])");
+            static const std::regex facePattern(R"(\[CQ:face,[^\]]*\])");
+            text = std::regex_replace(text, replyPattern, "[回复]");
+            text = std::regex_replace(text, stickerPattern, "[表情:$1]");
+            text = std::regex_replace(text, imagePattern, "[图片]");
+            text = std::regex_replace(text, facePattern, "[表情]");
+            return text;
+        }
+
+        /// @brief 提取 Router 需要的最小字段：发送者名字 + 压缩后文本
+        /// @details content 为 formatMessage 生成的 JSON，message_id/reply_to/qq/时间戳/images URL 对路由决策无用
+        [[nodiscard]] std::string compactContent(const std::string &content, const bool includeSender) {
+            Json::Value root;
+            if (Json::Reader reader; reader.parse(content, root)) {
+                const std::string name = root["sender"]["name"].asString();
+                const std::string text = compressCQCodes(root["text"].asString());
+                if (includeSender && !name.empty()) return name + ": " + text;
+                return text;
+            }
+            return content;
+        }
+
         /// @brief 构建聊天上下文文本
         /// @details Router 子窗口（触发/保留可配置，默认 20/10）：窗口大小由记录数派生
         ///          （keep + count % slide），批量滑动而非逐条滑动，使 prompt 前缀在批次内稳定，
         ///          最大化 LLM 上下文缓存命中。被滑出的记录仍在水位线之后，由 Executor 的 eviction 统一提取。
+        ///          行格式：[小喵]: 文本 / [用户] 名字: 文本
         ///          末尾附带【发言间隔】：精确统计窗口内机器人距上次发言隔了多少条消息
         ///          （LLM 不会数数，由代码计算后作为事实告知，策略由提示词决定）。
         std::string buildChatContext(const ChatRecordManager &chatRecords) {
@@ -61,16 +88,17 @@ namespace LittleMeowBot {
 
             // 使用范围循环简化代码
             for (const auto &record : records | std::views::drop(startIdx)) {
-                if (record["role"].asString() == "assistant") {
+                const bool isAssistant = record["role"].asString() == "assistant";
+                if (isAssistant) {
                     spokeInWindow = true;
                     silentCount = 0;
                 } else {
                     ++silentCount;
                 }
-                std::string role = record["role"].asString() == "assistant"
-                                       ? "[" + Config::instance().botName + "]"
-                                       : "[用户]";
-                context += role + ": " + record["content"].asString() + "\n";
+                context += isAssistant
+                               ? fmt::format("[{}]: {}\n", config.botName,
+                                             compactContent(record["content"].asString(), false))
+                               : fmt::format("[用户] {}\n", compactContent(record["content"].asString(), true));
             }
 
             // 发言间隔作为事实注入末尾（置于末尾以保持前缀稳定，缓存不受影响）

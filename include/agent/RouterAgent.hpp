@@ -12,7 +12,7 @@
 #include <model/MemoryManager.hpp>
 #include <drogon/utils/coroutine.h>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     /// @brief 路由决策与规划
     /// @param chatRecords 聊天记录
     /// @param memory 记忆管理器

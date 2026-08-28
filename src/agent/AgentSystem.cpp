@@ -14,7 +14,7 @@
 #include <service/PromptService.hpp>
 #include <util/Logger.hpp>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     AgentSystem &AgentSystem::instance() {
         static AgentSystem system;
         return system;

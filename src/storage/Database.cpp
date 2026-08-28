@@ -12,7 +12,7 @@
 #include <filesystem>
 #include <utility>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     namespace {
         /// @brief 数据库错误异常
         class DbError : public std::runtime_error {
@@ -1382,4 +1382,4 @@ namespace LittleMeowBot {
         stmt.exec();
         spdlog::info("已初始化默认 QQ Bot 配置");
     }
-} // namespace LittleMeowBot
+} // namespace insoulforge

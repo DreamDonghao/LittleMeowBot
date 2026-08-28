@@ -5,7 +5,7 @@
 
 #include <drogon/WebSocketController.h>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     class LogWebSocket : public drogon::WebSocketController<LogWebSocket> {
     public:
         WS_PATH_LIST_BEGIN

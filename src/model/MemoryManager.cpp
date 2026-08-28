@@ -3,7 +3,7 @@
 
 #include <model/MemoryManager.hpp>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     MemoryManager::MemoryManager(uint64_t sessionId) : m_sessionId(sessionId) {
     }
 

@@ -8,7 +8,7 @@
 #include <util/HttpUtil.hpp>
 #include <util/Logger.hpp>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     namespace {
         /// @brief 解析检索结果
         /// @param json RAGFlow API 返回的 JSON

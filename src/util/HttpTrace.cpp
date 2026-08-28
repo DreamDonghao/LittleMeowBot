@@ -7,7 +7,7 @@
 #include <iomanip>
 #include <sstream>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     namespace {
         constexpr size_t kMaxEntries = 50;
         constexpr size_t kMaxBodySize = 1024 * 1024; // 单条请求/响应体上限
@@ -73,4 +73,4 @@ namespace LittleMeowBot {
         std::lock_guard lock(m_mutex);
         m_entries.clear();
     }
-} // namespace LittleMeowBot
+} // namespace insoulforge

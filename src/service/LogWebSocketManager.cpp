@@ -7,7 +7,7 @@
 #include <spdlog/spdlog.h>
 #include <utility>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     LogWebSocketManager &LogWebSocketManager::instance() {
         static LogWebSocketManager manager;
         return manager;

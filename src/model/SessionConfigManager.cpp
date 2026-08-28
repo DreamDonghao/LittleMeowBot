@@ -3,7 +3,7 @@
 
 #include <model/SessionConfigManager.hpp>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     SessionConfig SessionConfigManager::getConfig(const uint64_t sessionId) {
         return Database::instance().getSessionConfig(sessionId);
     }

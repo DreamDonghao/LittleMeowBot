@@ -5,7 +5,7 @@
 #include <config/Config.hpp>
 #include <spdlog/spdlog.h>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     void PromptService::initialize() {
         auto &db = Database::instance();
 

@@ -10,7 +10,7 @@
 #include <service/MessageService.hpp>
 #include <util/LogBuffer.hpp>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     /// @brief 管理后台 REST API 控制器
     /// @details 提供 Web 管理界面的所有 API 接口，包括：
     ///          - LLM 配置管理
@@ -503,4 +503,4 @@ namespace LittleMeowBot {
             drogon::HttpRequestPtr req,
             std::function<void(const drogon::HttpResponsePtr &)> callback) const;
     };
-} // namespace LittleMeowBot
+} // namespace insoulforge

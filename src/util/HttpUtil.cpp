@@ -8,7 +8,7 @@
 #include <string>
 #include <utility>
 
-namespace LittleMeowBot::HttpUtil {
+namespace insoulforge::HttpUtil {
     namespace {
         constexpr size_t kBodyLogMax = 400; // 日志中请求体截断长度
 
@@ -127,4 +127,4 @@ namespace LittleMeowBot::HttpUtil {
 
         co_return resp;
     }
-} // namespace LittleMeowBot::HttpUtil
+} // namespace insoulforge::HttpUtil

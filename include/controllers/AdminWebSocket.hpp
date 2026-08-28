@@ -8,7 +8,7 @@
 #include <drogon/WebSocketController.h>
 #include <service/WebSocketManager.hpp>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     /// @brief 管理后台 WebSocket 控制器
     /// @details 处理 Web 管理界面的 WebSocket 连接，支持：
     ///          - 实时推送聊天记录
@@ -41,4 +41,4 @@ namespace LittleMeowBot {
         /// @param conn WebSocket 连接
         void handleConnectionClosed(const drogon::WebSocketConnectionPtr &conn) override;
     };
-} // namespace LittleMeowBot
+} // namespace insoulforge

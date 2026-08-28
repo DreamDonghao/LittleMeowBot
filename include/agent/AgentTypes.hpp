@@ -12,7 +12,7 @@
 #include <fmt/core.h>
 #include <format>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     /// @brief Router Agent 决策结果（合并了规划功能）
     struct RouterDecision {
         enum class Action {
@@ -46,20 +46,20 @@ namespace LittleMeowBot {
 
 // fmt::formatter 特化
 template<>
-struct fmt::formatter<LittleMeowBot::RouterDecision::Action> : formatter<string_view> {
+struct fmt::formatter<insoulforge::RouterDecision::Action> : formatter<string_view> {
     template<typename FormatContext>
-    auto format(LittleMeowBot::RouterDecision::Action a, FormatContext &ctx) const {
+    auto format(insoulforge::RouterDecision::Action a, FormatContext &ctx) const {
         return formatter<string_view>::format(
-            LittleMeowBot::RouterDecision::actionToString(a), ctx);
+            insoulforge::RouterDecision::actionToString(a), ctx);
     }
 };
 
 // std::formatter 特化
 template<>
-struct std::formatter<LittleMeowBot::RouterDecision::Action> : std::formatter<std::string_view> {
+struct std::formatter<insoulforge::RouterDecision::Action> : std::formatter<std::string_view> {
     template<typename FormatContext>
-    auto format(const LittleMeowBot::RouterDecision::Action a, FormatContext &ctx) const {
+    auto format(const insoulforge::RouterDecision::Action a, FormatContext &ctx) const {
         return std::formatter<std::string_view>::format(
-            LittleMeowBot::RouterDecision::actionToString(a), ctx);
+            insoulforge::RouterDecision::actionToString(a), ctx);
     }
 };

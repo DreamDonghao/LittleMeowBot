@@ -6,7 +6,7 @@
 #include <drogon/utils/coroutine.h>
 #include <string>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     [[nodiscard]] bool isCommand(const QQMessage &message);
 
     drogon::Task<std::string> handleCommand(

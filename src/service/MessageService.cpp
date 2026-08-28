@@ -12,7 +12,7 @@
 #include <service/WebSocketManager.hpp>
 #include <util/Logger.hpp>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     std::string MessageService::convertAtToCQCode(const std::string &text) {
         std::string result = text;
 

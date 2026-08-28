@@ -11,7 +11,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     struct LogSubscription {
         bool all = true;
         bool systemOnly = false;

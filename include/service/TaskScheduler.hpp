@@ -20,7 +20,7 @@
 #include <ctime>
 #include <drogon/utils/coroutine.h>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     /// @brief 定时任务调度器
     class TaskScheduler {
     public:
@@ -70,4 +70,4 @@ namespace LittleMeowBot {
         std::jthread m_thread;
         std::atomic_bool m_running{false};
     };
-} // namespace LittleMeowBot
+} // namespace insoulforge

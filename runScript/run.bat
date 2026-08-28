@@ -1,1 +1,1 @@
-.\exe\LittleMeowBot.exe
+.\exe\insoulforge.exe

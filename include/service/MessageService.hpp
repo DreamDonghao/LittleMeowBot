@@ -17,7 +17,7 @@
 #include <string>
 
 /// @brief 消息服务 - 封装 QQ 消息发送逻辑，对接 OneBot API
-namespace LittleMeowBot::MessageService {
+namespace insoulforge::MessageService {
     /// @brief 将文本中的@格式转换为 CQ 码
     /// @param text 原始文本（可能包含 @昵称 或 @[QQ:xxx] 格式）
     /// @return 转换后的文本（包含 [CQ:at,qq=xxx] 格式）

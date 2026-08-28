@@ -10,7 +10,7 @@
 #pragma once
 #include <string>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     /// @brief 提示词服务 - 管理所有 LLM 使用的提示词，支持运行时修改
     namespace PromptService {
         /// @brief 初始化提示词（如果不存在则插入默认值）

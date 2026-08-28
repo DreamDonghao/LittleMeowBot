@@ -13,7 +13,7 @@
 #include <spdlog/details/log_msg.h>
 #include <spdlog/fmt/fmt.h>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     namespace {
         constexpr size_t kMaxEntries = 5000;
         // 与 QQMessage::kPrivateSessionFlag 保持一致（util 层不反向依赖 model）

@@ -14,7 +14,7 @@
 #include <util/tool.h>
 #include <util/HttpUtil.hpp>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     bool isCommand(const QQMessage &message) {
         // 群聊命令需要 @ 机器人；私聊消息本身就是对机器人说的，无需 @
         if (!message.atMe() && !message.isPrivate()) return false;
@@ -115,9 +115,9 @@ namespace LittleMeowBot {
                 response = "暂无管理员";
             }
         } else if (cmd == "/about" || cmd == "/关于") {
-            response = "LittleMeowBot - 智能 QQ 群聊机器人\n"
+            response = "insoulforge - 智能 QQ 群聊机器人\n"
                     "基于 Agent 架构，支持自定义角色、长期记忆、多工具调用\n\n"
-                    "项目地址: https://github.com/DreamDonghao/LittleMeowBot\n"
+                    "项目地址: https://github.com/DreamDonghao/insoulforge\n"
                     "作者: DreamDonghao\n"
                     "许可证: AGPL-3.0 (未经允许禁止商用)";
         } else if (!hasPermission) {

@@ -16,7 +16,7 @@
 #include <memory>
 #include <string>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     /// @brief WebSocket连接管理器（单例模式）
     /// @details 管理所有WebSocket连接，支持按群订阅消息
     class WebSocketManager {

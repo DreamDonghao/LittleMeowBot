@@ -12,7 +12,7 @@
 #include <drogon/utils/coroutine.h>
 #include <optional>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     /// @brief Executor Agent - 执行回复生成
 
     /// @brief 清理模型输出中的工具调用标签等污染内容

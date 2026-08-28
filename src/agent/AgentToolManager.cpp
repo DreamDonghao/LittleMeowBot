@@ -27,7 +27,7 @@
 #include "service/ToolRegistry.hpp"
 #include "service/TaskScheduler.hpp"
 
-namespace LittleMeowBot {
+namespace insoulforge {
     void AgentToolManager::registerAllTools() {
         auto &registry = ToolRegistry::instance();
 

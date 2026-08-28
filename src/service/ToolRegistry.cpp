@@ -8,7 +8,7 @@
 #include <ranges>
 #include <storage/Database.hpp>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     ToolContext &currentToolContext() {
         thread_local ToolContext ctx;
         return ctx;
@@ -162,4 +162,4 @@ namespace LittleMeowBot {
             default: return "UNKNOWN";
         }
     }
-} // namespace LittleMeowBot
+} // namespace insoulforge

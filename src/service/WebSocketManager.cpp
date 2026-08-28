@@ -6,7 +6,7 @@
 #include <util/tool.h>
 #include <spdlog/spdlog.h>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     WebSocketManager &WebSocketManager::instance() {
         static WebSocketManager mgr;
         return mgr;

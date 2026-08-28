@@ -281,7 +281,7 @@ onUnmounted(() => {
   <div>
     <div class="page-header">
       <h1 class="page-title">首页</h1>
-      <p class="page-subtitle">{{ qqConfig?.botName || 'LittleMeowBot' }} 运行概况</p>
+      <p class="page-subtitle">{{ qqConfig?.botName || 'InSoulForge' }} 运行概况</p>
     </div>
 
     <!-- 状态条 -->

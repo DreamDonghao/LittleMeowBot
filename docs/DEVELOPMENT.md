@@ -1,4 +1,4 @@
-# LittleMeowBot 开发文档
+# insoulforge 开发文档
 
 面向开发者的构建、架构与贡献指南。使用说明见 [README](../README.md)，编码规范见 [CODING_STYLE.md](./CODING_STYLE.md)。
 
@@ -57,7 +57,7 @@ make -j    # Linux 可用 -j$(nproc)
 
 构建产物：
 
-- 可执行文件 → `build/bot/exe/LittleMeowBot`
+- 可执行文件 → `build/bot/exe/insoulforge`
 - 前端静态文件 → `build/bot/public/`（CMake 会在前端源码变化时自动执行 `npm run build`）
 
 ### 日常开发
@@ -81,7 +81,7 @@ cd frontend && npm run type-check
 ## 运行
 
 ```bash
-./build/bot/exe/LittleMeowBot
+./build/bot/exe/insoulforge
 ```
 
 - HTTP 服务监听 **7778** 端口，管理后台：`http://localhost:7778/index.html`
@@ -89,12 +89,12 @@ cd frontend && npm run type-check
 - 控制台输入 `quit` 优雅退出
 
 注意：构建产物会输出到 `build/`，而 `data/`、`logs/` 与 `public/` 位于仓库根目录。开发时如果从仓库根目录运行
-`./build/bot/exe/LittleMeowBot`，读取的是根目录的 `data/`；如果直接进入 `build/bot/` 运行，则会在 `build/bot/` 下生成数据目录。
+`./build/bot/exe/insoulforge`，读取的是根目录的 `data/`；如果直接进入 `build/bot/` 运行，则会在 `build/bot/` 下生成数据目录。
 
 ## 项目结构
 
 ```
-LittleMeowBot/
+insoulforge/
 ├── main.cpp                  # 入口：初始化日志/数据库/配置/Agent，启动 Drogon
 ├── CMakeLists.txt            # C++23 构建脚本（含前端自动构建）
 ├── controllers/              # Drogon HTTP 控制器（.h 为传统命名，勿改）
@@ -180,13 +180,13 @@ LLM 配置项存储于数据库，但当前记忆提取复用 executor 模型。
 
 ### 数据库
 
-SQLite 文件位于 `data/little_meow_bot.db`（`Database` 单例，`shared_mutex` 线程安全）。存储：聊天记录、短期/长期记忆、LLM
+SQLite 文件位于 `data/insoulforge.db`（`Database` 单例，`shared_mutex` 线程安全）。存储：聊天记录、短期/长期记忆、LLM
 配置、提示词、启用群、管理员、表情、自定义工具。
 
 调试时可用任意 SQLite 客户端查看：
 
 ```bash
-sqlite3 data/little_meow_bot.db ".tables"
+sqlite3 data/insoulforge.db ".tables"
 ```
 
 ## 开发指南

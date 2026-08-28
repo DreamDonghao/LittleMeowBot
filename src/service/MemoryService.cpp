@@ -11,7 +11,7 @@
 #include <unordered_set>
 #include <util/Logger.hpp>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     namespace {
         /// @brief 单批提取上限：积压超过时分批处理
         constexpr size_t kMaxExtractBatch = 300;

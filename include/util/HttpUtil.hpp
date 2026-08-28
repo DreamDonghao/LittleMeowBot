@@ -17,7 +17,7 @@
 #include <string>
 #include <string_view>
 
-namespace LittleMeowBot::HttpUtil {
+namespace insoulforge::HttpUtil {
     /// @brief 发送 HTTP 请求，记录请求内容与异常
     /// @param tag 日志前缀，如 "[Router]"、"[Executor]"
     /// @param baseUrl 服务器地址（含协议与端口，如 http://127.0.0.1:3001）
@@ -36,4 +36,4 @@ namespace LittleMeowBot::HttpUtil {
         const std::string &bearerToken,
         double timeout,
         std::optional<uint64_t> sessionId = std::nullopt);
-} // namespace LittleMeowBot::HttpUtil
+} // namespace insoulforge::HttpUtil

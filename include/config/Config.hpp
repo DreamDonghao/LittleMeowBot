@@ -6,7 +6,7 @@
 #include <string>
 #include <storage/Database.hpp>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     struct LLMApiConfig {
         std::string apiKey;
         std::string baseUrl;

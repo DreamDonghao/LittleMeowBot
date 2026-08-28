@@ -11,7 +11,7 @@
 #include <string_view>
 #include <utility>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     class SessionLogger {
     public:
         explicit SessionLogger(uint64_t sessionId) : m_sessionId(sessionId) {
@@ -82,4 +82,4 @@ namespace LittleMeowBot {
         /// @brief 刷新并关闭日志系统，应在程序退出前调用
         static void shutdown();
     };
-} // namespace LittleMeowBot
+} // namespace insoulforge

@@ -8,7 +8,7 @@
 #pragma once
 #include <storage/Database.hpp>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     /// @brief 会话配置管理
     /// @details 使用 SQLite 存储会话配置信息（表名保持 group_config）
     namespace SessionConfigManager {

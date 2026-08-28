@@ -47,14 +47,14 @@ const copyJoinUrl = async (): Promise<void> => {
   <div>
     <div class="page-header">
       <h1 class="page-title">关于</h1>
-      <p class="page-subtitle">LittleMeowBot 项目信息</p>
+      <p class="page-subtitle">InSoulForge 项目信息</p>
     </div>
 
     <!-- 项目简介 -->
     <div class="card about-hero">
       <div class="hero-head">
-        <span class="hero-title">LittleMeowBot</span>
-        <span class="version-badge">v1.2.1</span>
+        <span class="hero-title">InSoulForge</span>
+        <span class="version-badge">v1.3.0</span>
       </div>
       <p class="hero-desc">一个智能 QQ 群聊机器人，基于两层 Agent 架构，支持自定义角色、长期记忆、多工具调用。</p>
     </div>
@@ -75,11 +75,11 @@ const copyJoinUrl = async (): Promise<void> => {
         </div>
         <div class="info-item">
           <span class="info-label">许可证</span>
-          <a href="https://github.com/DreamDonghao/LittleMeowBot/blob/main/LICENSE" target="_blank">AGPL v3</a>
+          <a href="https://github.com/DreamDonghao/insoulforge/blob/main/LICENSE" target="_blank">AGPL v3</a>
         </div>
         <div class="info-item">
           <span class="info-label">Github仓库</span>
-          <a href="https://github.com/DreamDonghao/LittleMeowBot" target="_blank">DreamDonghao/LittleMeowBot</a>
+          <a href="https://github.com/DreamDonghao/insoulforge" target="_blank">DreamDonghao/insoulforge</a>
         </div>
       </div>
     </div>
@@ -105,7 +105,7 @@ const copyJoinUrl = async (): Promise<void> => {
       <div class="qq-row">
         <img v-if="qrDataUrl" :alt="'QQ群 ' + GROUP_ID" :src="qrDataUrl" class="qr-img">
         <div class="qq-info">
-          <div class="qq-name">LittleMeowBot 官方交流群</div>
+          <div class="qq-name">InSoulForge 官方交流群</div>
           <code class="qq-id">{{ GROUP_ID }}</code>
           <div class="qq-actions">
             <button class="btn btn-primary btn-sm" type="button" @click="copyGroupId">复制群号</button>

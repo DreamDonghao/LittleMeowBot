@@ -18,7 +18,7 @@
 #include <string>
 
 /// @brief 工具管理器 - 注册所有可用工具
-namespace LittleMeowBot::AgentToolManager {
+namespace insoulforge::AgentToolManager {
     /// @brief 注册所有工具
     void registerAllTools();
 

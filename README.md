@@ -1,11 +1,10 @@
-# LittleMeowBot
+# InSoulForge
 
-一个基于 Agent 架构的智能 QQ 群聊机器人。
+一个基于 Agent 架构的智能 QQ 群聊机器人后端。
 
  QQ交流群：1097487360
 
 
-> ⚠️ **使用约束**
 > - ✅ 个人和非商业组织免费使用
 > - ❌ **禁止商业使用**
 > - ❌ **禁止收费代挂 QQ 机器人服务**
@@ -22,27 +21,23 @@
 - **向量数据库** - 提供 RAGFlow 接口（非必要），可增强 Bot 的记忆能力与知识可靠性
 - **适配QQ功能** - Bot 可自行收藏发送表情包、引用、@群友、撤回消息、拍一拍、禁言
 - **自定义工具** - 支持 Python 脚本 / HTTP 接口，可视化配置，一键导入导出
+- **定时任务** - 提供低耦合的定时任务功能，可定时发送消息以及与自定义工具组合使用
 
 ## 🚀 快速开始
 
 ### 前置要求
 
-本机器人需要配合 **OneBot** 协议实现使用，推荐：
-
-- [Lagrange](https://github.com/LagrangeDev/Lagrange.Core) - .NET 实现
-- [NapCat](https://github.com/NapNeko/NapCatQQ) - 基于 NTQQ
-- [LLOneBot](https://github.com/LLOneBot/LLOneBot) - NTQQ 插件
-- [OpenShamrock](https://github.com/WhiteMinds/LiteLoaderBDS) - 安卓 QQ
+本机器人需要配合 **OneBot** 协议实现使用，推荐使用 **napcat**
 
 选择一个 OneBot 实现，部署并启用 HTTP 服务。
 
-接收端口7778
+消息接收端口：7778
 
 ### 启动步骤
 
 1. 下载安装包并解压
 
-2. 在exe目录下运行run.sh
+2. 在项目根目录下运行run.sh
 
    ```sudo bash run.sh```
 
@@ -56,15 +51,17 @@
     - Access Token
     - Bot QQ 号
     - HTTP 服务地址
-    - Bot 名称（可自定义）
+    - Bot 名称
 
 2. **LLM 配置** - 配置模型 API
     - 支持 Router / Executor / Memory / Image 分别配置不同模型
     - 兼容 OpenAI API 格式
 
-3. **启用群聊** - 添加要启用的 QQ 群
+3. **启用群聊** - 添加要启用的 QQ 群或用户
 
 ## 📖 使用指南
+
+推荐使用web页面进行配置
 
 ### 群聊命令
 

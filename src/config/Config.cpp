@@ -5,7 +5,7 @@
 #include <storage/Database.hpp>
 #include <spdlog/spdlog.h>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     namespace {
         /// @brief 从数据库加载单个 LLM 配置
         /// @param name 配置名（router/executor/executorThinking/image）

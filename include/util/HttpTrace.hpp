@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     struct HttpTraceEntry {
         uint64_t id = 0;
         std::string timestamp;
@@ -44,4 +44,4 @@ namespace LittleMeowBot {
         std::vector<HttpTraceEntry> m_entries;
         uint64_t m_nextId = 1;
     };
-} // namespace LittleMeowBot
+} // namespace insoulforge

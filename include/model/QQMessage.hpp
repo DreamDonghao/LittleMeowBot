@@ -12,7 +12,7 @@
 #include <unordered_map>
 #include <string>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     /// @brief QQ 消息模型类
     /// @details 封装单条 QQ 群消息的解析和格式化
     class QQMessage {

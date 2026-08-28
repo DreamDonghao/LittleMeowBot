@@ -13,7 +13,7 @@
 #include <iomanip>
 #include <sstream>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     namespace {
         /// @brief 触发提前量：提前这么多秒注入消息，补偿 Router+Executor 的回复生成耗时。
         /// 不宜过大，否则提醒会比用户指定时刻明显提前
@@ -243,4 +243,4 @@ namespace LittleMeowBot {
         }
         return std::nullopt;
     }
-} // namespace LittleMeowBot
+} // namespace insoulforge

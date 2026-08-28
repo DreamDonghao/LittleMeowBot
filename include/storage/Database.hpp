@@ -18,7 +18,7 @@
 #include <vector>
 #include <unordered_map>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     /// @brief 群组配置结构
     struct SessionConfig {
         uint64_t allMesCount = 0;
@@ -280,4 +280,4 @@ namespace LittleMeowBot {
 
         void initDefaultQQConfig() const;
     };
-} // namespace LittleMeowBot
+} // namespace insoulforge

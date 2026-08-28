@@ -4,7 +4,7 @@
 #include <util/LogSink.hpp>
 #include <util/LogBuffer.hpp>
 
-namespace LittleMeowBot {
+namespace insoulforge {
     void LogSink::sink_it_(const spdlog::details::log_msg &message) {
         LogBuffer::instance().append(message);
     }
