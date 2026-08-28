@@ -47,22 +47,29 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: build and push by digest
-        id: build
+      - name: build and push GHCR by digest
+        id: build_ghcr
         uses: docker/build-push-action@v6
         with:
           platforms: ${{ matrix.platform }}
-          outputs: |
-            type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
-            type=image,name=${{ env.IMAGE_DH }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=build-${{ matrix.suffix }}
           cache-to: type=gha,mode=max,scope=build-${{ matrix.suffix }}
 
-      - name: export digest
+      - name: build and push Docker Hub by digest
+        id: build_dh
+        uses: docker/build-push-action@v6
+        with:
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.IMAGE_DH }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=build-${{ matrix.suffix }}
+
+      - name: export digests
         run: |
           mkdir -p ${{ runner.temp }}/digests
-          digest="${{ steps.build.outputs.digest }}"
-          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+          g="${{ steps.build_ghcr.outputs.digest }}"
+          d="${{ steps.build_dh.outputs.digest }}"
+          touch "${{ runner.temp }}/digests/ghcr-${g#sha256:}" "${{ runner.temp }}/digests/dh-${d#sha256:}"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -121,19 +128,21 @@ jobs:
           DH_TAGS=$(jq -r --arg img "$IMAGE_DH" '.tags[]? | select(startswith($img)) | "-t \(.)"' <<< "$DOCKER_METADATA_OUTPUT_JSON")
           echo "GHCR_TAGS=[$GHCR_TAGS]"
           echo "DH_TAGS=[$DH_TAGS]"
-          DIGESTS=""
-          for d in *; do DIGESTS+="$IMAGE@sha256:$d "; done
-          if [ -n "$GHCR_TAGS" ]; then
-            docker buildx imagetools create $GHCR_TAGS $DIGESTS
+          GHCR_DIGESTS=""
+          for f in ghcr-*; do GHCR_DIGESTS+="$IMAGE@sha256:${f#ghcr-} "; done
+          DH_DIGESTS=""
+          for f in dh-*; do DH_DIGESTS+="$IMAGE_DH@sha256:${f#dh-} "; done
+          echo "GHCR_DIGESTS=[$GHCR_DIGESTS]"
+          echo "DH_DIGESTS=[$DH_DIGESTS]"
+          if [ -n "$GHCR_TAGS" ] && [ -n "$GHCR_DIGESTS" ]; then
+            docker buildx imagetools create $GHCR_TAGS $GHCR_DIGESTS
           else
-            echo "跳过 GHCR：没有可用 tag"
+            echo "跳过 GHCR：tag 或 digest 缺失"
           fi
-          if [ -n "$DH_TAGS" ]; then
-            DH_DIGESTS=""
-            for d in *; do DH_DIGESTS+="$IMAGE_DH@sha256:$d "; done
+          if [ -n "$DH_TAGS" ] && [ -n "$DH_DIGESTS" ]; then
             docker buildx imagetools create $DH_TAGS $DH_DIGESTS
           else
-            echo "跳过 Docker Hub：没有可用 tag"
+            echo "跳过 Docker Hub：tag 或 digest 缺失"
           fi
 
       - name: inspect image
