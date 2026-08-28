@@ -4,9 +4,18 @@
 #include <config/Config.hpp>
 #include <storage/Database.hpp>
 #include <spdlog/spdlog.h>
+#include <cctype>
 
 namespace insoulforge {
     namespace {
+        /// @brief 去除配置值首尾空白，避免从后台复制粘贴时带入空格
+        std::string trim(std::string s) {
+            const auto isSpace = [](const unsigned char c) { return std::isspace(c); };
+            while (!s.empty() && isSpace(s.front())) s.erase(s.begin());
+            while (!s.empty() && isSpace(s.back())) s.pop_back();
+            return s;
+        }
+
         /// @brief 从数据库加载单个 LLM 配置
         /// @param name 配置名（router/executor/executorThinking/image）
         /// @param apiConfig 输出的 API 配置
@@ -16,10 +25,10 @@ namespace insoulforge {
             const auto cfg = Database::instance().getLLMConfig(std::string(name));
             if (cfg.isNull()) return;
 
-            apiConfig.apiKey = cfg["apiKey"].asString();
-            apiConfig.baseUrl = cfg["baseUrl"].asString();
-            apiConfig.path = cfg["path"].asString();
-            apiConfig.model = cfg["model"].asString();
+            apiConfig.apiKey = trim(cfg["apiKey"].asString());
+            apiConfig.baseUrl = trim(cfg["baseUrl"].asString());
+            apiConfig.path = trim(cfg["path"].asString());
+            apiConfig.model = trim(cfg["model"].asString());
             if (cfg.isMember("reasoningEffort")) {
                 apiConfig.reasoningEffort = cfg["reasoningEffort"].asString();
             }
@@ -83,9 +92,9 @@ namespace insoulforge {
         // 加载 QQ Bot 配置
         if (auto qqCfg = Database::instance().getQQConfig();
             !qqCfg.isNull()) {
-            accessToken = qqCfg["accessToken"].asString();
+            accessToken = trim(qqCfg["accessToken"].asString());
             selfQQNumber = qqCfg["selfQQNumber"].asInt64();
-            qqHttpHost = qqCfg["qqHttpHost"].asString();
+            qqHttpHost = trim(qqCfg["qqHttpHost"].asString());
             if (qqCfg.isMember("botName")) {
                 botName = qqCfg["botName"].asString();
             }

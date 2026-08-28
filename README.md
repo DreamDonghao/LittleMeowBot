@@ -58,6 +58,16 @@ docker run -d --name insoulforge \
 
 > 数据库、日志和表情包分别挂载到宿主机的 `./data`、`./logs`、`./uploads` 目录（也可自定义目录），升级镜像时数据不会丢失。
 
+> 如果 napcat 也运行在 Docker 中，注意容器内的 `127.0.0.1` 指向容器自身。启动后让两个容器加入同一个 docker 网络，然后用容器名互访（无需重建容器，connect 直接生效）：
+>
+> ```bash
+> docker network create bot-net
+> docker network connect bot-net napcat       # napcat 换成你的 napcat 容器名
+> docker network connect bot-net insoulforge
+> ```
+>
+> 然后在管理后台将 OneBot 的 HTTP 服务地址填为 `http://napcat:3000`（容器名 + napcat HTTP 端口），napcat 的上报地址填 `http://insoulforge:7778/`。
+
 然后访问管理后台：`http://localhost:7778/index.html`
 
 ### 方式二：本地部署
