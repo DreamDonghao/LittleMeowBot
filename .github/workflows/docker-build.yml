@@ -27,8 +27,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: prepare image name (ghcr 要求小写)
-        run: echo "IMAGE=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+      - name: prepare image names
+        env:
+          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          echo "IMAGE=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+          echo "IMAGE_DH=docker.io/${DH_USER,,}/insoulforge" >> $GITHUB_ENV
 
       - uses: docker/setup-buildx-action@v3
 
@@ -38,12 +42,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: build and push by digest
         id: build
         uses: docker/build-push-action@v6
         with:
           platforms: ${{ matrix.platform }}
-          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: |
+            type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+            type=image,name=${{ env.IMAGE_DH }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=build-${{ matrix.suffix }}
           cache-to: type=gha,mode=max,scope=build-${{ matrix.suffix }}
 
@@ -64,8 +75,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: prepare image name
-        run: echo "IMAGE=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+      - name: prepare image names
+        env:
+          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          echo "IMAGE=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+          echo "IMAGE_DH=docker.io/${DH_USER,,}/insoulforge" >> $GITHUB_ENV
 
       - uses: actions/download-artifact@v4
         with:
@@ -81,10 +96,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - uses: docker/metadata-action@v5
         id: meta
         with:
-          images: ${{ env.IMAGE }}
+          images: |
+            ${{ env.IMAGE }}
+            ${{ env.IMAGE_DH }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -93,8 +115,15 @@ jobs:
       - name: create and push manifest list
         working-directory: ${{ runner.temp }}/digests
         run: |
-          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+          TAGS=$(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          GHCR_TAGS=$(echo "$TAGS" | tr ' ' '\n' | grep "$IMAGE" | tr '\n' ' ')
+          DH_TAGS=$(echo "$TAGS" | tr ' ' '\n' | grep "$IMAGE_DH" | tr '\n' ' ')
+          docker buildx imagetools create $GHCR_TAGS \
             $(printf "${{ env.IMAGE }}@sha256:%s " *)
+          docker buildx imagetools create $DH_TAGS \
+            $(printf "${{ env.IMAGE_DH }}@sha256:%s " *)
 
       - name: inspect image
-        run: docker buildx imagetools inspect ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}
+        run: |
+          docker buildx imagetools inspect ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}
+          docker buildx imagetools inspect ${{ env.IMAGE_DH }}:${{ steps.meta.outputs.version }}
