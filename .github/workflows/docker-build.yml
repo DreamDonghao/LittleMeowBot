@@ -115,13 +115,24 @@ jobs:
       - name: create and push manifest list
         working-directory: ${{ runner.temp }}/digests
         run: |
-          TAGS=$(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON")
-          GHCR_TAGS=$(echo "$TAGS" | tr ' ' '\n' | grep "$IMAGE" | tr '\n' ' ')
-          DH_TAGS=$(echo "$TAGS" | tr ' ' '\n' | grep "$IMAGE_DH" | tr '\n' ' ')
-          docker buildx imagetools create $GHCR_TAGS \
-            $(printf "${{ env.IMAGE }}@sha256:%s " *)
-          docker buildx imagetools create $DH_TAGS \
-            $(printf "${{ env.IMAGE_DH }}@sha256:%s " *)
+          echo "metadata output: $DOCKER_METADATA_OUTPUT_JSON"
+          ls -l
+          GHCR_TAGS=$(jq -r --arg img "$IMAGE" '.tags[]? | select(startswith($img)) | "-t \(.)"' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          DH_TAGS=$(jq -r --arg img "$IMAGE_DH" '.tags[]? | select(startswith($img)) | "-t \(.)"' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          echo "GHCR_TAGS=[$GHCR_TAGS]"
+          echo "DH_TAGS=[$DH_TAGS]"
+          DIGESTS=$(printf "%s@sha256:%s " "$IMAGE" *)
+          if [ -n "$GHCR_TAGS" ]; then
+            docker buildx imagetools create $GHCR_TAGS $DIGESTS
+          else
+            echo "跳过 GHCR：没有可用 tag"
+          fi
+          if [ -n "$DH_TAGS" ]; then
+            docker buildx imagetools create $DH_TAGS \
+              $(printf "%s@sha256:%s " "$IMAGE_DH" *)
+          else
+            echo "跳过 Docker Hub：没有可用 tag"
+          fi
 
       - name: inspect image
         run: |
