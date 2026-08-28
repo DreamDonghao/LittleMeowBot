@@ -38,7 +38,7 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates tzdata libsqlite3-0 libjsoncpp26 libssl3t64 \
+        ca-certificates tzdata libsqlite3-0 libjsoncpp25 libssl3t64 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
