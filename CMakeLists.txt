@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(BUILD_SHARED_LIBS OFF)
+set(DEPLOY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/build/insoulforge)
 
 find_package(Drogon CONFIG REQUIRED)
 # 若 Drogon 没有 SQLite3 应用独立的包
@@ -13,6 +14,11 @@ if (NOT TARGET SQLite3 AND NOT TARGET SQLite3::SQLite3 AND NOT TARGET SQLite3_li
 endif ()
 find_package(spdlog REQUIRED)
 find_package(fmt CONFIG REQUIRED)
+
+# 尽量静态链接：能找到系统静态库（.a）就直接链，找不到再回退到 Drogon 传入的动态依赖
+find_library(SQLITE3_STATIC_LIB NAMES libsqlite3.a)
+find_library(JSONCPP_STATIC_LIB NAMES libjsoncpp.a)
+find_path(JSONCPP_INCLUDE_DIR NAMES json/value.h)
 
 # 将所有源文件集中到两个主要源码目录（src 和 controllers）
 file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS src/*.cpp controllers/*.cpp)
@@ -38,11 +44,20 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_link_libraries(${PROJECT_NAME} PRIVATE
         Drogon::Drogon
         spdlog::spdlog_header_only
-        fmt::fmt
+        fmt::fmt-header-only
         SQLite3_lib
 )
 
-# 前端构建 (Vue3) - 前端源码变化时自动重新构建，输出到 build/bot/public
+if (SQLITE3_STATIC_LIB)
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${SQLITE3_STATIC_LIB})
+endif ()
+
+if (JSONCPP_STATIC_LIB)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${JSONCPP_INCLUDE_DIR})
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${JSONCPP_STATIC_LIB})
+endif ()
+
+# 前端构建 (Vue3) - 前端源码变化时自动重新构建，输出到 build/insoulforge/public
 find_program(NPM_EXECUTABLE NAMES npm npm.cmd REQUIRED)
 file(GLOB_RECURSE FRONTEND_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/frontend/src/*)
 set(FRONTEND_DEPS
@@ -53,7 +68,7 @@ set(FRONTEND_DEPS
         ${CMAKE_CURRENT_SOURCE_DIR}/frontend/tsconfig.json
         ${CMAKE_CURRENT_SOURCE_DIR}/frontend/vite.config.ts)
 add_custom_command(
-        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/build/bot/public/index.html
+        OUTPUT ${DEPLOY_DIR}/public/index.html
         COMMAND ${NPM_ENV_CMD} ${NPM_EXECUTABLE} install --no-audit --no-fund
         COMMAND ${NPM_ENV_CMD} ${NPM_EXECUTABLE} run build
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/frontend
@@ -62,20 +77,20 @@ add_custom_command(
 )
 
 add_custom_target(frontend ALL
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/build/bot/public/index.html)
+        DEPENDS ${DEPLOY_DIR}/public/index.html)
 add_dependencies(${PROJECT_NAME} frontend)
 
-# 可执行文件直接输出到部署目录 build/bot/exe
+# 可执行文件直接输出到部署目录 build/insoulforge/exe
 set_target_properties(${PROJECT_NAME} PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/build/bot/exe)
+        RUNTIME_OUTPUT_DIRECTORY ${DEPLOY_DIR}/exe)
 
 configure_file(
         ${CMAKE_CURRENT_SOURCE_DIR}/runScript/run.sh
-        ${CMAKE_CURRENT_SOURCE_DIR}/build/bot/run.sh
+        ${DEPLOY_DIR}/run.sh
         COPYONLY
 )
 configure_file(
         ${CMAKE_CURRENT_SOURCE_DIR}/runScript/run.bat
-        ${CMAKE_CURRENT_SOURCE_DIR}/build/bot/run.bat
+        ${DEPLOY_DIR}/run.bat
         COPYONLY
 )

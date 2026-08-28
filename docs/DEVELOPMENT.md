@@ -57,8 +57,8 @@ make -j    # Linux 可用 -j$(nproc)
 
 构建产物：
 
-- 可执行文件 → `build/bot/exe/insoulforge`
-- 前端静态文件 → `build/bot/public/`（CMake 会在前端源码变化时自动执行 `npm run build`）
+- 可执行文件 → `build/insoulforge/exe/insoulforge`
+- 前端静态文件 → `build/insoulforge/public/`（CMake 会在前端源码变化时自动执行 `npm run build`）
 
 ### 日常开发
 
@@ -81,7 +81,7 @@ cd frontend && npm run type-check
 ## 运行
 
 ```bash
-./build/bot/exe/insoulforge
+./build/insoulforge/exe/insoulforge
 ```
 
 - HTTP 服务监听 **7778** 端口，管理后台：`http://localhost:7778/index.html`
@@ -89,7 +89,7 @@ cd frontend && npm run type-check
 - 控制台输入 `quit` 优雅退出
 
 注意：构建产物会输出到 `build/`，而 `data/`、`logs/` 与 `public/` 位于仓库根目录。开发时如果从仓库根目录运行
-`./build/bot/exe/insoulforge`，读取的是根目录的 `data/`；如果直接进入 `build/bot/` 运行，则会在 `build/bot/` 下生成数据目录。
+`./build/insoulforge/exe/insoulforge`，读取的是根目录的 `data/`；如果直接进入 `build/insoulforge/` 运行，则会在 `build/insoulforge/` 下生成数据目录。
 
 ## 项目结构
 

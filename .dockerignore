@@ -1,0 +1,10 @@
+.git
+build
+cmake-build-debug
+cmake-build-release
+debugtest
+frontend/node_modules
+docs
+*.md
+Dockerfile
+.dockerignore

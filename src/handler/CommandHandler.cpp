@@ -115,7 +115,7 @@ namespace insoulforge {
                 response = "暂无管理员";
             }
         } else if (cmd == "/about" || cmd == "/关于") {
-            response = "insoulforge - 智能 QQ 群聊机器人\n"
+            response = "InSoulForge\n"
                     "基于 Agent 架构，支持自定义角色、长期记忆、多工具调用\n\n"
                     "项目地址: https://github.com/DreamDonghao/insoulforge\n"
                     "作者: DreamDonghao\n"

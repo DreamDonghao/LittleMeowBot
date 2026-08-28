@@ -8,7 +8,7 @@ const projectRoot = resolve(fileURLToPath(new URL('.', import.meta.url)), '..')
 export default defineConfig({
     plugins: [vue()],
     build: {
-        outDir: resolve(projectRoot, 'build/bot/public'),
+        outDir: resolve(projectRoot, 'build/insoulforge/public'),
         emptyOutDir: true
     },
     server: {
