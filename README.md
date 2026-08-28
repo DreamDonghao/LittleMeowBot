@@ -33,7 +33,34 @@
 
 消息接收端口：7778
 
-### 启动步骤
+### 方式一：Docker 部署（推荐）
+
+镜像已发布至 Docker Hub 和 GitHub Container Registry，支持 **amd64 / arm64** 架构：
+
+```bash
+# Docker Hub
+docker pull dreamdonghao/insoulforge:latest
+
+# 或 GitHub Container Registry
+docker pull ghcr.io/dreamdonghao/insoulforge:latest
+```
+
+启动容器：
+
+```bash
+docker run -d --name insoulforge \
+  -p 7778:7778 \
+  -v ./data:/app/data \
+  -v ./logs:/app/logs \
+  -v ./uploads:/app/uploads \
+  dreamdonghao/insoulforge:latest
+```
+
+> 数据库、日志和表情包分别挂载到宿主机的 `./data`、`./logs`、`./uploads` 目录（也可自定义目录），升级镜像时数据不会丢失。
+
+然后访问管理后台：`http://localhost:7778/index.html`
+
+### 方式二：本地部署
 
 1. 下载安装包并解压
 
