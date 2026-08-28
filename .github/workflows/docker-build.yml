@@ -121,15 +121,17 @@ jobs:
           DH_TAGS=$(jq -r --arg img "$IMAGE_DH" '.tags[]? | select(startswith($img)) | "-t \(.)"' <<< "$DOCKER_METADATA_OUTPUT_JSON")
           echo "GHCR_TAGS=[$GHCR_TAGS]"
           echo "DH_TAGS=[$DH_TAGS]"
-          DIGESTS=$(printf "%s@sha256:%s " "$IMAGE" *)
+          DIGESTS=""
+          for d in *; do DIGESTS+="$IMAGE@sha256:$d "; done
           if [ -n "$GHCR_TAGS" ]; then
             docker buildx imagetools create $GHCR_TAGS $DIGESTS
           else
             echo "跳过 GHCR：没有可用 tag"
           fi
           if [ -n "$DH_TAGS" ]; then
-            docker buildx imagetools create $DH_TAGS \
-              $(printf "%s@sha256:%s " "$IMAGE_DH" *)
+            DH_DIGESTS=""
+            for d in *; do DH_DIGESTS+="$IMAGE_DH@sha256:$d "; done
+            docker buildx imagetools create $DH_TAGS $DH_DIGESTS
           else
             echo "跳过 Docker Hub：没有可用 tag"
           fi
