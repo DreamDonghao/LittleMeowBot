@@ -11,6 +11,7 @@
 #include <config/Config.hpp>
 #include <service/WebSocketManager.hpp>
 #include <util/Logger.hpp>
+#include <storage/SessionStore.hpp>
 
 namespace insoulforge {
     std::string MessageService::convertAtToCQCode(const std::string &text) {
@@ -221,14 +222,14 @@ drogon::Task<> MessageService::sendPrivateMsg(
                 const auto body = (*resp)->getJsonObject();
                 if (body && body->isMember("data") && (*body)["data"].isMember("nickname")) {
                     name = (*body)["data"]["nickname"].asString();
-                    Database::instance().updateSessionName(sessionId, name);
+                    SessionStore::instance().updateSessionName(sessionId, name);
                 }
             }
         } else {
             auto result = co_await getGroupInfo(sessionId);
             if (result.isMember("data") && result["data"].isMember("group_name")) {
                 name = result["data"]["group_name"].asString();
-                Database::instance().updateSessionName(sessionId, name);
+                SessionStore::instance().updateSessionName(sessionId, name);
             }
         }
 

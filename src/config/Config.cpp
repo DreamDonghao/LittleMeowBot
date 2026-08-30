@@ -2,9 +2,9 @@
 /// @brief 全局配置管理 - 实现
 
 #include <config/Config.hpp>
-#include <storage/Database.hpp>
 #include <spdlog/spdlog.h>
 #include <cctype>
+#include <storage/ConfigStore.hpp>
 
 namespace insoulforge {
     namespace {
@@ -22,7 +22,7 @@ namespace insoulforge {
         /// @param modelParams 模型参数（可为 nullptr，表示不加载）
         void loadLLMConfig(const std::string_view name, LLMApiConfig &apiConfig,
                            LLMModelParams *modelParams = nullptr) {
-            const auto cfg = Database::instance().getLLMConfig(std::string(name));
+            const auto cfg = ConfigStore::instance().getLLMConfig(std::string(name));
             if (cfg.isNull()) return;
 
             apiConfig.apiKey = trim(cfg["apiKey"].asString());
@@ -54,7 +54,7 @@ namespace insoulforge {
         loadLLMConfig("image", image);
 
         // 加载知识库配置
-        if (auto kbCfg = Database::instance().getKBConfig();
+        if (auto kbCfg = ConfigStore::instance().getKBConfig();
             !kbCfg.isNull()) {
             knowledgeBase.enabled = kbCfg.get("enabled", true).asBool();
             knowledgeBase.apiKey = kbCfg["apiKey"].asString();
@@ -68,7 +68,7 @@ namespace insoulforge {
         }
 
         // 加载记忆配置
-        if (auto memCfg = Database::instance().getMemoryConfig();
+        if (auto memCfg = ConfigStore::instance().getMemoryConfig();
             !memCfg.isNull()) {
             windowTriggerCount = memCfg["windowTriggerCount"].asInt();
             windowKeepCount = memCfg["windowKeepCount"].asInt();
@@ -90,7 +90,7 @@ namespace insoulforge {
         }
 
         // 加载 QQ Bot 配置
-        if (auto qqCfg = Database::instance().getQQConfig();
+        if (auto qqCfg = ConfigStore::instance().getQQConfig();
             !qqCfg.isNull()) {
             accessToken = trim(qqCfg["accessToken"].asString());
             selfQQNumber = qqCfg["selfQQNumber"].asInt64();

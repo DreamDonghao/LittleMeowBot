@@ -4,10 +4,11 @@
 #include <service/PromptService.hpp>
 #include <config/Config.hpp>
 #include <spdlog/spdlog.h>
+#include <storage/PromptStore.hpp>
 
 namespace insoulforge {
     void PromptService::initialize() {
-        auto &db = Database::instance();
+        auto &db = PromptStore::instance();
 
         // 定义默认提示词
         const struct {
@@ -190,7 +191,7 @@ reply 的场景：
     }
 
     std::string PromptService::getPrompt(const std::string &key) {
-        std::string content = Database::instance().getPrompt(key, "");
+        std::string content = PromptStore::instance().getPrompt(key, "");
         // 替换 {botName} 占位符
         if (content.find("{botName}") != std::string::npos) {
             const std::string &botName = Config::instance().botName;
@@ -204,7 +205,7 @@ reply 的场景：
     }
 
     void PromptService::setPrompt(const std::string &key, const std::string &content) {
-        Database::instance().setPrompt(key, content);
+        PromptStore::instance().setPrompt(key, content);
         spdlog::info("提示词已更新: {}", key);
     }
 

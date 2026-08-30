@@ -12,6 +12,7 @@
 #include <spdlog/spdlog.h>
 #include <iomanip>
 #include <sstream>
+#include <storage/TaskStore.hpp>
 
 namespace insoulforge {
     namespace {
@@ -37,7 +38,7 @@ namespace insoulforge {
             return oss.str();
         }
 
-        std::string buildText(const Database::ScheduledTask &task, const bool delayed) {
+        std::string buildText(const TaskStore::ScheduledTask &task, const bool delayed) {
             // 正文必须是对机器人下达的指令而非对用户的陈述，
             // content 是备忘而非现成回复，具体怎么说由到点时的 AI 结合上下文自行决定
             std::string text =
@@ -51,7 +52,7 @@ namespace insoulforge {
             return text;
         }
 
-        Json::Value buildSystemEvent(const Database::ScheduledTask &task, const bool delayed) {
+        Json::Value buildSystemEvent(const TaskStore::ScheduledTask &task, const bool delayed) {
             const auto &config = Config::instance();
             const std::string text = buildText(task, delayed);
 
@@ -112,8 +113,8 @@ namespace insoulforge {
         }
     }
 
-    int64_t TaskScheduler::schedule(Database::ScheduledTask task) {
-        const int64_t id = Database::instance().addScheduledTask(task);
+    int64_t TaskScheduler::schedule(TaskStore::ScheduledTask task) {
+        const int64_t id = TaskStore::instance().addScheduledTask(task);
 
         Entry entry;
         entry.task = std::move(task);
@@ -133,7 +134,7 @@ namespace insoulforge {
     }
 
     void TaskScheduler::restorePendingTasks() {
-        const auto tasks = Database::instance().getPendingScheduledTasks();
+        const auto tasks = TaskStore::instance().getPendingScheduledTasks();
         size_t overdue = 0;
         {
             std::lock_guard lock(m_mutex);
@@ -176,7 +177,7 @@ namespace insoulforge {
             // async_run 在本线程启动协程，首个真正的挂起点（HTTP 发送）之后续转到主循环执行，
             // 不会阻塞调度线程
             while (!m_heap.empty() && m_heap.top().fireTime <= Clock::to_time_t(Clock::now())) {
-                Database::ScheduledTask task = std::move(const_cast<Entry &>(m_heap.top()).task);
+                TaskStore::ScheduledTask task = std::move(const_cast<Entry &>(m_heap.top()).task);
                 m_heap.pop();
                 lock.unlock();
                 drogon::async_run([task = std::move(task)]() -> drogon::Task<> {
@@ -187,7 +188,7 @@ namespace insoulforge {
         }
     }
 
-    drogon::Task<> TaskScheduler::trigger(Database::ScheduledTask task) {
+    drogon::Task<> TaskScheduler::trigger(TaskStore::ScheduledTask task) {
         const uint64_t logSessionId = task.sessionType == "private"
                                           ? task.targetId | QQMessage::kPrivateSessionFlag
                                           : task.targetId;
@@ -206,7 +207,7 @@ namespace insoulforge {
             Logger::session(logSessionId).info("[Scheduler] 定时任务 #{} 已注入消息接口", task.id);
         }
 
-        Database::instance().finishScheduledTask(task.id);
+        TaskStore::instance().finishScheduledTask(task.id);
     }
 
     std::optional<std::time_t> TaskScheduler::parseTimeString(const std::string &input) {

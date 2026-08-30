@@ -10,6 +10,9 @@
 #include <mutex>
 #include <unordered_set>
 #include <util/Logger.hpp>
+#include <storage/MemoryStore.hpp>
+#include <storage/ChatRecordStore.hpp>
+#include <storage/SessionStore.hpp>
 
 namespace insoulforge {
     namespace {
@@ -241,12 +244,12 @@ namespace insoulforge {
             if (!kb.enabled || kb.memoryDatasetId.empty() || kb.memoryDocumentId.empty()) {
                 Logger::session(sessionId).info("短期记忆超限，RAGFlow 未配置或未启用，仅保留 {} 条", maxLines);
                 std::string trimmed = trimToMaxLines(shortTermMemory, maxLines);
-                Database::instance().updateShortTermMemory(sessionId, trimmed);
+                MemoryStore::instance().updateShortTermMemory(sessionId, trimmed);
                 co_return trimmed;
             }
 
             // 获取群名
-            std::string groupName = Database::instance().getSessionName(sessionId);
+            std::string groupName = SessionStore::instance().getSessionName(sessionId);
             if (groupName.empty()) {
                 groupName = std::to_string(sessionId);
             }
@@ -257,7 +260,7 @@ namespace insoulforge {
             if (toMigrate.empty() || toMigrate == "无") {
                 Logger::session(sessionId).info("无记忆需要迁移");
                 std::string trimmed = trimToMaxLines(shortTermMemory, maxLines);
-                Database::instance().updateShortTermMemory(sessionId, trimmed);
+                MemoryStore::instance().updateShortTermMemory(sessionId, trimmed);
                 co_return trimmed;
             }
 
@@ -282,7 +285,7 @@ namespace insoulforge {
             if (successCount == 0) {
                 Logger::session(sessionId).warn("迁移到 RAGFlow 全部失败，保留短期记忆");
                 std::string trimmed = trimToMaxLines(shortTermMemory, maxLines);
-                Database::instance().updateShortTermMemory(sessionId, trimmed);
+                MemoryStore::instance().updateShortTermMemory(sessionId, trimmed);
                 co_return trimmed;
             }
 
@@ -291,7 +294,7 @@ namespace insoulforge {
 
             // 4. 确保不超过maxLines
             remaining = trimToMaxLines(remaining, maxLines);
-            Database::instance().updateShortTermMemory(sessionId, remaining);
+            MemoryStore::instance().updateShortTermMemory(sessionId, remaining);
 
             Logger::session(sessionId).info("迁移完成，成功 {} 条，短期记忆保留 {} 条", successCount, countLines(remaining));
             co_return remaining;
@@ -304,12 +307,12 @@ namespace insoulforge {
             co_return; // 该群正在提取中，等下一轮消息触发
         }
 
-        auto &db = Database::instance();
+        auto &memoryStore = MemoryStore::instance();
         auto &config = Config::instance();
 
         // 1. 检查窗口是否超限
-        const uint64_t watermark = db.getMemoryWatermark(sessionId);
-        const size_t count = db.getChatRecordCountSince(sessionId, watermark);
+        const uint64_t watermark = memoryStore.getMemoryWatermark(sessionId);
+        const size_t count = ChatRecordStore::instance().getChatRecordCountSince(sessionId, watermark);
         if (count <= static_cast<size_t>(config.windowTriggerCount)) {
             co_return;
         }
@@ -319,14 +322,14 @@ namespace insoulforge {
             toDrop = 1; // 配置异常兜底（keep >= trigger），至少推进一条，保证触发循环能终止
         }
 
-        const auto records = db.getChatRecordsSince(sessionId, watermark, 0);
+        const auto records = ChatRecordStore::instance().getChatRecordsSince(sessionId, watermark, 0);
         if (records.size() < toDrop) {
             Logger::session(sessionId).warn("窗口记录数与计数不一致，跳过本轮");
             co_return;
         }
 
         // 2. 分批提取+合并，逐批推进水位线
-        std::string existingMemory = db.getShortTermMemory(sessionId);
+        std::string existingMemory = memoryStore.getShortTermMemory(sessionId);
         uint64_t chunkEndId = watermark;
         size_t processed = 0;
         int successChunks = 0;
@@ -352,7 +355,7 @@ namespace insoulforge {
 
             // 原子写记忆+水位线，崩溃后重提取同批记录，LLM 合并去重保证幂等
             chunkEndId = records[batchEnd - 1]["id"].asUInt64();
-            db.updateShortTermMemoryWithWatermark(sessionId, existingMemory, chunkEndId);
+            memoryStore.updateShortTermMemoryWithWatermark(sessionId, existingMemory, chunkEndId);
             processed = batchEnd;
             successChunks++;
         }

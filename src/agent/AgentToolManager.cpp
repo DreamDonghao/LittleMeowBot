@@ -26,6 +26,8 @@
 #include "service/RAGFlowClient.hpp"
 #include "service/ToolRegistry.hpp"
 #include "service/TaskScheduler.hpp"
+#include <storage/ToolStore.hpp>
+#include <storage/TaskStore.hpp>
 
 namespace insoulforge {
     void AgentToolManager::registerAllTools() {
@@ -655,7 +657,7 @@ namespace insoulforge {
                     if (sessionId == 0) co_return std::string("会话上下文缺失，无法确定提醒目标");
                     const bool isPrivateSession = QQMessage::isPrivateSession(sessionId);
 
-                    Database::ScheduledTask task;
+                    TaskStore::ScheduledTask task;
                     task.sessionType = isPrivateSession ? "private" : "group";
                     task.targetId = isPrivateSession ? sessionId & ~QQMessage::kPrivateSessionFlag
                                                      : sessionId;
@@ -684,14 +686,14 @@ namespace insoulforge {
 
     void AgentToolManager::registerCustomTools() {
         auto &registry = ToolRegistry::instance();
-        const auto &db = Database::instance();
+        const auto &toolStore = ToolStore::instance();
 
         // 先清除所有已注册的自定义工具
         registry.clearAllCustomTools();
 
 
         // 只注册启用的工具
-        const auto tools = db.getEnabledCustomTools();
+        const auto tools = toolStore.getEnabledCustomTools();
         int count = 0;
 
         for (const auto &tool: tools) {
@@ -751,7 +753,7 @@ namespace insoulforge {
         }
 
         // 获取配置的Python解释器路径
-        std::string pythonPath = Database::instance().getCustomToolPython();
+        std::string pythonPath = ToolStore::instance().getCustomToolPython();
 
         // 构建输入参数 JSON
         Json::StreamWriterBuilder writerBuilder;

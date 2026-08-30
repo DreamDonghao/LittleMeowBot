@@ -6,7 +6,6 @@
 ///          支持用户消息和 AI 回复的记录与检索。
 
 #pragma once
-#include <storage/Database.hpp>
 #include <json/value.h>
 #include <deque>
 

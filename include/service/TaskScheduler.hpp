@@ -9,7 +9,7 @@
 ///          - 重启时从数据库恢复全部 pending 任务；已过期的任务照常触发并标注延时
 #pragma once
 
-#include <storage/Database.hpp>
+#include <storage/TaskStore.hpp>
 #include <condition_variable>
 #include <chrono>
 #include <atomic>
@@ -35,7 +35,7 @@ namespace insoulforge {
         /// @brief 创建定时任务（先落库再入堆）
         /// @param task 任务内容（sessionType/targetId/remindTime/content 需已填充）
         /// @return 任务 ID；数据库写入失败抛出异常
-        int64_t schedule(Database::ScheduledTask task);
+        int64_t schedule(TaskStore::ScheduledTask task);
 
         /// @brief 解析模型给出的时间字符串为本地时间 unix 秒。
         /// 兼容 YYYY-MM-DD / YYYY/MM/DD 与 HH:MM(:SS 可省)，分隔符 T 视同空格
@@ -48,7 +48,7 @@ namespace insoulforge {
         ~TaskScheduler();
 
         struct Entry {
-            Database::ScheduledTask task;
+            TaskStore::ScheduledTask task;
 
             /// @brief 实际触发时刻（remindTime 减去提前量）
             std::time_t fireTime = 0;
@@ -62,7 +62,7 @@ namespace insoulforge {
         void restorePendingTasks();
 
         /// @brief 把任务合成 OneBot 消息注入接收接口并标记完成（在 drogon 循环上执行）
-        static drogon::Task<> trigger(Database::ScheduledTask task);
+        static drogon::Task<> trigger(TaskStore::ScheduledTask task);
 
         std::priority_queue<Entry, std::vector<Entry>, std::greater<> > m_heap;
         mutable std::mutex m_mutex;

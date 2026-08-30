@@ -10,8 +10,8 @@
 #include <service/MessageService.hpp>
 #include <service/WebSocketManager.hpp>
 #include <spdlog/spdlog.h>
-#include <storage/Database.hpp>
 #include <util/Logger.hpp>
+#include <storage/SessionStore.hpp>
 
 using namespace insoulforge;
 using namespace drogon;
@@ -100,7 +100,7 @@ Task<> ProcessQQMessages::receiveMessages(const HttpRequestPtr req,
     }
 
     // 只处理启用的会话（从数据库读取）
-    if (auto &database = Database::instance(); !database.isSessionEnabled(sessionId)) {
+    if (!SessionStore::instance().isSessionEnabled(sessionId)) {
         co_return;
     }
 

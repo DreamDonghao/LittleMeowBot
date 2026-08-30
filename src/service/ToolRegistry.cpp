@@ -6,7 +6,7 @@
 #include <service/ToolRegistry.hpp>
 #include <spdlog/spdlog.h>
 #include <ranges>
-#include <storage/Database.hpp>
+#include <storage/SessionStore.hpp>
 
 namespace insoulforge {
     ToolContext &currentToolContext() {
@@ -112,7 +112,7 @@ namespace insoulforge {
         auto &ctx = currentToolContext();
         ctx.sessionId = sessionId;
         if (sessionId != 0) {
-            ctx.groupName = Database::instance().getSessionName(sessionId);
+            ctx.groupName = SessionStore::instance().getSessionName(sessionId);
         }
 
         // 查找所有分类

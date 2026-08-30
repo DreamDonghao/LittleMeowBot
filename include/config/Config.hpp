@@ -4,7 +4,6 @@
 #include <json/value.h>
 #include <cstdint>
 #include <string>
-#include <storage/Database.hpp>
 
 namespace insoulforge {
     struct LLMApiConfig {

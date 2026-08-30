@@ -4,10 +4,10 @@
 #include <api/ApiClient.hpp>
 #include <spdlog/spdlog.h>
 #include <config/Config.hpp>
-#include <storage/Database.hpp>
 #include <service/WebSocketManager.hpp>
 #include <util/HttpUtil.hpp>
 #include <util/Logger.hpp>
+#include <storage/UsageStore.hpp>
 
 namespace insoulforge {
     namespace {
@@ -144,7 +144,7 @@ namespace insoulforge {
             }
         }
 
-        Database::instance().addUsageRecord(
+        UsageStore::instance().addUsageRecord(
             role, model, promptTokens, completionTokens, totalTokens, cachedTokens);
 
         Json::Value evt;

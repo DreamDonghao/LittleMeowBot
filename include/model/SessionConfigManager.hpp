@@ -6,7 +6,7 @@
 ///          支持会话配置的增删改查和消息计数统计。
 
 #pragma once
-#include <storage/Database.hpp>
+#include <storage/SessionStore.hpp>
 
 namespace insoulforge {
     /// @brief 会话配置管理

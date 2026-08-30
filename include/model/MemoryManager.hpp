@@ -6,7 +6,6 @@
 ///          短期记忆以纯文本形式存储，每行一条记忆条目。
 
 #pragma once
-#include <storage/Database.hpp>
 #include <string>
 
 namespace insoulforge {

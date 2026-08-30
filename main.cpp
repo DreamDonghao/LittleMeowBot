@@ -16,6 +16,8 @@
 #include <spdlog/spdlog.h>
 #include <util/Logger.hpp>
 #include <storage/Database.hpp>
+#include <storage/SessionStore.hpp>
+#include <storage/AdminStore.hpp>
 #include <config/Config.hpp>
 #include <agent/AgentSystem.hpp>
 #include <model/QQMessage.hpp>
@@ -41,8 +43,8 @@ int main() {
         // 启动定时任务调度器
         TaskScheduler::instance().start();
 
-        spdlog::info("系统初始化完成 - 启用群: {}, 管理员: {}", std::ssize(database.getEnabledGroups()),
-                     std::ssize(database.getAdmins()));
+        spdlog::info("系统初始化完成 - 启用群: {}, 管理员: {}", std::ssize(SessionStore::instance().getEnabledGroups()),
+                     std::ssize(AdminStore::instance().getAdmins()));
 
         // 启动服务
         // 启动控制台命令线程

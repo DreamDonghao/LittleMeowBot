@@ -3,6 +3,8 @@
 
 #include <model/ChatRecordManager.hpp>
 #include <config/Config.hpp>
+#include <storage/ChatRecordStore.hpp>
+#include <storage/MemoryStore.hpp>
 
 namespace insoulforge {
     ChatRecordManager::ChatRecordManager(uint64_t sessionId) : m_sessionId(sessionId) {
@@ -13,16 +15,16 @@ namespace insoulforge {
     }
 
     void ChatRecordManager::addUserRecord(const std::string &content) const {
-        Database::instance().addChatRecord(m_sessionId, "user", content);
+        ChatRecordStore::instance().addChatRecord(m_sessionId, "user", content);
     }
 
     void ChatRecordManager::addAssistantRecord(const std::string &content) const {
-        Database::instance().addChatRecord(m_sessionId, "assistant", content);
+        ChatRecordStore::instance().addChatRecord(m_sessionId, "assistant", content);
     }
 
     std::deque<Json::Value> ChatRecordManager::getRecords() const {
-        const uint64_t watermark = Database::instance().getMemoryWatermark(m_sessionId);
-        const auto records = Database::instance().getChatRecordsSince(
+        const uint64_t watermark = MemoryStore::instance().getMemoryWatermark(m_sessionId);
+        const auto records = ChatRecordStore::instance().getChatRecordsSince(
             m_sessionId, watermark, Config::instance().windowTriggerCount);
         return {records.begin(), records.end()};
     }

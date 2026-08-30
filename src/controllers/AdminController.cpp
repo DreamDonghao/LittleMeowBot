@@ -13,6 +13,14 @@
 #include <charconv>
 #include <chrono>
 #include <fstream>
+#include <storage/AdminStore.hpp>
+#include <storage/ChatRecordStore.hpp>
+#include <storage/ConfigStore.hpp>
+#include <storage/MemoryStore.hpp>
+#include <storage/PromptStore.hpp>
+#include <storage/SessionStore.hpp>
+#include <storage/ToolStore.hpp>
+#include <storage/UsageStore.hpp>
 
 using namespace insoulforge;
 using namespace drogon;
@@ -33,7 +41,7 @@ Task<> AdminController::getLLMConfigs(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr &)> callback
 ) const {
-    auto configs = Database::instance().getAllLLMConfigs();
+    auto configs = ConfigStore::instance().getAllLLMConfigs();
     callback(HttpResponse::newHttpJsonResponse(configs));
     co_return;
 }
@@ -51,7 +59,7 @@ Task<> AdminController::saveLLMConfig(
     }
 
     std::string name = (*json)["name"].asString();
-    Database::instance().saveLLMConfig(name, *json);
+    ConfigStore::instance().saveLLMConfig(name, *json);
 
     // 更新内存中的配置
     auto &config = Config::instance();
@@ -103,7 +111,7 @@ Task<> AdminController::getPrompts(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr &)> callback
 ) const {
-    auto prompts = Database::instance().getAllPrompts();
+    auto prompts = PromptStore::instance().getAllPrompts();
 
     Json::Value result;
     for (const auto &[key, content]: prompts) {
@@ -139,7 +147,7 @@ Task<> AdminController::savePrompt(
         co_return;
     }
 
-    Database::instance().setPrompt(key, content, description);
+    PromptStore::instance().setPrompt(key, content, description);
     spdlog::warn("管理后台更新提示词: key={}, 长度={}", key, content.size());
 
     Json::Value resp;
@@ -265,8 +273,8 @@ Task<> AdminController::getUsage(
     }
     days = std::clamp(days, 1, 365);
 
-    Json::Value resp = Database::instance().getUsageSummary(days);
-    resp["recent"] = Database::instance().getRecentUsage(50);
+    Json::Value resp = UsageStore::instance().getUsageSummary(days);
+    resp["recent"] = UsageStore::instance().getRecentUsage(50);
     callback(HttpResponse::newHttpJsonResponse(resp));
     co_return;
 }
@@ -391,7 +399,7 @@ Task<> AdminController::getAdmins(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr &)> callback
 ) const {
-    auto admins = Database::instance().getAdmins();
+    auto admins = AdminStore::instance().getAdmins();
 
     Json::Value result(Json::arrayValue);
     for (uint64_t qq: admins) {
@@ -416,7 +424,7 @@ Task<> AdminController::addAdmin(
     }
 
     uint64_t qq = (*json)["qq"].asUInt64();
-    Database::instance().addAdmin(qq);
+    AdminStore::instance().addAdmin(qq);
 
     Json::Value resp;
     resp["success"] = true;
@@ -431,7 +439,7 @@ Task<> AdminController::removeAdmin(
     const std::string &qq
 ) const {
     uint64_t qqNum = std::stoull(qq);
-    Database::instance().removeAdmin(qqNum);
+    AdminStore::instance().removeAdmin(qqNum);
 
     Json::Value resp;
     resp["success"] = true;
@@ -446,7 +454,7 @@ Task<> AdminController::getGroups(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr &)> callback
 ) const {
-    auto groups = Database::instance().getAllSessionsWithStatus();
+    auto groups = SessionStore::instance().getAllSessionsWithStatus();
 
     Json::Value result(Json::arrayValue);
     for (const auto &[sessionId, groupName, enabled, messageCount]: groups) {
@@ -500,7 +508,7 @@ Task<> AdminController::enableSession(
             co_return;
         }
     }
-    Database::instance().enableSession(sessionId);
+    SessionStore::instance().enableSession(sessionId);
 
     // 自动获取会话名称（群聊为群名，私聊为 QQ 昵称）
     std::string groupName = co_await MessageService::fetchAndUpdateSessionName(sessionId);
@@ -519,7 +527,7 @@ Task<> AdminController::toggleSession(
     const std::string &sessionId
 ) const {
     const uint64_t gid = std::stoull(sessionId);
-    Database::instance().toggleSessionStatus(gid);
+    SessionStore::instance().toggleSessionStatus(gid);
 
     Json::Value resp;
     resp["success"] = true;
@@ -534,7 +542,7 @@ Task<> AdminController::removeSession(
     const std::string &sessionId
 ) const {
     uint64_t gid = std::stoull(sessionId);
-    Database::instance().disableSession(gid);
+    SessionStore::instance().disableSession(gid);
 
     Json::Value resp;
     resp["success"] = true;
@@ -562,7 +570,7 @@ Task<> AdminController::refreshAllSessionNames(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr &)> callback
 ) const {
-    auto groups = Database::instance().getAllSessionsWithStatus();
+    auto groups = SessionStore::instance().getAllSessionsWithStatus();
 
     for (const auto &[sessionId, groupName, enabled, messageCount]: groups) {
         co_await MessageService::fetchAndUpdateSessionName(sessionId);
@@ -581,7 +589,7 @@ Task<> AdminController::getChatSessions(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr &)> callback
 ) const {
-    auto groups = Database::instance().getSessionsWithChatRecords();
+    auto groups = SessionStore::instance().getSessionsWithChatRecords();
 
     Json::Value result(Json::arrayValue);
     for (const auto &[sessionId, groupName, messageCount]: groups) {
@@ -614,7 +622,7 @@ Task<> AdminController::getChatRecords(
     }
 
     // 返回带ID的记录，支持编辑
-    auto result = Database::instance().getChatRecordsWithIds(gid, limit);
+    auto result = ChatRecordStore::instance().getChatRecordsWithIds(gid, limit);
 
     // 反转顺序，最新的在底部
     Json::Value reversed(Json::arrayValue);
@@ -641,7 +649,7 @@ Task<> AdminController::updateChatRecord(
 
     int id = std::stoi(recordId);
     std::string content = (*json)["content"].asString();
-    Database::instance().updateChatRecord(id, content);
+    ChatRecordStore::instance().updateChatRecord(id, content);
 
     Json::Value resp;
     resp["success"] = true;
@@ -656,7 +664,7 @@ Task<> AdminController::deleteChatRecord(
     const std::string &recordId
 ) const {
     int id = std::stoi(recordId);
-    Database::instance().deleteChatRecord(id);
+    ChatRecordStore::instance().deleteChatRecord(id);
 
     Json::Value resp;
     resp["success"] = true;
@@ -671,7 +679,7 @@ Task<> AdminController::clearSessionChatRecords(
     const std::string &sessionId
 ) const {
     uint64_t gid = std::stoull(sessionId);
-    Database::instance().clearSessionChatRecords(gid);
+    ChatRecordStore::instance().clearSessionChatRecords(gid);
 
     Json::Value resp;
     resp["success"] = true;
@@ -686,7 +694,7 @@ Task<> AdminController::getKBConfig(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr &)> callback
 ) const {
-    auto config = Database::instance().getKBConfig();
+    auto config = ConfigStore::instance().getKBConfig();
     callback(HttpResponse::newHttpJsonResponse(config));
     co_return;
 }
@@ -703,7 +711,7 @@ Task<> AdminController::saveKBConfig(
         co_return;
     }
 
-    Database::instance().saveKBConfig(*json);
+    ConfigStore::instance().saveKBConfig(*json);
 
     // 更新内存中的配置
     auto &kbConfig = Config::instance().knowledgeBase;
@@ -729,7 +737,7 @@ Task<> AdminController::getSessionMemory(
     const std::string &sessionId
 ) const {
     const uint64_t gid = std::stoull(sessionId);
-    const std::string memory = Database::instance().getShortTermMemory(gid);
+    const std::string memory = MemoryStore::instance().getShortTermMemory(gid);
 
     Json::Value resp;
     resp["groupId"] = static_cast<Json::UInt64>(gid);
@@ -753,7 +761,7 @@ Task<> AdminController::updateSessionMemory(
 
     uint64_t gid = std::stoull(sessionId);
     std::string memory = (*json)["memory"].asString();
-    Database::instance().updateShortTermMemory(gid, memory);
+    MemoryStore::instance().updateShortTermMemory(gid, memory);
 
     Json::Value resp;
     resp["success"] = true;
@@ -768,7 +776,7 @@ Task<> AdminController::getMemoryConfig(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr &)> callback
 ) const {
-    auto config = Database::instance().getMemoryConfig();
+    auto config = ConfigStore::instance().getMemoryConfig();
     callback(HttpResponse::newHttpJsonResponse(config));
     co_return;
 }
@@ -805,7 +813,7 @@ Task<> AdminController::saveMemoryConfig(
         (*json)["routerWindowKeepCount"] = (*json)["routerWindowTriggerCount"].asInt() / 2;
     }
 
-    Database::instance().saveMemoryConfig(*json);
+    ConfigStore::instance().saveMemoryConfig(*json);
 
     // 更新内存中的配置
     auto &config = Config::instance();
@@ -830,7 +838,7 @@ Task<> AdminController::getQQConfig(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr &)> callback
 ) const {
-    auto config = Database::instance().getQQConfig();
+    auto config = ConfigStore::instance().getQQConfig();
     callback(HttpResponse::newHttpJsonResponse(config));
     co_return;
 }
@@ -847,7 +855,7 @@ Task<> AdminController::saveQQConfig(
         co_return;
     }
 
-    Database::instance().saveQQConfig(*json);
+    ConfigStore::instance().saveQQConfig(*json);
 
     // 更新内存中的配置
     auto &config = Config::instance();
@@ -872,7 +880,7 @@ Task<> AdminController::getCustomTools(
     HttpRequestPtr req,
     std::function<void(const HttpResponsePtr &)> callback
 ) const {
-    auto tools = Database::instance().getCustomTools();
+    auto tools = ToolStore::instance().getCustomTools();
 
     Json::Value result(Json::arrayValue);
     for (const auto &tool: tools) {
@@ -915,7 +923,7 @@ Task<> AdminController::addCustomTool(
         co_return;
     }
 
-    Database::CustomTool tool;
+    ToolStore::CustomTool tool;
     tool.name = name;
     tool.description = json->get("description", "").asString();
     tool.parameters = json->get("parameters", "").asString();
@@ -925,7 +933,7 @@ Task<> AdminController::addCustomTool(
     tool.readme = json->get("readme", "").asString();
     tool.enabled = json->get("enabled", true).asBool();
 
-    int id = Database::instance().addCustomTool(tool);
+    int id = ToolStore::instance().addCustomTool(tool);
 
     // 立即注册到 ToolRegistry
     AgentToolManager::registerCustomTools();
@@ -951,7 +959,7 @@ Task<> AdminController::updateCustomTool(
         co_return;
     }
 
-    Database::CustomTool tool;
+    ToolStore::CustomTool tool;
     tool.id = std::stoi(id);
     tool.name = (*json)["name"].asString();
     tool.description = json->get("description", "").asString();
@@ -962,7 +970,7 @@ Task<> AdminController::updateCustomTool(
     tool.readme = json->get("readme", "").asString();
     tool.enabled = json->get("enabled", true).asBool();
 
-    Database::instance().updateCustomTool(tool);
+    ToolStore::instance().updateCustomTool(tool);
 
     // 重新注册工具
     AgentToolManager::registerCustomTools();
@@ -980,7 +988,7 @@ Task<> AdminController::deleteCustomTool(
     const std::string &id
 ) const {
     const int toolId = std::stoi(id);
-    Database::instance().deleteCustomTool(toolId);
+    ToolStore::instance().deleteCustomTool(toolId);
 
     // 重新注册工具（移除已删除的）
     AgentToolManager::registerCustomTools();
@@ -998,7 +1006,7 @@ Task<> AdminController::toggleCustomTool(
     const std::string &id
 ) const {
     int toolId = std::stoi(id);
-    Database::instance().toggleCustomTool(toolId);
+    ToolStore::instance().toggleCustomTool(toolId);
 
     // 重新注册工具
     AgentToolManager::registerCustomTools();
@@ -1047,7 +1055,7 @@ Task<> AdminController::testCustomTool(
     if (json->isMember("toolId")) {
         // 从数据库加载工具
         int toolId = (*json)["toolId"].asInt();
-        auto tools = Database::instance().getCustomTools();
+        auto tools = ToolStore::instance().getCustomTools();
         auto it =
                 std::ranges::find_if(tools, [toolId](const auto &t) { return t.id == toolId; });
         if (it == tools.end()) {
@@ -1092,7 +1100,7 @@ Task<> AdminController::getCustomToolConfig(
     std::function<void(const HttpResponsePtr &)> callback
 ) const {
     Json::Value resp;
-    resp["pythonPath"] = Database::instance().getCustomToolPython();
+    resp["pythonPath"] = ToolStore::instance().getCustomToolPython();
     callback(HttpResponse::newHttpJsonResponse(resp));
     co_return;
 }
@@ -1111,7 +1119,7 @@ Task<> AdminController::saveCustomToolConfig(
     }
 
     std::string pythonPath = (*json)["pythonPath"].asString();
-    Database::instance().setCustomToolPython(pythonPath);
+    ToolStore::instance().setCustomToolPython(pythonPath);
 
     Json::Value resp;
     resp["success"] = true;
@@ -1127,10 +1135,10 @@ Task<> AdminController::exportCustomTool(
     std::function<void(const HttpResponsePtr &)> callback,
     const std::string &id) const {
     int toolId = std::stoi(id);
-    auto tools = Database::instance().getCustomTools();
+    auto tools = ToolStore::instance().getCustomTools();
 
     auto it = std::find_if(tools.begin(), tools.end(),
-                           [toolId](const Database::CustomTool &t) { return t.id == toolId; });
+                           [toolId](const ToolStore::CustomTool &t) { return t.id == toolId; });
 
     if (it == tools.end()) {
         Json::Value resp;
@@ -1208,7 +1216,7 @@ Task<> AdminController::importCustomTool(
     std::string name = (*json)["name"].asString();
 
     // 检查是否已存在同名工具
-    if (Database::instance().hasCustomTool(name)) {
+    if (ToolStore::instance().hasCustomTool(name)) {
         Json::Value resp;
         resp["success"] = false;
         resp["error"] = "工具名已存在：" + name;
@@ -1217,7 +1225,7 @@ Task<> AdminController::importCustomTool(
     }
 
     // 构建工具对象（强制使用 Python 类型）
-    Database::CustomTool tool;
+    ToolStore::CustomTool tool;
     tool.name = name;
     tool.description = (*json)["description"].asString();
     tool.executorType = "python";
@@ -1236,7 +1244,7 @@ Task<> AdminController::importCustomTool(
     tool.enabled = true;
 
     // 添加到数据库
-    int newId = Database::instance().addCustomTool(tool);
+    int newId = ToolStore::instance().addCustomTool(tool);
     AgentToolManager::registerCustomTools();
 
     spdlog::info("导入自定义工具: {} (ID: {})", tool.name, newId);
