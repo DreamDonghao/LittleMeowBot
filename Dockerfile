@@ -1,7 +1,8 @@
 # 多阶段构建：builder 编译后端 + 前端，runtime 只保留部署产物
 FROM ubuntu:24.04 AS builder
 
-ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=noninteractive TZ=Asia/Shanghai
+RUN ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential cmake ninja-build git ca-certificates \
         libsqlite3-dev libspdlog-dev libfmt-dev libjsoncpp-dev \
@@ -36,10 +37,11 @@ RUN cmake -S . -B build-cmake -G Ninja -DCMAKE_BUILD_TYPE=Release \
 
 FROM ubuntu:24.04
 
-ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=noninteractive TZ=Asia/Shanghai
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates tzdata libsqlite3-0 libjsoncpp25 libssl3t64 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
 
 WORKDIR /app
 COPY --from=builder /src/build/insoulforge/ .
