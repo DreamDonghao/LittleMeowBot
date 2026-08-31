@@ -131,6 +131,22 @@ namespace insoulforge {
             return text;
         }
 
+        /// @brief 去除记录 content JSON 中的 images 字段（文件名/URL 对提取与评分无用，纯耗 token）
+        /// @details 解析失败或非 JSON 内容原样保留（历史存量可能是纯文本），不做修改
+        void stripRecordImages(std::vector<Json::Value> &records) {
+            Json::StreamWriterBuilder writerBuilder;
+            writerBuilder["indentation"] = "";
+            writerBuilder["emitUTF8"] = true;
+
+            for (auto &record: records) {
+                Json::Value content;
+                if (!Json::Reader().parse(record["content"].asString(), content) || !content.isObject()) continue;
+                if (!content.isMember("images")) continue;
+                content.removeMember("images");
+                record["content"] = Json::writeString(writerBuilder, content);
+            }
+        }
+
         /// @brief 好感度评分：对刚滑出窗口的记录单独发一次请求，让 LLM 评估每个用户的好感度变化量
         /// @details 只对本次真正滑出的记录评分——提取失败时水位线不推进、同批记录会重试，
         ///          评分若不跟着水位线走会重复加减。评分失败仅跳过本批，不阻塞记忆流程
@@ -396,11 +412,12 @@ namespace insoulforge {
             toDrop = 1; // 配置异常兜底（keep >= trigger），至少推进一条，保证触发循环能终止
         }
 
-        const auto records = ChatRecordStore::instance().getChatRecordsSince(sessionId, watermark, 0);
+        auto records = ChatRecordStore::instance().getChatRecordsSince(sessionId, watermark, 0);
         if (records.size() < toDrop) {
             Logger::session(sessionId).warn("窗口记录数与计数不一致，跳过本轮");
             co_return;
         }
+        stripRecordImages(records);
 
         // 2. 分批提取+合并，逐批推进水位线
         std::string existingMemory = memoryStore.getShortTermMemory(sessionId);
