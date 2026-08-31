@@ -6,11 +6,11 @@
 ///          - 使用 Agent 模式让 LLM 生成最终回复
 
 #pragma once
-#include "AgentTypes.hpp"
+#include <optional>
+#include <agent/AgentTypes.hpp>
+#include <drogon/utils/coroutine.h>
 #include <model/ChatRecordManager.hpp>
 #include <model/MemoryManager.hpp>
-#include <drogon/utils/coroutine.h>
-#include <optional>
 
 namespace insoulforge {
     /// @brief Executor Agent - 执行回复生成

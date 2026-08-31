@@ -162,7 +162,6 @@ namespace insoulforge {
         /// @brief 构建 LLM Prompt
         Json::Value buildPrompt(
             const ChatRecordManager &chatRecords,
-            const MemoryManager &memory,
             const bool isPrivate) {
             Json::Value messages;
 
@@ -173,16 +172,9 @@ namespace insoulforge {
                                              : PromptService::getRouterSystemPrompt();
             messages.append(systemMsg);
 
-            // 短期记忆与聊天记录合并为单条 user 消息，避免连续多条 user（部分 OpenAI 兼容后端不支持）
-            std::string userContent;
-            if (std::string shortMemory = memory.getMemory(); !shortMemory.empty()) {
-                userContent += "【短期记忆】\n" + shortMemory + "\n\n";
-            }
-            userContent += buildChatContext(chatRecords);
-
             Json::Value userMsg;
             userMsg["role"] = "user";
-            userMsg["content"] = userContent;
+            userMsg["content"] = buildChatContext(chatRecords);
             messages.append(userMsg);
 
             return messages;
@@ -191,11 +183,10 @@ namespace insoulforge {
         /// @brief LLM 路由与规划（合并判断 + 策略）
         [[nodiscard]] drogon::Task<std::optional<RouterDecision> > llmRouteAndPlan(
             const ChatRecordManager &chatRecords,
-            const MemoryManager &memory,
             const bool isPrivate) {
             const auto &config = Config::instance();
 
-            const Json::Value messages = buildPrompt(chatRecords, memory, isPrivate);
+            const Json::Value messages = buildPrompt(chatRecords, isPrivate);
 
             Json::Value body;
             body["model"] = config.router.model;
@@ -244,7 +235,6 @@ namespace insoulforge {
 
     drogon::Task<RouterDecision> route(
         const ChatRecordManager &chatRecords,
-        const MemoryManager &memory,
         const QQMessage &message) {
         // ========== Step 1: 硬规则检查（无需 LLM）==========
 
@@ -274,7 +264,7 @@ namespace insoulforge {
         }
 
         // ========== Step 2: LLM 路由与规划（私聊使用私聊提示词）==========
-        auto llmDecision = co_await llmRouteAndPlan(chatRecords, memory, message.isPrivate());
+        auto llmDecision = co_await llmRouteAndPlan(chatRecords, message.isPrivate());
 
         if (!llmDecision) {
             // LLM 失败时默认回复（保守策略）

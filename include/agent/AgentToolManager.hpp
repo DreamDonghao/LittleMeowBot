@@ -10,12 +10,11 @@
 ///          - 自定义工具：从数据库加载用户定义的工具（支持Python/HTTP）
 
 #pragma once
+#include <optional>
+#include <string>
 #include <api/ApiClient.hpp>
 #include <drogon/utils/coroutine.h>
-#include <cstdint>
-#include <optional>
 #include <spdlog/spdlog.h>
-#include <string>
 
 /// @brief 工具管理器 - 注册所有可用工具
 namespace insoulforge::AgentToolManager {

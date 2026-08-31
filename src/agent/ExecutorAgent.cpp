@@ -26,8 +26,9 @@ namespace insoulforge {
     namespace {
         /// @brief 获取系统提示词（私聊与群聊使用各自的人设提示词）
         std::string getSystemPrompt(const RouterDecision &decision) {
-            std::string prompt = decision.isPrivate ? PromptService::getExecutorPrivateSystemPrompt()
-                                                    : PromptService::getExecutorSystemPrompt();
+            std::string prompt = decision.isPrivate
+                                     ? PromptService::getExecutorPrivateSystemPrompt()
+                                     : PromptService::getExecutorSystemPrompt();
 
             if (decision.isPrivate) {
                 prompt += fmt::format(
@@ -132,7 +133,7 @@ namespace insoulforge {
             if ((*resp)->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
                 const std::string respBody = std::string((*resp)->getBody()).substr(0, 500);
                 Logger::session(sessionId).error("[Executor] 思考模型失败: status={} body={}",
-                                             static_cast<int>((*resp)->getStatusCode()), respBody);
+                                                 static_cast<int>((*resp)->getStatusCode()), respBody);
                 co_return std::nullopt;
             }
 
@@ -152,18 +153,17 @@ namespace insoulforge {
         }
 
 
-        /// @brief 把记录范围拼接为 JSON 数组字符串
-        template<std::ranges::input_range Range>
-        std::string joinRecords(const Range &records) {
-            std::string text = "[";
-            bool first = true;
-            for (const auto &record : records) {
-                if (!first) text += ',';
-                first = false;
-                text += record["content"].asString();
+        /// @brief 解析记录的 content 字段（由本服务写入的 JSON 对象字符串）
+        Json::Value parseRecordContent(const Json::Value &record) {
+            const std::string content = record["content"].asString();
+            Json::Value parsed;
+            const Json::CharReaderBuilder readerBuilder;
+            std::string errs;
+            if (const std::unique_ptr<Json::CharReader> reader(readerBuilder.newCharReader()); !reader->parse(
+                content.data(), content.data() + content.size(), &parsed, &errs) || !parsed.isObject()) {
+                return {};
             }
-            text += ']';
-            return text;
+            return parsed;
         }
 
         /// @brief 按 UTF-8 字符边界截断
@@ -171,16 +171,14 @@ namespace insoulforge {
             size_t i = 0;
             size_t count = 0;
             while (i < text.size() && count < maxChars) {
-                if (const auto c = static_cast<unsigned char>(text[i]); c < 0x80) {
-                    i += 1;
-                } else if ((c & 0xE0) == 0xC0) {
+                if (const auto c = static_cast<unsigned char>(text[i]); (c & 0xE0) == 0xC0) {
                     i += 2;
                 } else if ((c & 0xF0) == 0xE0) {
                     i += 3;
                 } else if ((c & 0xF8) == 0xF0) {
                     i += 4;
                 } else {
-                    i += 1; // 非法字节，跳过
+                    i += 1;
                 }
                 ++count;
             }
@@ -188,53 +186,50 @@ namespace insoulforge {
             return text.substr(0, i) + "…";
         }
 
-        /// @brief 截断记录 content(JSON) 的 text 字段，保留 JSON 结构
-        std::string truncateRecordText(const std::string &content, const size_t maxChars) {
-            Json::Value record;
-            const Json::CharReaderBuilder readerBuilder;
-            std::string errs;
-            if (const std::unique_ptr<Json::CharReader> reader(readerBuilder.newCharReader()); !reader->parse(
-                    content.data(), content.data() + content.size(), &record, &errs)
-                || !record.isObject()) {
-                return truncateUtf8(content, maxChars);
+        /// @brief 处理较早的单条消息记录：删除 images 字段、截断 text 字段后作为数组元素返回
+        Json::Value processOlderRecord(const Json::Value &record) {
+            Json::Value content = parseRecordContent(record);
+            content.removeMember("images");
+            if (content.isMember("text") && content["text"].isString()) {
+                constexpr size_t kOldRecordMaxChars = 500;
+                content["text"] = truncateUtf8(content["text"].asString(), kOldRecordMaxChars);
             }
-            if (record.isMember("text") && record["text"].isString()) {
-                record["text"] = truncateUtf8(record["text"].asString(), maxChars);
+            return content;
+        }
+
+        /// @brief 把记录范围经 transform 逐条处理后拼为 JSON 数组字符串
+        template<std::ranges::input_range Range, typename Transform>
+        std::string joinRecords(const Range &records, const Transform &transform) {
+            Json::Value array(Json::arrayValue);
+            for (const auto &record: records) {
+                array.append(transform(record));
             }
             Json::StreamWriterBuilder writerBuilder;
             writerBuilder["indentation"] = "";
             writerBuilder["emitUTF8"] = true;
-            return Json::writeString(writerBuilder, record);
+            return Json::writeString(writerBuilder, array);
         }
 
         /// @brief 构建聊天记录上下文（窗口内，旧 → 新）：
-        /// 最新 8 条原样保留，更早的每条 text 截断到 500 字
+        /// 最新 12 条原样保留，更早的每条 text 截断到 500 字
         std::string buildChatContextText(const ChatRecordManager &chatRecords) {
-            constexpr size_t kRecentFullCount = 8;
+            constexpr size_t kRecentFullCount = 12;
 
             const auto records = chatRecords.getRecords(); // 旧 → 新
             const size_t totalRecords = records.size();
             const size_t olderCount = totalRecords > kRecentFullCount ? totalRecords - kRecentFullCount : 0;
+            const auto olderRecords = records | std::views::take(olderCount);
+            const auto recentRecords = records | std::views::drop(olderCount);
 
             std::string context;
 
             // 处理更早的对话
             if (olderCount > 0) {
-                std::string olderText = "[";
-                // 使用范围循环和std::views::take来简化
-                for (const auto &record : records | std::views::take(olderCount)) {
-                    constexpr size_t kOldRecordMaxChars = 500;
-                    if (&record != &records[0]) olderText += ',';
-                    olderText += truncateRecordText(
-                        record["content"].asString(), kOldRecordMaxChars);
-                }
-                olderText += ']';
-                context += "【更早对话】\n" + olderText + "\n\n";
+                context += "【更早对话】\n" + joinRecords(olderRecords, processOlderRecord) + "\n\n";
             }
 
             // 处理最近对话
-            const auto recentRecords = records | std::views::drop(olderCount);
-            context += "【最近对话】\n" + joinRecords(recentRecords);
+            context += "【最近对话】\n" + joinRecords(recentRecords, parseRecordContent);
             return context;
         }
 
@@ -443,7 +438,8 @@ namespace insoulforge {
             }
 
             Logger::session(sessionId).debug("[Executor] 思考结果: {}...",
-                                         thinkingResult->substr(0, std::min<size_t>(100, thinkingResult->length())));
+                                             thinkingResult->substr(
+                                                 0, std::min<size_t>(100, thinkingResult->length())));
 
             // Step 2: 注入思考结果，执行工具调用
             Logger::session(sessionId).info("[Executor] 思考模式 - Step 2: 执行");
@@ -513,7 +509,8 @@ namespace insoulforge {
         const MemoryManager &memory,
         const RouterDecision &decision) {
         Logger::session(chatRecords.getSessionId()).info("[Executor] 开始执行 | thinking={} | priority={} | maxLength={}",
-                                                     decision.enableThinking, decision.isPriority, decision.maxLength);
+                                                         decision.enableThinking, decision.isPriority,
+                                                         decision.maxLength);
 
         const auto &config = Config::instance();
         const Json::Value messages = co_await buildPrompt(chatRecords, memory, decision);
@@ -523,6 +520,7 @@ namespace insoulforge {
             co_return co_await executeWithThinking(messages, chatRecords.getSessionId(), decision.maxLength);
         }
         // 普通模式：单次执行
-        co_return co_await executeWithAgent(messages, config.executor, config.executorParams, chatRecords.getSessionId());
+        co_return co_await executeWithAgent(messages, config.executor, config.executorParams,
+                                            chatRecords.getSessionId());
     }
 }

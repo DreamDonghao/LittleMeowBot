@@ -75,8 +75,7 @@ namespace insoulforge {
         // ========== Layer 1: Router Agent（判断 + 规划）==========
         Logger::session(sessionId).info("[Router] 分析消息...");
 
-        auto decision = co_await route(
-            chatRecords, memory, message);
+        auto decision = co_await route(chatRecords, message);
 
         // 会话类型随决策传给 Executor（选择对应人设提示词）
         decision.isPrivate = message.isPrivate();

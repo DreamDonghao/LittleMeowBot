@@ -1,6 +1,5 @@
 /// @file ApiClient.hpp
 /// @brief API 客户端 - LLM API 请求封装
-/// @author donghao
 /// @date 2026-04-02
 /// @details 封装 LLM API 请求与用量统计：
 ///          - LLM 请求：requestLLM()
@@ -13,7 +12,6 @@
 #include <optional>
 #include <string>
 
-
 /// @brief API 客户端 - 封装 LLM API 请求与用量统计
 namespace insoulforge::ApiClient {
     /// @brief 请求 LLM API（使用 Executor 配置）
@@ -21,6 +19,8 @@ namespace insoulforge::ApiClient {
     /// @param temperature 温度参数
     /// @param top_p Top-P 采样参数
     /// @param max_tokens 最大 token 数
+    /// @param role
+    /// @param sessionId
     /// @return 响应文本，失败返回 std::nullopt
     drogon::Task<std::optional<std::string> > requestLLM(
         const Json::Value &messages,
@@ -34,6 +34,7 @@ namespace insoulforge::ApiClient {
     /// @param responseJson API 返回的完整 JSON
     /// @param model 模型名
     /// @param role 角色名（router/executor/executorThinking/memory/image）
+    /// @param sessionId
     void logUsage(const Json::Value &responseJson, const std::string &model, const std::string &role,
                   std::optional<uint64_t> sessionId = std::nullopt);
 }

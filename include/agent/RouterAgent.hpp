@@ -9,17 +9,14 @@
 #include "AgentTypes.hpp"
 #include <model/ChatRecordManager.hpp>
 #include <model/QQMessage.hpp>
-#include <model/MemoryManager.hpp>
 #include <drogon/utils/coroutine.h>
 
 namespace insoulforge {
     /// @brief 路由决策与规划
     /// @param chatRecords 聊天记录
-    /// @param memory 记忆管理器
     /// @param message QQ 消息
     /// @return 路由决策结果（包含回复策略）
     [[nodiscard]] drogon::Task<RouterDecision> route(
         const ChatRecordManager &chatRecords,
-        const MemoryManager &memory,
         const QQMessage &message);
 }

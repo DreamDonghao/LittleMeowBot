@@ -742,9 +742,8 @@ namespace insoulforge {
         while (fgets(buffer.data(), buffer.size(), pipe.get())) {
             result += buffer.data();
         }
-        const int exitCode = pclose(pipe.release());
 
-        if (exitCode != 0) {
+        if (const int exitCode = pclose(pipe.release()); exitCode != 0) {
             spdlog::warn("Python工具执行返回非零: {}, 输出: {}", exitCode, result);
         }
 
