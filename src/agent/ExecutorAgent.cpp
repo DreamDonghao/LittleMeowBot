@@ -21,6 +21,8 @@
 #include <util/Logger.hpp>
 #include <model/QQMessage.hpp>
 #include <model/ChatRecordManager.hpp>
+#include <storage/AffinityStore.hpp>
+#include <util/tool.h>
 
 namespace insoulforge {
     namespace {
@@ -197,6 +199,17 @@ namespace insoulforge {
             return content;
         }
 
+        /// @brief 注入发送者当前好感度（读时注入，保证 LLM 看到的永远是最新值）
+        /// @details qq 非数字（机器人记录的 "self"）跳过；映射中不存在的用户按 0（中立）注入
+        Json::Value injectAffinity(Json::Value content, const std::unordered_map<uint64_t, int> &affinityMap) {
+            if (!content.isMember("sender")) return content;
+            if (const uint64_t qq = parseUInt64(content["sender"]["qq"].asString()); qq > 0) {
+                const auto it = affinityMap.find(qq);
+                content["sender"]["affinity"] = it != affinityMap.end() ? it->second : 0;
+            }
+            return content;
+        }
+
         /// @brief 把记录范围经 transform 逐条处理后拼为 JSON 数组字符串
         template<std::ranges::input_range Range, typename Transform>
         std::string joinRecords(const Range &records, const Transform &transform) {
@@ -211,7 +224,7 @@ namespace insoulforge {
         }
 
         /// @brief 构建聊天记录上下文（窗口内，旧 → 新）：
-        /// 最新 12 条原样保留，更早的每条 text 截断到 500 字
+        /// 最新 12 条原样保留，更早的每条 text 截断到 500 字；每条 sender 注入当前好感度 affinity
         std::string buildChatContextText(const ChatRecordManager &chatRecords) {
             constexpr size_t kRecentFullCount = 12;
 
@@ -221,15 +234,21 @@ namespace insoulforge {
             const auto olderRecords = records | std::views::take(olderCount);
             const auto recentRecords = records | std::views::drop(olderCount);
 
+            const auto affinityMap = AffinityStore::instance().getAffinityMap(chatRecords.getSessionId());
+
             std::string context;
 
             // 处理更早的对话
             if (olderCount > 0) {
-                context += "【更早对话】\n" + joinRecords(olderRecords, processOlderRecord) + "\n\n";
+                context += "【更早对话】\n" + joinRecords(olderRecords, [&affinityMap](const Json::Value &record) {
+                    return injectAffinity(processOlderRecord(record), affinityMap);
+                }) + "\n\n";
             }
 
             // 处理最近对话
-            context += "【最近对话】\n" + joinRecords(recentRecords, parseRecordContent);
+            context += "【最近对话】\n" + joinRecords(recentRecords, [&affinityMap](const Json::Value &record) {
+                return injectAffinity(parseRecordContent(record), affinityMap);
+            });
             return context;
         }
 

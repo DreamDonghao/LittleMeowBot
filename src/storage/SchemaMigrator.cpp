@@ -159,6 +159,16 @@ namespace insoulforge {
             R"(CREATE TABLE IF NOT EXISTS memory_config (id INTEGER PRIMARY KEY CHECK (id = 1), window_trigger_count INTEGER DEFAULT 100, window_keep_count INTEGER DEFAULT 50, memory_extract_max_tokens INTEGER DEFAULT 4000, router_window_trigger_count INTEGER DEFAULT 20, router_window_keep_count INTEGER DEFAULT 10, short_term_memory_max INTEGER DEFAULT 15, memory_migrate_count INTEGER DEFAULT 5))",
             R"(CREATE TABLE IF NOT EXISTS qq_config (id INTEGER PRIMARY KEY CHECK (id = 1), access_token TEXT, self_qq_number INTEGER, qq_http_host TEXT, bot_name TEXT DEFAULT '小喵'))"
         };
+
+        /// @brief v3 新增表：group_affinity（每个会话独立维护 QQ 号 → 好感度映射，[-100, 100]）
+        constexpr std::array v3Tables = {
+            R"(CREATE TABLE IF NOT EXISTS group_affinity (
+        group_id INTEGER NOT NULL,
+        qq_number INTEGER NOT NULL,
+        affinity INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (group_id, qq_number)
+    ))"
+        };
     }
 
     void SchemaMigrator::migrate(sqlite3 *db) {
@@ -178,6 +188,7 @@ namespace insoulforge {
         constexpr std::array<void (*)(sqlite3 *), kLatestVersion> steps = {
             &migrateV0ToV1, // 基线：历史遗留 Schema 调整到统一基线
             &migrateV1ToV2, // kb_config/memory_config/qq_config 并入 settings
+            &migrateV2ToV3, // 新增 group_affinity 好感度表
         };
 
         for (int v = version; v < kLatestVersion; ++v) {
@@ -221,6 +232,7 @@ namespace insoulforge {
 
     void SchemaMigrator::createFreshSchema(sqlite3 *db) {
         execAll(db, v2Tables);
+        execAll(db, v3Tables);
         execAll(db, indexes);
         setUserVersion(db, kLatestVersion);
     }
@@ -356,5 +368,10 @@ namespace insoulforge {
         execSQL(db, "DROP TABLE kb_config");
         execSQL(db, "DROP TABLE memory_config");
         execSQL(db, "DROP TABLE qq_config");
+    }
+
+    void SchemaMigrator::migrateV2ToV3(sqlite3 *db) {
+        spdlog::info("执行迁移: 新增 group_affinity 好感度表");
+        execAll(db, v3Tables);
     }
 } // namespace insoulforge

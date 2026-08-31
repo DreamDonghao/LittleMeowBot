@@ -8,13 +8,19 @@ import type {ApiResponse, LLMConfig} from '../vite-env.d'
 
 const showToast = inject<(msg: string, isError?: boolean) => void>('showToast')
 
-const llmNames = ['router', 'executor', 'executorThinking', 'memory', 'image']
+const llmNames = ['router', 'executor', 'executorThinking', 'image']
 const llmLabels: Record<string, string> = {
   router: 'Router',
   executor: 'Executor',
   executorThinking: 'Executor思考',
-  memory: 'Memory',
   image: 'Image'
+}
+// 各配置的实际用途（与后端代码一致；requestLLM 统一走 executor 配置）
+const llmUsages: Record<string, string> = {
+  router: '用途：回复决策（是否回复、语气、字数上限、是否启用思考模式）',
+  executor: '用途：回复生成、记忆提取、好感度评分（三者共用此模型）',
+  executorThinking: '用途：深度思考模式的分析阶段（最终执行仍走 Executor）',
+  image: '用途：图片识别与描述'
 }
 const selectedLLM: Ref<string> = ref('router')
 const llmConfigs = reactive<Record<string, LLMConfig>>({})
@@ -76,6 +82,8 @@ const saveLLMConfig = async (): Promise<void> => {
       >{{ llmLabels[name] || name }}
       </button>
     </div>
+
+    <p class="form-hint">{{ llmUsages[selectedLLM] }}</p>
 
     <div class="card">
       <div class="form-row">

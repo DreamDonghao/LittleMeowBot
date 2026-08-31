@@ -101,6 +101,9 @@ namespace insoulforge {
 
         ADD_METHOD_TO(AdminController::updateSessionMemory, "/admin/api/memory/{groupId}", drogon::Put);
 
+        // 好感度
+        ADD_METHOD_TO(AdminController::getSessionAffinity, "/admin/api/affinity/{sessionId}", drogon::Get);
+
         // 记忆配置
         ADD_METHOD_TO(AdminController::getMemoryConfig, "/admin/api/memory-config", drogon::Get);
 
@@ -376,6 +379,17 @@ namespace insoulforge {
         /// @param callback HTTP 响应回调
         /// @param sessionId 会话 ID（私聊会话带标志位）
         drogon::Task<> updateSessionMemory(
+            drogon::HttpRequestPtr req,
+            std::function<void(const drogon::HttpResponsePtr &)> callback,
+            const std::string &sessionId) const;
+
+        // ============== 好感度 ==============
+
+        /// @brief 获取会话成员好感度列表（按分数降序）
+        /// @param req HTTP 请求
+        /// @param callback HTTP 响应回调
+        /// @param sessionId 会话 ID（私聊会话带标志位）
+        drogon::Task<> getSessionAffinity(
             drogon::HttpRequestPtr req,
             std::function<void(const drogon::HttpResponsePtr &)> callback,
             const std::string &sessionId) const;

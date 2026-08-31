@@ -71,6 +71,14 @@ export interface ChatMessage {
     content: string
 }
 
+export interface AffinityEntry {
+    /** QQ 号字符串（大数安全） */
+    qq: string
+    /** 昵称（运行时映射缺失且 OneBot 查询失败时缺省） */
+    name?: string
+    affinity: number
+}
+
 export interface ApiResponse {
     success: boolean
     error?: string

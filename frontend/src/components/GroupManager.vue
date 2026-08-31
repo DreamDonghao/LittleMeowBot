@@ -4,7 +4,7 @@
  * @brief 群管理组件 - 群启用状态、群记忆与聊天记录
  */
 import {computed, inject, nextTick, onMounted, onUnmounted, ref, type Ref, watch} from 'vue'
-import type {ApiResponse, ChatMessage, Group, QQConfig} from '../vite-env.d'
+import type {AffinityEntry, ApiResponse, ChatMessage, Group, QQConfig} from '../vite-env.d'
 
 const showToast = inject<(msg: string, isError?: boolean) => void>('showToast')
 const qqConfig = inject<QQConfig>('qqConfig')
@@ -281,6 +281,40 @@ const saveMemory = async (): Promise<void> => {
   }
 }
 
+// 好感度弹窗
+const affinityGroupId: Ref<string | null> = ref(null)
+const affinityGroupName: Ref<string> = ref('')
+const affinityList: Ref<AffinityEntry[]> = ref([])
+const affinityLoading: Ref<boolean> = ref(false)
+const affinityAvatarFailed: Ref<Set<string>> = ref(new Set())
+
+// 查看好感度
+const viewAffinity = async (sessionId: string, sessionName: string): Promise<void> => {
+  affinityGroupId.value = sessionId
+  affinityGroupName.value = sessionName
+  affinityLoading.value = true
+  affinityList.value = []
+  affinityAvatarFailed.value = new Set()
+
+  try {
+    const resp = await fetch(`/admin/api/affinity/${sessionId}`)
+    const data = await resp.json()
+    affinityList.value = Array.isArray(data.affinities) ? data.affinities : []
+  } finally {
+    affinityLoading.value = false
+  }
+}
+
+// 关闭好感度弹窗
+const closeAffinity = (): void => {
+  affinityGroupId.value = null
+  affinityGroupName.value = ''
+  affinityList.value = []
+}
+
+const affinityClass = (v: number): string =>
+    v > 0 ? 'affinity-positive' : v < 0 ? 'affinity-negative' : 'affinity-neutral'
+
 // WebSocket 消息处理
 let originalOnMessage: ((event: MessageEvent) => void) | null | undefined = null
 
@@ -400,7 +434,7 @@ onUnmounted(restoreWebSocket)
                 <th>会话</th>
                 <th style="width: 120px;">群号/QQ号</th>
                 <th style="width: 70px;">消息</th>
-                <th style="width: 190px;">操作</th>
+                <th style="width: 250px;">操作</th>
               </tr>
               </thead>
               <tbody>
@@ -432,6 +466,9 @@ onUnmounted(restoreWebSocket)
                   </button>
                   <button class="btn btn-secondary btn-sm" style="margin-left: 6px;"
                           @click.stop="viewMemory(sessionKey(group), sessionLabel(group))">记忆
+                  </button>
+                  <button class="btn btn-secondary btn-sm" style="margin-left: 6px;"
+                          @click.stop="viewAffinity(sessionKey(group), sessionLabel(group))">好感度
                   </button>
                   <button class="btn btn-danger btn-sm" style="margin-left: 6px;"
                           @click.stop="removeGroup(sessionKey(group))">删除
@@ -500,6 +537,51 @@ onUnmounted(restoreWebSocket)
             <p>暂无聊天记录</p>
           </div>
         </template>
+      </div>
+    </div>
+
+    <!-- 好感度弹窗 -->
+    <div v-if="affinityGroupId" class="modal-overlay" @click.self="closeAffinity">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>{{ affinityGroupName }} - 好感度</h2>
+          <button class="btn btn-secondary btn-sm" @click="closeAffinity">关闭</button>
+        </div>
+        <div class="modal-body">
+          <div v-if="affinityLoading" class="memory-loading">
+            <p>加载中...</p>
+          </div>
+          <table v-else-if="affinityList.length > 0" class="affinity-table">
+            <thead>
+            <tr>
+              <th style="width: 50px;"></th>
+              <th>昵称</th>
+              <th>QQ 号</th>
+              <th style="width: 100px; text-align: right;">好感度</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr v-for="entry in affinityList" :key="entry.qq">
+              <td>
+                <img v-if="!affinityAvatarFailed.has(entry.qq)"
+                     :alt="entry.qq"
+                     :src="`https://q1.qlogo.cn/g?b=qq&nk=${entry.qq}&s=40`"
+                     class="affinity-avatar"
+                     @error="affinityAvatarFailed.add(entry.qq)">
+                <div v-else class="affinity-avatar affinity-avatar-fallback">?</div>
+              </td>
+              <td>{{ entry.name || '未知' }}</td>
+              <td><code>{{ entry.qq }}</code></td>
+              <td style="text-align: right;">
+                <span :class="affinityClass(entry.affinity)" class="affinity-badge">{{ entry.affinity }}</span>
+              </td>
+            </tr>
+            </tbody>
+          </table>
+          <div v-else class="memory-loading">
+            <p>暂无好感度数据，会随群聊互动自动累计</p>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -830,5 +912,64 @@ onUnmounted(restoreWebSocket)
   border-top: 1px solid var(--border);
   display: flex;
   justify-content: flex-end;
+}
+
+/* 好感度 */
+.affinity-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.affinity-table th,
+.affinity-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-size: 14px;
+}
+
+.affinity-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.affinity-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: block;
+}
+
+.affinity-avatar-fallback {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.affinity-badge {
+  display: inline-block;
+  min-width: 44px;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.affinity-positive {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.affinity-negative {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.affinity-neutral {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
 }
 </style>

@@ -20,7 +20,7 @@ namespace insoulforge {
         static void migrate(sqlite3 *db);
 
         /// @brief 当前代码对应的最新 Schema 版本号
-        static constexpr int kLatestVersion = 2;
+        static constexpr int kLatestVersion = 3;
 
     private:
         SchemaMigrator() = default;
@@ -28,6 +28,8 @@ namespace insoulforge {
         static void migrateV0ToV1(sqlite3 *db);
 
         static void migrateV1ToV2(sqlite3 *db);
+
+        static void migrateV2ToV3(sqlite3 *db);
 
         static int getUserVersion(sqlite3 *db);
 

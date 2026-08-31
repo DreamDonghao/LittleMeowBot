@@ -13,6 +13,9 @@
 #include <storage/MemoryStore.hpp>
 #include <storage/ChatRecordStore.hpp>
 #include <storage/SessionStore.hpp>
+#include <storage/AffinityStore.hpp>
+#include <model/QQMessage.hpp>
+#include <util/tool.h>
 
 namespace insoulforge {
     namespace {
@@ -20,6 +23,10 @@ namespace insoulforge {
         constexpr size_t kMaxExtractBatch = 300;
         /// @brief 提取输入附带的重叠条数（保留区最新若干条，保证上下文连贯）
         constexpr size_t kOverlapCount = 10;
+        /// @brief 好感度单次评分的变化量上限
+        constexpr int kMaxAffinityDelta = 5;
+        /// @brief 好感度评分单次输入记录上限（积压过大时截断）
+        constexpr size_t kMaxAffinityRecords = 300;
 
         /// @brief 同群并发 eviction 防重入
         /// @details 不能用 std::mutex 直接跨 co_await（协程可能在不同线程恢复），
@@ -122,6 +129,73 @@ namespace insoulforge {
             }
             text += "]";
             return text;
+        }
+
+        /// @brief 好感度评分：对刚滑出窗口的记录单独发一次请求，让 LLM 评估每个用户的好感度变化量
+        /// @details 只对本次真正滑出的记录评分——提取失败时水位线不推进、同批记录会重试，
+        ///          评分若不跟着水位线走会重复加减。评分失败仅跳过本批，不阻塞记忆流程
+        drogon::Task<void> updateAffinityFromRecords(
+            const uint64_t sessionId, const std::vector<Json::Value> &records, const size_t evictedCount) {
+            const size_t limit = std::min(evictedCount, kMaxAffinityRecords);
+            if (limit == 0) co_return;
+
+            Json::Value messages;
+            Json::Value item;
+            item["role"] = "system";
+            item["content"] = R"(你是一个【群聊好感度评估器】。
+机器人看完了一段群聊记录，请评估每个发言用户在这段对话中给机器人留下的印象变化。
+
+评分规则：
+- 只输出一个 JSON 对象，键为用户 QQ 号（字符串），值为好感度变化量（整数，-5 到 5）
+- 正面（有趣、友好、真诚分享、帮助、陪伴）给正分；负面（辱骂、恶意挑衅、骚扰、令人不适）给负分
+- 普通闲聊、无明显印象变化 → 不要输出该用户
+- 机器人自己的消息（qq 为 "self"）和系统消息不要评估
+- 只依据对话内容判断，不要虚构记录中不存在的 QQ 号
+
+示例：
+{"123456": 2, "789012": -3}
+
+没有任何值得调整的变化时输出：{})";
+            messages.append(item);
+            item.clear();
+            item["role"] = "user";
+            item["content"] = "=== 群聊记录 ===\n" + formatRecordsText(records, 0, limit)
+                              + "\n\n请输出好感度变化 JSON：";
+            messages.append(item);
+
+            const auto result = co_await ApiClient::requestLLM(messages, 0.3f, 0.9f, 256, "affinity", sessionId);
+            if (!result) {
+                Logger::session(sessionId).warn("好感度评分: API 请求失败，本批跳过");
+                co_return;
+            }
+
+            // 容忍模型输出 ```json 围栏等杂质：截取首尾大括号之间的内容
+            const std::string &text = result.value();
+            const size_t start = text.find('{');
+            const size_t end = text.rfind('}');
+            if (start == std::string::npos || end == std::string::npos || end <= start) {
+                Logger::session(sessionId).warn("好感度评分: 响应中无 JSON，跳过: {}", text.substr(0, 100));
+                co_return;
+            }
+
+            Json::Value deltas;
+            if (!Json::Reader().parse(text.substr(start, end - start + 1), deltas) || !deltas.isObject()) {
+                Logger::session(sessionId).warn("好感度评分: JSON 解析失败，跳过");
+                co_return;
+            }
+
+            int applied = 0;
+            for (const auto &qqStr: deltas.getMemberNames()) {
+                const uint64_t qqNumber = parseUInt64(qqStr);
+                if (qqNumber == 0 || qqNumber == QQMessage::kSystemAccountId) continue;
+                const Json::Value &deltaValue = deltas[qqStr];
+                if (!deltaValue.isIntegral()) continue;
+                if (const int delta = std::clamp(deltaValue.asInt(), -kMaxAffinityDelta, kMaxAffinityDelta); delta != 0) {
+                    AffinityStore::instance().adjustAffinity(sessionId, qqNumber, delta);
+                    ++applied;
+                }
+            }
+            Logger::session(sessionId).info("好感度评分完成: {} 条记录，更新 {} 人", limit, applied);
         }
 
         /// @brief 统计文本行数
@@ -367,7 +441,10 @@ namespace insoulforge {
         Logger::session(sessionId).info("窗口已滑动: 滑出 {} 条，水位线 -> {}，记忆 {} 条",
                                     processed, chunkEndId, countLines(existingMemory));
 
-        // 3. 检查是否需要迁移到长期记忆
+        // 3. 好感度评分（独立请求，只针对本次滑出的记录）
+        co_await updateAffinityFromRecords(sessionId, records, processed);
+
+        // 4. 检查是否需要迁移到长期记忆
         if (countLines(existingMemory) > config.shortTermMemoryMax) {
             Logger::session(sessionId).info("短期记忆超限({}>{})，触发迁移",
                                         countLines(existingMemory), config.shortTermMemoryMax);

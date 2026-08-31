@@ -15,6 +15,7 @@
 #include <chrono>
 #include <fstream>
 #include <storage/AdminStore.hpp>
+#include <storage/AffinityStore.hpp>
 #include <storage/ChatRecordStore.hpp>
 #include <storage/ConfigStore.hpp>
 #include <storage/MemoryStore.hpp>
@@ -750,6 +751,47 @@ Task<> AdminController::updateSessionMemory(
     Json::Value resp;
     resp["success"] = true;
     resp["message"] = "记忆已更新";
+    callback(HttpResponse::newHttpJsonResponse(resp));
+    co_return;
+}
+
+// ==================== 好感度 ====================
+
+Task<> AdminController::getSessionAffinity(
+    HttpRequestPtr req,
+    std::function<void(const HttpResponsePtr &)> callback,
+    const std::string &sessionId
+) const {
+    const uint64_t gid = std::stoull(sessionId);
+    auto affinityMap = AffinityStore::instance().getAffinityMap(gid);
+
+    std::vector<std::pair<uint64_t, int> > entries(affinityMap.begin(), affinityMap.end());
+    std::sort(entries.begin(), entries.end(),
+              [](const auto &a, const auto &b) { return a.second > b.second; });
+
+    Json::Value list(Json::arrayValue);
+    for (const auto &[qq, affinity]: entries) {
+        Json::Value item;
+        // QQ 号以字符串返回（超过 JS Number 安全范围）
+        item["qq"] = std::to_string(qq);
+        // 昵称优先取运行时映射（含自定义昵称），缺失时回退 OneBot 实时查询
+        std::string name(QQMessage::getQQName(qq));
+        if (name.empty() || name == "未知") {
+            const auto info = co_await OneBotClient::getStrangerInfo(qq, gid);
+            if (info.isMember("data") && info["data"].isMember("nickname")) {
+                name = info["data"]["nickname"].asString();
+            }
+        }
+        if (!name.empty() && name != "未知") {
+            item["name"] = name;
+        }
+        item["affinity"] = affinity;
+        list.append(item);
+    }
+
+    Json::Value resp;
+    resp["groupIdStr"] = std::to_string(gid);
+    resp["affinities"] = list;
     callback(HttpResponse::newHttpJsonResponse(resp));
     co_return;
 }
