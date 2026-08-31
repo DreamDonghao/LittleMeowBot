@@ -9,6 +9,7 @@
 #endif
 
 #include <agent/AgentToolManager.hpp>
+#include <model/QQMessage.hpp>
 #include <config/Config.hpp>
 #include <util/HttpUtil.hpp>
 #include <util/Logger.hpp>
@@ -22,7 +23,7 @@
 #include <set>
 #include <tuple>
 
-#include "service/MessageService.hpp"
+#include <service/OneBotClient.hpp>
 #include "service/RAGFlowClient.hpp"
 #include "service/ToolRegistry.hpp"
 #include "service/TaskScheduler.hpp"
@@ -289,24 +290,10 @@ namespace insoulforge {
                     spdlog::info("[Sticker] save_sticker 参数: file={} url={}",
                                  file, url.substr(0, 150));
 
-                    const auto &config = Config::instance();
-
                     // Step 1: 尝试 get_image 拿容器内路径（商城表情会失败/超时）
                     std::string containerPath;
-                    {
-                        Json::Value getBody;
-                        getBody["file"] = file;
-                        const auto getResp = co_await HttpUtil::send("[Sticker]", config.qqHttpHost, "/get_image",
-                                                                     drogon::Post, getBody, config.accessToken, 15.0,
-                                                                     sessionId);
-                        if (getResp) {
-                            const auto getJson = (*getResp)->getJsonObject();
-                            if ((*getResp)->getStatusCode() == drogon::k200OK && getJson
-                                && getJson->get("status", "failed").asString() == "ok"
-                                && getJson->isMember("data")) {
-                                containerPath = (*getJson)["data"]["file"].asString();
-                            }
-                        }
+                    if (const auto path = co_await OneBotClient::getImage(file, sessionId)) {
+                        containerPath = *path;
                     }
 
                     // Step 2: get_image 失败则回退到 download_file（URL 下载进容器）
@@ -314,18 +301,8 @@ namespace insoulforge {
                         if (url.empty()) {
                             co_return std::string("获取图片失败，请确认图片仍可访问");
                         }
-                        Json::Value dlBody;
-                        dlBody["url"] = url;
-                        const auto dlResp = co_await HttpUtil::send("[Sticker]", config.qqHttpHost, "/download_file",
-                                                                    drogon::Post, dlBody, config.accessToken, 30.0,
-                                                                    sessionId);
-                        if (dlResp) {
-                            const auto dlJson = (*dlResp)->getJsonObject();
-                            if ((*dlResp)->getStatusCode() == drogon::k200OK && dlJson
-                                && dlJson->get("status", "failed").asString() == "ok"
-                                && dlJson->isMember("data")) {
-                                containerPath = (*dlJson)["data"]["file"].asString();
-                            }
+                        if (const auto path = co_await OneBotClient::downloadFile(url, sessionId)) {
+                            containerPath = *path;
                         }
                         if (containerPath.empty()) {
                             co_return std::string("获取图片失败，可能是图片链接已过期，请让对方重新发送后立即保存");
@@ -342,19 +319,7 @@ namespace insoulforge {
                     }
 
                     // Step 4: add_custom_face 保存为收藏表情
-                    Json::Value addBody;
-                    addBody["file"] = containerPath;
-                    const auto addResp = co_await HttpUtil::send("[Sticker]", config.qqHttpHost, "/add_custom_face",
-                                                                 drogon::Post, addBody, config.accessToken, 30.0,
-                                                                 sessionId);
-                    if (!addResp) {
-                        spdlog::error("[Sticker] 保存收藏表情失败: {}", containerPath);
-                        co_return std::string("保存为收藏表情失败");
-                    }
-                    const auto addJson = (*addResp)->getJsonObject();
-                    if ((*addResp)->getStatusCode() != drogon::k200OK || !addJson
-                        || addJson->get("status", "failed").asString() != "ok") {
-                        spdlog::error("[Sticker] 保存收藏表情失败: {}", containerPath);
+                    if (!co_await OneBotClient::addCustomFace(containerPath, sessionId)) {
                         co_return std::string("保存为收藏表情失败");
                     }
 
@@ -368,25 +333,10 @@ namespace insoulforge {
                         }
                     }
                     if (!newItem.isNull()) {
-                        Json::Value descBody;
-                        descBody["emoji_id"] = newItem["emoji_id"].asString().empty()
-                                                   ? "0"
-                                                   : newItem["emoji_id"].asString();
-                        descBody["res_id"] = newItem["res_id"].asString();
-                        descBody["md5"] = newItem["md5"].asString();
-                        descBody["desc"] = name;
-                        const auto descResp = co_await HttpUtil::send("[Sticker]", config.qqHttpHost,
-                                                                      "/set_custom_face_desc", drogon::Post,
-                                                                      descBody, config.accessToken, 30.0, sessionId);
-                        if (descResp) {
-                            const auto descJson = (*descResp)->getJsonObject();
-                            if ((*descResp)->getStatusCode() == drogon::k200OK && descJson
-                                && descJson->get("status", "failed").asString() == "ok") {
-                                invalidateFavoriteEmojiCache();
-                            } else {
-                                spdlog::warn("[Sticker] 设置表情描述失败: {}",
-                                             newItem["res_id"].asString());
-                            }
+                        if (co_await OneBotClient::setCustomFaceDesc(
+                                newItem["emoji_id"].asString().empty() ? "0" : newItem["emoji_id"].asString(),
+                                newItem["res_id"].asString(), newItem["md5"].asString(), name, sessionId)) {
+                            invalidateFavoriteEmojiCache();
                         } else {
                             spdlog::warn("[Sticker] 设置表情描述失败: {}",
                                          newItem["res_id"].asString());
@@ -426,25 +376,9 @@ namespace insoulforge {
                         co_return fmt::format("表情'{}'不存在，先调list_stickers查看可用表情", name);
                     }
 
-                    const auto &config = Config::instance();
-
-                    Json::Value body;
-                    body["emoji_id"] = emoji["emoji_id"].asString().empty()
-                                           ? "0"
-                                           : emoji["emoji_id"].asString();
-                    body["res_id"] = emoji["res_id"].asString();
-                    body["md5"] = emoji["md5"].asString();
-                    body["desc"] = newName;
-                    const auto resp = co_await HttpUtil::send("[Sticker]", config.qqHttpHost,
-                                                              "/set_custom_face_desc", drogon::Post,
-                                                              body, config.accessToken, 30.0, sessionId);
-                    if (!resp) {
-                        co_return std::string("改名失败: QQ 客户端连接异常");
-                    }
-                    const auto json = (*resp)->getJsonObject();
-                    if ((*resp)->getStatusCode() != drogon::k200OK || !json
-                        || json->get("status", "failed").asString() != "ok") {
-                        spdlog::error("[Sticker] 修改表情描述失败: {}", emoji["res_id"].asString());
+                    if (!co_await OneBotClient::setCustomFaceDesc(
+                            emoji["emoji_id"].asString().empty() ? "0" : emoji["emoji_id"].asString(),
+                            emoji["res_id"].asString(), emoji["md5"].asString(), newName, sessionId)) {
                         co_return std::string("改名失败");
                     }
 
@@ -477,20 +411,7 @@ namespace insoulforge {
                         co_return fmt::format("表情'{}'不存在，先调list_stickers查看可用表情", name);
                     }
 
-                    const auto &config = Config::instance();
-
-                    Json::Value body;
-                    body["res_id"] = emoji["res_id"].asString();
-                    const auto resp = co_await HttpUtil::send("[Sticker]", config.qqHttpHost,
-                                                              "/delete_custom_face", drogon::Post,
-                                                              body, config.accessToken, 30.0, sessionId);
-                    if (!resp) {
-                        co_return std::string("删除失败: QQ 客户端连接异常");
-                    }
-                    const auto json = (*resp)->getJsonObject();
-                    if ((*resp)->getStatusCode() != drogon::k200OK || !json
-                        || json->get("status", "failed").asString() != "ok") {
-                        spdlog::error("[Sticker] 删除收藏表情失败: {}", emoji["res_id"].asString());
+                    if (!co_await OneBotClient::deleteCustomFace(emoji["res_id"].asString(), sessionId)) {
                         co_return std::string("删除失败");
                     }
 
@@ -551,7 +472,7 @@ namespace insoulforge {
 
                     if (userId == 0) co_return std::string("禁言失败: 请提供有效的QQ号");
 
-                    const bool success = co_await MessageService::setGroupBan(sessionId, userId, duration);
+                    const bool success = co_await OneBotClient::setGroupBan(sessionId, userId, duration);
                     co_return success
                                   ? fmt::format("已禁言用户 {} {}秒", userId, duration)
                                   : "禁言失败: 权限不足或用户不存在";
@@ -581,7 +502,7 @@ namespace insoulforge {
                     uint64_t userId = args.isMember("qq") ? parseUInt64(args["qq"].asString()) : 0;
                     if (userId == 0) co_return std::string("拍一拍失败: 请提供有效的QQ号");
 
-                    const bool success = co_await MessageService::setGroupPoke(sessionId, userId);
+                    const bool success = co_await OneBotClient::sendPoke(sessionId, userId);
                     co_return success ? fmt::format("已拍一拍用户 {}", userId) : "拍一拍失败: 权限不足或用户不存在";
                 }
             }, ToolCategory::ACTION
@@ -604,7 +525,7 @@ namespace insoulforge {
                     if (messageId == 0) co_return std::string("撤回失败: 请提供有效的消息ID");
 
                     const auto sessionId = currentToolContext().sessionId;
-                    const bool success = co_await MessageService::deleteMessage(messageId, sessionId);
+                    const bool success = co_await OneBotClient::deleteMsg(messageId, sessionId);
                     co_return success
                                   ? fmt::format("已撤回消息 {}", messageId)
                                   : "撤回失败: 消息可能已超过2分钟或权限不足";
@@ -905,45 +826,29 @@ namespace insoulforge {
             }
         }
 
-        const auto &config = Config::instance();
-
-        Json::Value body;
-        body["count"] = 200;
-
         Json::Value result(Json::arrayValue);
-        const auto resp = co_await HttpUtil::send("[Sticker]", config.qqHttpHost,
-                                                  "/fetch_custom_face_detail", drogon::Post,
-                                                  body, config.accessToken, 30.0);
-        if (resp) {
-            const auto json = (*resp)->getJsonObject();
-            if ((*resp)->getStatusCode() != drogon::k200OK || !json
-                || json->get("status", "failed").asString() != "ok") {
-                spdlog::error("[Sticker] 获取收藏表情失败: status={}",
-                              static_cast<int>((*resp)->getStatusCode()));
-                co_return result;
-            }
+        const Json::Value data = co_await OneBotClient::fetchCustomFaceDetail(sessionId);
 
-            int idx = 0;
-            for (const auto &item: (*json)["data"]) {
-                Json::Value emoji;
-                const std::string desc = sanitizeCqParam(item.get("desc", "").asString());
-                const std::string md5 = item.get("md5", "").asString();
-                // 无名表情用 md5 前6位兜底（稳定且可区分），序号会随列表顺序漂移
-                std::string fallback = md5.size() >= 6
-                                           ? "表情" + md5.substr(0, 6)
-                                           : fmt::format("表情{}", idx + 1);
-                emoji["name"] = desc.empty() ? fallback : desc;
-                emoji["summary"] = desc;
-                emoji["emoji_id"] = item.get("eId", "").asString();
-                emoji["emoji_package_id"] = item.get("epId", "").asString();
-                emoji["key"] = item.get("key", "").asString();
-                emoji["url"] = item.get("url", "").asString();
-                emoji["md5"] = md5;
-                emoji["res_id"] = item.get("resId", "").asString();
-                emoji["is_mark_face"] = item.get("isMarkFace", false).asBool();
-                result.append(emoji);
-                idx++;
-            }
+        int idx = 0;
+        for (const auto &item: data) {
+            Json::Value emoji;
+            const std::string desc = sanitizeCqParam(item.get("desc", "").asString());
+            const std::string md5 = item.get("md5", "").asString();
+            // 无名表情用 md5 前6位兜底（稳定且可区分），序号会随列表顺序漂移
+            std::string fallback = md5.size() >= 6
+                                       ? "表情" + md5.substr(0, 6)
+                                       : fmt::format("表情{}", idx + 1);
+            emoji["name"] = desc.empty() ? fallback : desc;
+            emoji["summary"] = desc;
+            emoji["emoji_id"] = item.get("eId", "").asString();
+            emoji["emoji_package_id"] = item.get("epId", "").asString();
+            emoji["key"] = item.get("key", "").asString();
+            emoji["url"] = item.get("url", "").asString();
+            emoji["md5"] = md5;
+            emoji["res_id"] = item.get("resId", "").asString();
+            emoji["is_mark_face"] = item.get("isMarkFace", false).asBool();
+            result.append(emoji);
+            idx++;
         }
 
         // 网络异常（resp 为空）时缓存空结果，避免高频重试

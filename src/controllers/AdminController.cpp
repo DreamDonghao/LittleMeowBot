@@ -3,6 +3,7 @@
 #include <agent/AgentSystem.hpp>
 #include <agent/AgentToolManager.hpp>
 #include <service/ToolRegistry.hpp>
+#include <service/OneBotClient.hpp>
 #include <spdlog/spdlog.h>
 #include <config/Config.hpp>
 #include <util/HttpUtil.hpp>
@@ -354,28 +355,11 @@ Task<> AdminController::updateEmojiDesc(
         co_return;
     }
 
-    const auto &config = Config::instance();
-
-    Json::Value body;
-    body["emoji_id"] = json->isMember("emoji_id") ? (*json)["emoji_id"].asString() : "0";
-    body["res_id"] = (*json)["res_id"].asString();
-    body["md5"] = json->isMember("md5") ? (*json)["md5"].asString() : "";
-    body["desc"] = (*json)["desc"].asString();
-
-    const auto resp = co_await HttpUtil::send("[Admin]", config.qqHttpHost, "/set_custom_face_desc",
-                                              drogon::Post, body, config.accessToken, 30.0);
-    if (!resp) {
-        Json::Value err;
-        err["error"] = "修改表情描述失败，请确认 QQ 客户端在线";
-        callback(HttpResponse::newHttpJsonResponse(err));
-        co_return;
-    }
-    const auto respJson = (*resp)->getJsonObject();
-
-    if ((*resp)->getStatusCode() != drogon::k200OK || !respJson
-        || respJson->get("status", "failed").asString() != "ok") {
-        spdlog::error("[Admin] 修改表情描述失败: status={}",
-                      static_cast<int>((*resp)->getStatusCode()));
+    const std::string resId = (*json)["res_id"].asString();
+    const std::string desc = (*json)["desc"].asString();
+    if (!co_await OneBotClient::setCustomFaceDesc(
+            json->isMember("emoji_id") ? (*json)["emoji_id"].asString() : "0",
+            resId, json->isMember("md5") ? (*json)["md5"].asString() : "", desc)) {
         Json::Value err;
         err["error"] = "修改表情描述失败，请确认 QQ 客户端在线";
         callback(HttpResponse::newHttpJsonResponse(err));
@@ -384,7 +368,7 @@ Task<> AdminController::updateEmojiDesc(
 
     AgentToolManager::invalidateFavoriteEmojiCache();
     spdlog::info("[Admin] 已修改表情描述: res_id={} desc={}",
-                 body["res_id"].asString(), body["desc"].asString());
+                 resId, desc);
 
     Json::Value respJson2;
     respJson2["success"] = true;

@@ -2,11 +2,10 @@
 /// @brief QQ 消息服务 - 消息发送与处理
 /// @author donghao
 /// @date 2026-04-02
-/// @details 封装 QQ 消息的发送和处理逻辑：
-///          - 群消息发送：sendGroupMsg()
+/// @details 封装 QQ 消息的发送和处理逻辑（OneBot 协议交互见 OneBotClient）：
+///          - 群消息/私聊消息发送（含聊天记录更新与 WebSocket 推送）
 ///          - @格式转换：convertAtToCQCode()
-///          - 禁言管理：setGroupBan()
-///          - 群信息获取：getGroupInfo()
+///          - 会话名称获取：fetchAndUpdateSessionName()
 
 #pragma once
 #include <model/ChatRecordManager.hpp>
@@ -41,32 +40,8 @@ namespace insoulforge::MessageService {
         const std::string &message,
         const ChatRecordManager &chatRecords);
 
-    /// @brief 禁言群成员
-    /// @param groupId 群号
-    /// @param userId 用户QQ号
-    /// @param duration 禁言时长（秒），0表示解除禁言
-    /// @return 是否成功
-    [[nodiscard]] drogon::Task<bool> setGroupBan(Json::UInt64 groupId, Json::UInt64 userId, Json::UInt64 duration);
-
-    /// @brief 获取群信息
-    /// @param groupId 群号
-    /// @return 群信息JSON（包含group_name等）
-    [[nodiscard]] drogon::Task<Json::Value> getGroupInfo(Json::UInt64 groupId);
-
     /// @brief 获取并更新会话名称（群聊为群名，私聊为 QQ 昵称）
     /// @param sessionId 会话 ID（私聊带标志位）
     /// @return 会话名称
     [[nodiscard]] drogon::Task<std::string> fetchAndUpdateSessionName(Json::UInt64 sessionId);
-
-    /// @brief 拍一拍群成员
-    /// @param groupId 群号
-    /// @param userId 用户QQ号
-    /// @return 是否成功
-    [[nodiscard]] drogon::Task<bool> setGroupPoke(Json::UInt64 groupId, Json::UInt64 userId);
-
-    /// @brief 撤回消息
-    /// @param messageId 消息ID
-    /// @return 是否成功
-    [[nodiscard]] drogon::Task<bool> deleteMessage(Json::UInt64 messageId,
-                                                   std::optional<uint64_t> groupId = std::nullopt);
 }

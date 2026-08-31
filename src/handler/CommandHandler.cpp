@@ -3,13 +3,12 @@
 
 #include <handler/CommandHandler.hpp>
 #include <agent/AgentToolManager.hpp>
-#include <config/Config.hpp>
+#include <service/OneBotClient.hpp>
 #include <model/QQMessage.hpp>
 #include <spdlog/spdlog.h>
 #include <fmt/core.h>
 #include <sstream>
 #include <vector>
-#include <drogon/HttpClient.h>
 #include <model/SessionConfigManager.hpp>
 #include <util/tool.h>
 #include <util/HttpUtil.hpp>
@@ -187,22 +186,11 @@ namespace insoulforge {
                 co_return fmt::format("收藏表情中找不到'{}'", name);
             }
 
-            const auto &config = Config::instance();
-            Json::Value body;
-            body["res_id"] = emoji["res_id"].asString();
-            const auto resp = co_await HttpUtil::send("[Sticker]", config.qqHttpHost, "/delete_custom_face",
-                                                      drogon::Post, body, config.accessToken, 30.0);
-            if (!resp) {
-                co_return "删除失败: QQ 客户端连接异常";
+            if (!co_await OneBotClient::deleteCustomFace(emoji["res_id"].asString())) {
+                co_return fmt::format("删除失败: {}（QQ 客户端操作失败）", name);
             }
-            const auto json = (*resp)->getJsonObject();
-            if ((*resp)->getStatusCode() == drogon::k200OK && json
-                && json->get("status", "failed").asString() == "ok") {
-                AgentToolManager::invalidateFavoriteEmojiCache();
-                response = fmt::format("已从收藏表情中删除: {}", emoji["name"].asString());
-            } else {
-                response = fmt::format("删除失败: {}（请确认名称或序号正确）", name);
-            }
+            AgentToolManager::invalidateFavoriteEmojiCache();
+            response = fmt::format("已从收藏表情中删除: {}", emoji["name"].asString());
         } else if (cmd == "/listemoji" || cmd == "/表情列表") {
             if (const Json::Value emojis = co_await AgentToolManager::fetchFavoriteEmojis(); emojis.empty()) {
                 response = "QQ收藏表情为空或获取失败";
