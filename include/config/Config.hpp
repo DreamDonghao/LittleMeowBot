@@ -1,7 +1,6 @@
 /// @file Config.hpp
 /// @brief 全局配置管理
 #pragma once
-#include <cstdint>
 #include <json/value.h>
 #include <string>
 
@@ -21,15 +20,6 @@ namespace insoulforge {
         double topP = 0.9;
     };
 
-    struct KBApiConfig {
-        bool enabled = true; // 是否启用 RAGFlow
-        std::string apiKey;
-        std::string baseUrl;
-        std::string knowledgeDatasetId;
-        std::string memoryDatasetId;
-        std::string memoryDocumentId;
-    };
-
     class Config {
     public:
         // Agent 配置
@@ -40,6 +30,7 @@ namespace insoulforge {
         LLMApiConfig executorThinking; // Executor 思考模型配置
         LLMModelParams executorThinkingParams;
         LLMApiConfig image;
+        LLMApiConfig embedding; // Embedding 模型配置（长期记忆向量化）
 
         // 记忆配置
         int windowTriggerCount = 100; // 上下文窗口超过该条数时触发提取与滑动
@@ -55,9 +46,6 @@ namespace insoulforge {
         std::uint64_t selfQQNumber = 0;
         std::string qqHttpHost;
         std::string botName = "小喵";
-
-        // 知识库配置
-        KBApiConfig knowledgeBase;
 
         static Config &instance();
 

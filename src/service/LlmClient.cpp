@@ -25,8 +25,8 @@ namespace insoulforge {
 
         /// @brief 通用 API 请求函数
         drogon::Task<std::optional<std::string>> requestStr(const Json::Value &messages, const std::string &base_url,
-          const std::string &path, const std::string &api_key, const std::string &model, double temperature,
-          double top_p, int max_tokens, const std::string &role, std::optional<uint64_t> sessionId) {
+          const std::string &path, const std::string &api_key, const std::string &model, const double temperature,
+          const double top_p, const int max_tokens, const std::string &role, const std::optional<uint64_t> sessionId) {
             const Json::Value body = buildModelReq(messages, model, temperature, top_p, max_tokens);
             const auto resp =
               co_await HttpUtil::send("[LLM]", base_url, path, drogon::Post, body, api_key, 90.0, sessionId);
@@ -67,6 +67,48 @@ namespace insoulforge {
         const auto &config = Config::instance();
         co_return co_await requestStr(messages, config.executor.baseUrl, config.executor.path, config.executor.apiKey,
           config.executor.model, temperature, top_p, max_tokens, role, sessionId);
+    }
+
+    drogon::Task<std::optional<std::vector<float>>> LlmClient::requestEmbedding(
+      const std::string &text, const std::optional<uint64_t> sessionId) {
+        const auto &config = Config::instance().embedding;
+        if (config.baseUrl.empty() || config.model.empty()) {
+            spdlog::debug("Embedding 未配置，跳过向量化");
+            co_return std::nullopt;
+        }
+
+        Json::Value body;
+        body["model"] = config.model;
+        body["input"].append(text);
+
+        const auto resp = co_await HttpUtil::send(
+          "[Embedding]", config.baseUrl, config.path, drogon::Post, body, config.apiKey, 30.0, sessionId);
+        if (!resp) {
+            co_return std::nullopt;
+        }
+
+        const auto json = (*resp)->getJsonObject();
+        if ((*resp)->getStatusCode() != drogon::k200OK || !json || !json->isMember("data") ||
+            !(*json)["data"].isArray() || (*json)["data"].empty()) {
+            if (sessionId) {
+                Logger::session(*sessionId)
+                  .error("[Embedding] 请求出错: status={}", static_cast<int>((*resp)->getStatusCode()));
+            } else {
+                spdlog::error("[Embedding] 请求出错: status={}", static_cast<int>((*resp)->getStatusCode()));
+            }
+            co_return std::nullopt;
+        }
+
+        LlmClient::logUsage(*json, config.model, "embedding", sessionId);
+
+        std::vector<float> embedding;
+        for (const auto &value: (*json)["data"][0]["embedding"]) {
+            embedding.push_back(value.asFloat());
+        }
+        if (embedding.empty()) {
+            co_return std::nullopt;
+        }
+        co_return embedding;
     }
 
     void LlmClient::logUsage(const Json::Value &responseJson, const std::string &model, const std::string &role,

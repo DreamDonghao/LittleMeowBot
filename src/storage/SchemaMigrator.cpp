@@ -169,6 +169,17 @@ namespace insoulforge {
         affinity INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (group_id, qq_number)
     ))"};
+
+        /// @brief v6 新增表：long_term_memory（长期记忆，embedding 以 float 数组存 BLOB，检索为暴力余弦）
+        constexpr std::array v6Tables = {
+          R"(CREATE TABLE IF NOT EXISTS long_term_memory (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        embedding BLOB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ))",
+          "CREATE INDEX IF NOT EXISTS idx_long_term_memory_group ON long_term_memory(group_id)"};
     } // namespace
 
     void SchemaMigrator::migrate(sqlite3 *db) {
@@ -192,6 +203,7 @@ namespace insoulforge {
           &migrateV2ToV3, // 新增 group_affinity 好感度表
           &migrateV3ToV4, // scheduled_tasks 状态扩展（新增 cancelled）
           &migrateV4ToV5, // scheduled_tasks 新增 is_daily（每日重复任务）
+          &migrateV5ToV6, // 新增 long_term_memory 长期记忆表
         };
 
         for (int v = version; v < kLatestVersion; ++v) {
@@ -235,6 +247,7 @@ namespace insoulforge {
     void SchemaMigrator::createFreshSchema(sqlite3 *db) {
         execAll(db, v2Tables);
         execAll(db, v3Tables);
+        execAll(db, v6Tables);
         execAll(db, indexes);
         setUserVersion(db, kLatestVersion);
     }
@@ -404,5 +417,12 @@ namespace insoulforge {
         // 只加一列，ALTER TABLE 即可，无需像 v4 那样重建表
         ensureColumn(
           db, "scheduled_tasks", "is_daily", "is_daily INTEGER NOT NULL DEFAULT 0 CHECK(is_daily IN (0, 1))");
+    }
+
+    void SchemaMigrator::migrateV5ToV6(sqlite3 *db) {
+        spdlog::info("执行迁移: 新增 long_term_memory 长期记忆表");
+        execAll(db, v6Tables);
+        // RAGFlow 已移除，settings 中的知识库配置一并清理
+        execSQL(db, "DELETE FROM settings WHERE key = 'kb_config'");
     }
 } // namespace insoulforge

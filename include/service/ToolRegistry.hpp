@@ -39,7 +39,7 @@ namespace insoulforge {
     /// @brief 工具分类
     enum class ToolCategory {
         TERMINAL, // 终端工具：reply, no_reply, reply_with_quote（结束处理）
-        INFORMATION, // 信息工具：search_knowledge, recall_memory, get_group_name, list_stickers（获取数据）
+        INFORMATION, // 信息工具：recall_memory, get_group_name, list_stickers（获取数据）
         ACTION // 动作工具：send_face, send_sticker, ban_user, send_poke 等（执行操作）
     };
 

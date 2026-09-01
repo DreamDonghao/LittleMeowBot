@@ -19,15 +19,6 @@ export interface LLMConfig {
     reasoningEffort: string
 }
 
-export interface KBConfig {
-    enabled: boolean
-    apiKey: string
-    baseUrl: string
-    knowledgeDatasetId: string
-    memoryDatasetId: string
-    memoryDocumentId: string
-}
-
 export interface MemoryConfig {
     windowTriggerCount: number
     windowKeepCount: number
@@ -36,6 +27,18 @@ export interface MemoryConfig {
     routerWindowKeepCount: number
     shortTermMemoryMax: number
     memoryMigrateCount: number
+}
+
+export interface LongTermMemoryEntry {
+    id: number
+    groupId: string
+    content: string
+    createdAt: string
+}
+
+export interface LongTermMemoryListResult {
+    items: LongTermMemoryEntry[]
+    total: number
 }
 
 export interface Emoji {

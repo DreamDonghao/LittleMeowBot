@@ -4,7 +4,16 @@
  * @brief 群管理组件 - 群启用状态、群记忆与聊天记录
  */
 import {computed, inject, nextTick, onMounted, onUnmounted, ref, type Ref, watch} from 'vue'
-import type {AffinityEntry, ApiResponse, ChatMessage, Group, QQConfig, ScheduledTask} from '../vite-env.d'
+import type {
+  AffinityEntry,
+  ApiResponse,
+  ChatMessage,
+  Group,
+  LongTermMemoryEntry,
+  LongTermMemoryListResult,
+  QQConfig,
+  ScheduledTask
+} from '../vite-env.d'
 
 const showToast = inject<(msg: string, isError?: boolean) => void>('showToast')
 const qqConfig = inject<QQConfig>('qqConfig')
@@ -379,6 +388,76 @@ const cancelTask = async (task: ScheduledTask): Promise<void> => {
   }
 }
 
+// 长期记忆弹窗
+const LTM_PAGE_SIZE = 20
+const ltmGroupId: Ref<string | null> = ref(null)
+const ltmGroupName: Ref<string> = ref('')
+const ltmList: Ref<LongTermMemoryEntry[]> = ref([])
+const ltmTotal: Ref<number> = ref(0)
+const ltmPage: Ref<number> = ref(0)
+const ltmLoading: Ref<boolean> = ref(false)
+const ltmDeletingId: Ref<number | null> = ref(null)
+const ltmTotalPages = computed(() => Math.max(1, Math.ceil(ltmTotal.value / LTM_PAGE_SIZE)))
+
+const loadLongTermMemories = async (): Promise<void> => {
+  if (!ltmGroupId.value) return
+  ltmLoading.value = true
+  try {
+    const params = new URLSearchParams({
+      sessionId: ltmGroupId.value,
+      limit: String(LTM_PAGE_SIZE),
+      offset: String(ltmPage.value * LTM_PAGE_SIZE)
+    })
+    const resp = await fetch(`/admin/api/long-term-memory?${params}`)
+    const data: LongTermMemoryListResult = await resp.json()
+    ltmList.value = data.items || []
+    ltmTotal.value = data.total || 0
+  } finally {
+    ltmLoading.value = false
+  }
+}
+
+// 查看长期记忆
+const viewLongTermMemory = async (sessionId: string, sessionName: string): Promise<void> => {
+  ltmGroupId.value = sessionId
+  ltmGroupName.value = sessionName
+  ltmPage.value = 0
+  ltmList.value = []
+  ltmTotal.value = 0
+  await loadLongTermMemories()
+}
+
+// 关闭长期记忆弹窗
+const closeLongTermMemory = (): void => {
+  ltmGroupId.value = null
+  ltmGroupName.value = ''
+  ltmList.value = []
+  ltmTotal.value = 0
+}
+
+const changeLtmPage = (delta: number): void => {
+  ltmPage.value += delta
+  loadLongTermMemories()
+}
+
+// 删除长期记忆
+const deleteLongTermMemory = async (id: number): Promise<void> => {
+  if (!confirm('确定删除这条长期记忆？删除后无法恢复')) return
+  ltmDeletingId.value = id
+  try {
+    const resp = await fetch(`/admin/api/long-term-memory/${id}`, {method: 'DELETE'})
+    const data: ApiResponse = await resp.json()
+    if (data.success) {
+      showToast!('长期记忆已删除')
+      await loadLongTermMemories()
+    } else {
+      showToast!(data.error || '删除失败', true)
+    }
+  } finally {
+    ltmDeletingId.value = null
+  }
+}
+
 // WebSocket 消息处理
 let originalOnMessage: ((event: MessageEvent) => void) | null | undefined = null
 
@@ -541,6 +620,9 @@ onUnmounted(restoreWebSocket)
                   <button class="btn btn-secondary btn-sm" style="margin-left: 6px;"
                           @click.stop="viewTasks(sessionKey(group), sessionLabel(group))">任务
                   </button>
+                  <button class="btn btn-secondary btn-sm" style="margin-left: 6px;"
+                          @click.stop="viewLongTermMemory(sessionKey(group), sessionLabel(group))">长期记忆
+                  </button>
                   <button class="btn btn-danger btn-sm" style="margin-left: 6px;"
                           @click.stop="removeGroup(sessionKey(group))">删除
                   </button>
@@ -696,6 +778,47 @@ onUnmounted(restoreWebSocket)
           <div v-else class="memory-loading">
             <p>暂无待触发的定时任务，可在群聊中让 AI 设置提醒</p>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 长期记忆弹窗 -->
+    <div v-if="ltmGroupId" class="modal-overlay" @click.self="closeLongTermMemory">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>{{ ltmGroupName }} - 长期记忆</h2>
+          <button class="btn btn-secondary btn-sm" @click="closeLongTermMemory">关闭</button>
+        </div>
+        <div class="modal-body">
+          <div v-if="ltmLoading" class="memory-loading">
+            <p>加载中...</p>
+          </div>
+          <template v-else>
+            <div v-if="ltmList.length === 0" class="memory-loading">
+              <p>暂无长期记忆，等待记忆迁移入库</p>
+            </div>
+            <div v-else class="ltm-list">
+              <div v-for="m in ltmList" :key="m.id" class="ltm-item">
+                <div class="task-content">{{ m.content }}</div>
+                <div class="ltm-item-footer">
+                  <span class="ltm-time">{{ m.createdAt }}</span>
+                  <button :disabled="ltmDeletingId === m.id" class="btn btn-danger btn-sm"
+                          @click="deleteLongTermMemory(m.id)">
+                    {{ ltmDeletingId === m.id ? '删除中...' : '删除' }}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="ltm-pagination">
+              <button :disabled="ltmPage === 0 || ltmLoading" class="btn btn-secondary btn-sm"
+                      @click="changeLtmPage(-1)">上一页
+              </button>
+              <span class="ltm-page-info">第 {{ ltmPage + 1 }} / {{ ltmTotalPages }} 页 · 共 {{ ltmTotal }} 条</span>
+              <button :disabled="ltmPage + 1 >= ltmTotalPages || ltmLoading" class="btn btn-secondary btn-sm"
+                      @click="changeLtmPage(1)">下一页
+              </button>
+            </div>
+          </template>
         </div>
       </div>
     </div>
@@ -1106,5 +1229,43 @@ onUnmounted(restoreWebSocket)
 
 .task-content {
   word-break: break-word;
+}
+
+/* 长期记忆 */
+.ltm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ltm-item {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.ltm-item-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.ltm-time {
+  font-size: 12px;
+  color: var(--text-light);
+}
+
+.ltm-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.ltm-page-info {
+  font-size: 13px;
+  color: var(--text-secondary);
 }
 </style>

@@ -8,19 +8,21 @@ import type {ApiResponse, LLMConfig} from '../vite-env.d'
 
 const showToast = inject<(msg: string, isError?: boolean) => void>('showToast')
 
-const llmNames = ['router', 'executor', 'executorThinking', 'image']
+const llmNames = ['router', 'executor', 'executorThinking', 'image', 'embedding']
 const llmLabels: Record<string, string> = {
   router: 'Router',
   executor: 'Executor',
   executorThinking: 'Executor思考',
-  image: 'Image'
+  image: 'Image',
+  embedding: 'Embedding'
 }
 // 各配置的实际用途（与后端代码一致；requestLLM 统一走 executor 配置）
 const llmUsages: Record<string, string> = {
   router: '用途：回复决策（是否回复、语气、字数上限、是否启用思考模式）',
   executor: '用途：回复生成、记忆提取、好感度评分（三者共用此模型）',
   executorThinking: '用途：深度思考模式的分析阶段（最终执行仍走 Executor）',
-  image: '用途：图片识别与描述'
+  image: '用途：图片识别与描述',
+  embedding: '用途：长期记忆向量化（记忆写入与检索时计算文本向量）'
 }
 const selectedLLM: Ref<string> = ref('router')
 const llmConfigs = reactive<Record<string, LLMConfig>>({})
@@ -112,7 +114,7 @@ const saveLLMConfig = async (): Promise<void> => {
           <input v-model="llmConfig.model" class="form-input" placeholder="gpt-4" type="text">
         </div>
       </div>
-      <div class="form-row">
+      <div v-if="selectedLLM !== 'embedding'" class="form-row">
         <div class="form-group">
           <label class="form-label">Max Tokens</label>
           <input v-model.number="llmConfig.maxTokens" class="form-input" type="number">
@@ -126,7 +128,7 @@ const saveLLMConfig = async (): Promise<void> => {
           <input v-model.number="llmConfig.topP" class="form-input" max="1" min="0" step="0.1" type="number">
         </div>
       </div>
-      <div class="form-row">
+      <div v-if="selectedLLM !== 'embedding'" class="form-row">
         <div class="form-group">
           <label class="form-label">Reasoning Effort（Gemma等模型专用）</label>
           <select v-model="llmConfig.reasoningEffort" class="form-input">

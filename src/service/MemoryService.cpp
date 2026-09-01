@@ -5,8 +5,8 @@
 #include <config/Config.hpp>
 #include <model/QQMessage.hpp>
 #include <mutex>
+#include <service/LongTermMemory.hpp>
 #include <service/MemoryService.hpp>
-#include <service/RAGFlowClient.hpp>
 #include <spdlog/spdlog.h>
 #include <sstream>
 #include <storage/AffinityStore.hpp>
@@ -69,8 +69,8 @@ namespace insoulforge {
 
         /// @brief 一次 LLM 调用完成"提取 + 合并"：结合现有记忆从对话中提取新条目并输出合并结果
         /// @return nullopt 表示 API 失败（调用方不得推进水位线）
-        drogon::Task<std::optional<std::string>> maintainMemory(
-          const std::string &existingMemory, const std::string &chatRecords, int maxTokens, const uint64_t sessionId) {
+        drogon::Task<std::optional<std::string>> maintainMemory(const std::string &existingMemory,
+          const std::string &chatRecords, const int maxTokens, const uint64_t sessionId) {
             Json::Value messages;
             Json::Value item;
             item["role"] = "system";
@@ -118,7 +118,7 @@ namespace insoulforge {
         }
 
         /// @brief 把记录区间拼接为 JSON 数组字符串（与旧 getChatRecordsText 格式一致）
-        std::string formatRecordsText(const std::vector<Json::Value> &records, size_t from, size_t to) {
+        std::string formatRecordsText(const std::vector<Json::Value> &records, const size_t from, const size_t to) {
             std::string text = "[";
             bool first = true;
             for (size_t i = from; i < to; ++i) {
@@ -235,7 +235,7 @@ namespace insoulforge {
         }
 
         /// @brief 截断记忆到最多 N 条（保留前 N 条，重要信息通常排在前面）
-        std::string trimToMaxLines(const std::string &memory, int maxLines) {
+        std::string trimToMaxLines(const std::string &memory, const int maxLines) {
             std::vector<std::string> lines;
             std::istringstream stream(memory);
             std::string line;
@@ -335,10 +335,9 @@ namespace insoulforge {
         drogon::Task<std::string> migrateToLongTermMemory(uint64_t sessionId, const std::string &shortTermMemory) {
             const int maxLines = Config::instance().shortTermMemoryMax;
 
-            // 检查 RAGFlow 是否实际可用（不仅 enabled，还需要配置了必要参数）
-            const auto &kb = Config::instance().knowledgeBase;
-            if (!kb.enabled || kb.memoryDatasetId.empty() || kb.memoryDocumentId.empty()) {
-                Logger::session(sessionId).info("短期记忆超限，RAGFlow 未配置或未启用，仅保留 {} 条", maxLines);
+            // 检查 Embedding 是否实际可用（不仅配置存在，还需要 baseUrl/model）
+            if (const auto &emb = Config::instance().embedding; emb.baseUrl.empty() || emb.model.empty()) {
+                Logger::session(sessionId).info("短期记忆超限，Embedding 未配置，仅保留 {} 条", maxLines);
                 std::string trimmed = trimToMaxLines(shortTermMemory, maxLines);
                 MemoryStore::instance().updateShortTermMemory(sessionId, trimmed);
                 co_return trimmed;
@@ -360,7 +359,7 @@ namespace insoulforge {
                 co_return trimmed;
             }
 
-            // 2. 逐条存入 RAGFlow 长期记忆库
+            // 2. 逐条存入长期记忆库
             int successCount = 0;
             std::istringstream stream(toMigrate);
             std::string line;
@@ -371,7 +370,7 @@ namespace insoulforge {
                 // 每条记忆单独存储，加上群名前缀
                 std::string prefixedMemory = "[" + groupName + "] ";
                 prefixedMemory += line;
-                if (co_await RAGFlowClient::addMemory(prefixedMemory, sessionId)) {
+                if (co_await LongTermMemory::addMemory(prefixedMemory, sessionId)) {
                     Logger::session(sessionId).info("迁移记忆 [{}]: {}", groupName, line);
                     successCount++;
                 } else {
@@ -380,7 +379,7 @@ namespace insoulforge {
             }
 
             if (successCount == 0) {
-                Logger::session(sessionId).warn("迁移到 RAGFlow 全部失败，保留短期记忆");
+                Logger::session(sessionId).warn("迁移到长期记忆库全部失败，保留短期记忆");
                 std::string trimmed = trimToMaxLines(shortTermMemory, maxLines);
                 MemoryStore::instance().updateShortTermMemory(sessionId, trimmed);
                 co_return trimmed;
@@ -399,9 +398,8 @@ namespace insoulforge {
         }
     } // namespace
 
-    drogon::Task<> MemoryService::appendAndMergeMemory(uint64_t sessionId) {
-        const EvictionGuard guard(sessionId);
-        if (!guard.acquired()) {
+    drogon::Task<> MemoryService::appendAndMergeMemory(const uint64_t sessionId) {
+        if (const EvictionGuard guard(sessionId); !guard.acquired()) {
             co_return; // 该群正在提取中，等下一轮消息触发
         }
 
@@ -478,4 +476,4 @@ namespace insoulforge {
 
         co_return;
     }
-}
+} // namespace insoulforge

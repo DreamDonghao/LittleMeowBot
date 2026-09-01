@@ -102,12 +102,12 @@ insoulforge/
 │   ├── controllers/          # ProcessQQMessages / AdminController / AdminWebSocket / LogWebSocket / CommandHandler
 │   ├── config/               # Config：从数据库加载全部配置的单例
 │   ├── model/                # 数据模型：QQMessage
-│   ├── service/              # 服务层：MessageService / MemoryService / LlmClient / OneBotClient / RAGFlowClient / ToolRegistry / ChatRecordManager / MemoryManager / SessionConfigManager 等
+│   ├── service/              # 服务层：MessageService / MemoryService / LlmClient / OneBotClient / LongTermMemory / ToolRegistry / ChatRecordManager / MemoryManager / SessionConfigManager 等
 │   ├── storage/              # SQLite 存储：Database / 各领域 Store（Session / ChatRecord / Memory / Affinity / Prompt / Admin / Config / Usage / Tool / Task）
 │   └── util/                 # Log / Http / CommonUtil
 ├── src/                      # 源文件（与 include/ 一一对应，入口 main.cpp）
 ├── frontend/                 # Vue 3 + Vite + TypeScript 管理后台
-│   └── src/components/       # 14 个功能组件（Dashboard、LLM配置、提示词、自定义工具、表情库、管理员、群管理、运行日志、请求调试、知识库配置、记忆与上下文、OneBot配置、用量统计、关于）
+│   └── src/components/       # 13 个功能组件（Dashboard、LLM配置、提示词、自定义工具、表情库、管理员、群管理、运行日志、请求调试、记忆与上下文、OneBot配置、用量统计、关于）
 ├── agentTools/               # 自定义工具的 JSON 配置（random / get_time / get_weather / search_web）
 ├── docs/                     # 文档
 └── run.sh                    # 部署启动脚本
@@ -147,7 +147,7 @@ MessageService::sendGroupMsg → OneBot API
 
 - `ToolRegistry` 按类别管理工具，LLM 调用时按类别分组注入 prompt：
     - `TERMINAL`：终结工具（`reply` / `no_reply` / `reply_with_quote`），调用后结束本轮处理
-    - `INFORMATION`：信息工具（`search_knowledge` / `recall_memory` / `get_group_name` / `list_stickers`），获取数据
+    - `INFORMATION`：信息工具（`recall_memory` / `get_group_name` / `list_stickers`），获取数据
     - `ACTION`：动作工具（`send_face` / `send_image` / `send_sticker` / `save_sticker` / `rename_sticker` /
       `delete_sticker` / `at_user` / `ban_user` / `send_poke` / `recall_message`），执行操作
 - 内置工具在 `src/agent/AgentToolManager.cpp` 注册；自定义工具注册为 `INFORMATION` 类别
@@ -158,16 +158,19 @@ MessageService::sendGroupMsg → OneBot API
 ### 记忆系统
 
 - **短期记忆**：本地 SQLite（`MemoryManager`），按群存储
-- **长期记忆**：RAGFlow 记忆库，由 `MemoryService` 负责提取、合并、去重与迁移
+- **长期记忆**：本地 SQLite（`long_term_memory` 表，embedding 以 float 数组存 BLOB），由 `MemoryService` 负责提取、合并、去重与迁移，
+  `LongTermMemory` 服务封装存取
 - **提取机制**（可配置）：聊天记录窗口超过 `windowTriggerCount` 条时，LLM 从待删除的旧记录中提取记忆并滑动窗口（保留最近
   `windowKeepCount` 条）；Router 有独立的子窗口参数（`routerWindowTriggerCount` / `routerWindowKeepCount`）
-- **迁移机制**：短期记忆超过 `shortTermMemoryMax` 条时，LLM 筛选 `memoryMigrateCount` 条重要记忆写入 RAGFlow
+- **迁移机制**：短期记忆超过 `shortTermMemoryMax` 条时，LLM 筛选 `memoryMigrateCount` 条重要记忆，逐条经 Embedding API
+  向量化后写入长期记忆库
 - 记忆提取与合并复用 executor 模型（`LlmClient::requestLLM`）
+- 向量化使用独立的 embedding 配置（`LlmClient::requestEmbedding`）；`recall_memory` 工具按余弦相似度（阈值 0.3）检索长期记忆
 
 ### 配置系统
 
-`Config` 单例从 SQLite 加载 LLM API 配置（router / executor / executorThinking / image，每组独立配置 model / endpoint /
-temperature 等参数，可选 `reasoningEffort`）、知识库（RAGFlow，含 `enabled` 开关）、QQ Bot 配置、记忆参数。管理后台另有 `memory`
+`Config` 单例从 SQLite 加载 LLM API 配置（router / executor / executorThinking / image / embedding，每组独立配置 model /
+endpoint 等参数，可选 `reasoningEffort`）、QQ Bot 配置、记忆参数。管理后台另有 `memory`
 LLM 配置项存储于数据库，但当前记忆提取复用 executor 模型。提示词由 `PromptService` 管理（`executor_system` /
 `router_system`），支持 `{botName}` 占位符，修改后写回数据库。
 
@@ -237,7 +240,7 @@ registry.registerTool(
 2. 在 `../controllers/AdminController.cpp` 中实现（协程写法 `Task<HttpResponsePtr>` + `co_return`）
 3. 数据访问统一通过 `Database` 单例
 
-现有路由以 `/admin/api/` 为前缀（聊天记录、LLM 配置、提示词、表情、群、管理员、自定义工具、记忆、知识库、QQ 配置、用量统计），新路由建议沿用该前缀。
+现有路由以 `/admin/api/` 为前缀（聊天记录、LLM 配置、提示词、表情、群、管理员、自定义工具、记忆、QQ 配置、用量统计），新路由建议沿用该前缀。
 
 ### 添加前端页面
 

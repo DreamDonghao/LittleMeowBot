@@ -77,22 +77,6 @@ namespace insoulforge {
         return configs;
     }
 
-    Json::Value ConfigStore::getKBConfig() const {
-        Json::Value defaults;
-        defaults["enabled"] = true;
-        defaults["apiKey"] = "";
-        defaults["baseUrl"] = "";
-        defaults["knowledgeDatasetId"] = "";
-        defaults["memoryDatasetId"] = "";
-        defaults["memoryDocumentId"] = "";
-        return loadConfigJson("kb_config", defaults);
-    }
-
-    void ConfigStore::saveKBConfig(const Json::Value &config) const {
-        saveConfigJson("kb_config", config);
-        spdlog::info("知识库配置已保存");
-    }
-
     Json::Value ConfigStore::getQQConfig() const {
         Json::Value defaults;
         defaults["accessToken"] = "";
@@ -162,7 +146,15 @@ namespace insoulforge {
             .model = "qwen-vl-plus",
             .maxTokens = 1024,
             .temperature = 0.7,
-            .topP = 0.9}};
+            .topP = 0.9},
+          {.name = "embedding",
+            .apiKey = "",
+            .baseUrl = "http://127.0.0.1:3001",
+            .path = "/v1/embeddings",
+            .model = "bge-m3",
+            .maxTokens = 0,
+            .temperature = 0,
+            .topP = 0}};
 
         const auto &db = Database::instance();
         std::unique_lock lock(db.mutex());

@@ -42,12 +42,6 @@ defineProps<{ name: string }>()
     <path d="M17 8h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2v4l-4-4H9a2 2 0 0 1-2-2v-1"/>
     <path d="M15 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2v4l4-4"/>
   </svg>
-  <!-- 知识库 -->
-  <svg v-else-if="name === 'kb'" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-    <circle cx="12" cy="12" r="10"/>
-    <line x1="2" x2="22" y1="12" y2="12"/>
-    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-  </svg>
   <!-- 记忆配置 -->
   <svg v-else-if="name === 'memory'" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
     <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/>

@@ -79,11 +79,6 @@ namespace insoulforge {
         // 批量刷新群名
         ADD_METHOD_TO(AdminController::refreshAllSessionNames, "/admin/api/groups/refresh-names", drogon::Post);
 
-        // 知识库配置
-        ADD_METHOD_TO(AdminController::getKBConfig, "/admin/api/kb-config", drogon::Get);
-
-        ADD_METHOD_TO(AdminController::saveKBConfig, "/admin/api/kb-config", drogon::Post);
-
         // 聊天记录
         ADD_METHOD_TO(AdminController::getChatSessions, "/admin/api/chat-groups", drogon::Get);
 
@@ -113,6 +108,11 @@ namespace insoulforge {
         ADD_METHOD_TO(AdminController::getMemoryConfig, "/admin/api/memory-config", drogon::Get);
 
         ADD_METHOD_TO(AdminController::saveMemoryConfig, "/admin/api/memory-config", drogon::Post);
+
+        // 长期记忆
+        ADD_METHOD_TO(AdminController::getLongTermMemories, "/admin/api/long-term-memory", drogon::Get);
+
+        ADD_METHOD_TO(AdminController::deleteLongTermMemory, "/admin/api/long-term-memory/{id}", drogon::Delete);
 
         // QQ Bot 配置
         ADD_METHOD_TO(AdminController::getQQConfig, "/admin/api/qq-config", drogon::Get);
@@ -281,20 +281,6 @@ namespace insoulforge {
         drogon::Task<> refreshAllSessionNames(
           drogon::HttpRequestPtr req, std::function<void(const drogon::HttpResponsePtr &)> callback) const;
 
-        // ============== 知识库配置 ==============
-
-        /// @brief 获取知识库配置
-        /// @param req HTTP 请求
-        /// @param callback HTTP 响应回调
-        drogon::Task<> getKBConfig(
-          drogon::HttpRequestPtr req, std::function<void(const drogon::HttpResponsePtr &)> callback) const;
-
-        /// @brief 保存知识库配置
-        /// @param req HTTP 请求，body 包含配置 JSON
-        /// @param callback HTTP 响应回调
-        drogon::Task<> saveKBConfig(
-          drogon::HttpRequestPtr req, std::function<void(const drogon::HttpResponsePtr &)> callback) const;
-
         // ============== 聊天记录 ==============
 
         /// @brief 获取所有有聊天记录的群列表
@@ -385,6 +371,19 @@ namespace insoulforge {
         /// @param callback HTTP 响应回调
         drogon::Task<> saveMemoryConfig(
           drogon::HttpRequestPtr req, std::function<void(const drogon::HttpResponsePtr &)> callback) const;
+
+        /// @brief 分页查询长期记忆
+        /// @param req HTTP 请求，可选 sessionId / limit / offset 参数
+        /// @param callback HTTP 响应回调
+        drogon::Task<> getLongTermMemories(
+          drogon::HttpRequestPtr req, std::function<void(const drogon::HttpResponsePtr &)> callback) const;
+
+        /// @brief 删除一条长期记忆
+        /// @param req HTTP 请求
+        /// @param callback HTTP 响应回调
+        /// @param id 记录 ID
+        drogon::Task<> deleteLongTermMemory(drogon::HttpRequestPtr req,
+          std::function<void(const drogon::HttpResponsePtr &)> callback, const std::string &id) const;
 
         // ============== QQ Bot 配置 ==============
 

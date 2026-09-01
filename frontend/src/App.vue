@@ -14,7 +14,6 @@ import PromptEditor from './components/PromptEditor.vue'
 import EmojiManager from './components/EmojiManager.vue'
 import AdminManager from './components/AdminManager.vue'
 import GroupManager from './components/GroupManager.vue'
-import KBConfig from './components/KBConfig.vue'
 import MemoryConfig from './components/MemoryConfig.vue'
 import QQConfigVue from './components/QQConfig.vue'
 import CustomTools from './components/CustomTools.vue'
@@ -35,7 +34,6 @@ const systemNavItems: NavItem[] = [
   {key: 'qqConfig', label: 'OneBot 配置', icon: 'qq'},
   {key: 'prompts', label: '提示词', icon: 'prompts'},
   {key: 'customTools', label: '自定义工具', icon: 'tool'},
-  {key: 'kb', label: '知识库配置', icon: 'kb'},
   {key: 'memoryConfig', label: '记忆与上下文', icon: 'memory'}
 ]
 
@@ -227,7 +225,6 @@ onMounted(async () => {
       <GroupManager v-else-if="currentView === 'groups'"/>
       <LogViewer v-else-if="currentView === 'logs'"/>
       <RequestDebug v-else-if="currentView === 'requestDebug'"/>
-      <KBConfig v-else-if="currentView === 'kb'"/>
       <MemoryConfig v-else-if="currentView === 'memoryConfig'"/>
       <QQConfigVue v-else-if="currentView === 'qqConfig'"/>
       <UsageStats v-else-if="currentView === 'usage'"/>

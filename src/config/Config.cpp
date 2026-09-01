@@ -1,7 +1,6 @@
 /// @file Config.cpp
 /// @brief 全局配置管理 - 实现
 
-#include <cctype>
 #include <config/Config.hpp>
 #include <spdlog/spdlog.h>
 #include <storage/ConfigStore.hpp>
@@ -55,19 +54,7 @@ namespace insoulforge {
         loadLLMConfig("executor", executor, &executorParams);
         loadLLMConfig("executorThinking", executorThinking, &executorThinkingParams);
         loadLLMConfig("image", image);
-
-        // 加载知识库配置
-        if (auto kbCfg = ConfigStore::instance().getKBConfig(); !kbCfg.isNull()) {
-            knowledgeBase.enabled = kbCfg.get("enabled", true).asBool();
-            knowledgeBase.apiKey = kbCfg["apiKey"].asString();
-            knowledgeBase.baseUrl = kbCfg["baseUrl"].asString();
-            knowledgeBase.knowledgeDatasetId = kbCfg["knowledgeDatasetId"].asString();
-            knowledgeBase.memoryDatasetId = kbCfg["memoryDatasetId"].asString();
-            if (kbCfg.isMember("memoryDocumentId")) {
-                knowledgeBase.memoryDocumentId = kbCfg["memoryDocumentId"].asString();
-            }
-            spdlog::info("知识库配置已从数据库加载 (enabled={})", knowledgeBase.enabled);
-        }
+        loadLLMConfig("embedding", embedding);
 
         // 加载记忆配置
         if (auto memCfg = ConfigStore::instance().getMemoryConfig(); !memCfg.isNull()) {

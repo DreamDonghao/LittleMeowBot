@@ -11,7 +11,6 @@
 #include <agent/AgentToolManager.hpp>
 #include <chrono>
 #include <config/Config.hpp>
-#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -23,8 +22,8 @@
 #include <util/HttpUtil.hpp>
 #include <util/Logger.hpp>
 
+#include <service/LongTermMemory.hpp>
 #include <service/OneBotClient.hpp>
-#include <service/RAGFlowClient.hpp>
 #include <service/TaskScheduler.hpp>
 #include <service/ToolRegistry.hpp>
 #include <storage/TaskStore.hpp>
@@ -98,26 +97,6 @@ namespace insoulforge {
                                 }},
           ToolCategory::INFORMATION);
 
-        // search_knowledge
-        Json::Value knowledgeParams;
-        knowledgeParams["type"] = "object";
-        knowledgeParams["properties"]["query"]["type"] = "string";
-        knowledgeParams["properties"]["query"]["description"] = "检索问题";
-        knowledgeParams["required"].append("query");
-        registry.registerTool({.name = "search_knowledge",
-                                .description = "从知识库中检索信息。当用户问FAQ、专业知识时使用。",
-                                .parameters = knowledgeParams,
-                                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
-                                    const std::string query = args.isMember("query") ? args["query"].asString() : "";
-                                    if (query.empty()) {
-                                        co_return std::string("请提供检索问题");
-                                    }
-                                    const auto [sessionId, groupName] = currentToolContext();
-                                    const auto result = co_await RAGFlowClient::searchKnowledge(query, 3, sessionId);
-                                    co_return result.value_or("知识库检索失败");
-                                }},
-          ToolCategory::INFORMATION);
-
         // recall_memory
         Json::Value memoryParams;
         memoryParams["type"] = "object";
@@ -135,7 +114,7 @@ namespace insoulforge {
                     co_return std::string("请提供回忆关键词");
 
                 const auto [sessionId, groupName] = currentToolContext();
-                const auto result = co_await RAGFlowClient::searchMemory(query, 3, sessionId);
+                const auto result = co_await LongTermMemory::searchMemory(query, 3, sessionId);
                 if (!result || result->empty()) {
                     co_return "想不起来了，没有找到相关记忆";
                 }

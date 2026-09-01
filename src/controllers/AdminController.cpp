@@ -1,30 +1,31 @@
-#include <controllers/AdminController.hpp>
-#include <model/QQMessage.hpp>
 #include <agent/AgentSystem.hpp>
 #include <agent/AgentToolManager.hpp>
-#include <service/ToolRegistry.hpp>
-#include <service/OneBotClient.hpp>
-#include <spdlog/spdlog.h>
-#include <config/Config.hpp>
-#include <util/HttpUtil.hpp>
-#include <util/HttpTrace.hpp>
-#include <util/Logger.hpp>
-#include <util/CommonUtil.hpp>
 #include <algorithm>
 #include <charconv>
 #include <chrono>
+#include <config/Config.hpp>
+#include <controllers/AdminController.hpp>
 #include <fstream>
+#include <model/QQMessage.hpp>
+#include <service/OneBotClient.hpp>
+#include <service/TaskScheduler.hpp>
+#include <service/ToolRegistry.hpp>
+#include <spdlog/spdlog.h>
 #include <storage/AdminStore.hpp>
 #include <storage/AffinityStore.hpp>
 #include <storage/ChatRecordStore.hpp>
 #include <storage/ConfigStore.hpp>
+#include <storage/LongTermMemoryStore.hpp>
 #include <storage/MemoryStore.hpp>
 #include <storage/PromptStore.hpp>
 #include <storage/SessionStore.hpp>
 #include <storage/TaskStore.hpp>
 #include <storage/ToolStore.hpp>
 #include <storage/UsageStore.hpp>
-#include <service/TaskScheduler.hpp>
+#include <util/CommonUtil.hpp>
+#include <util/HttpTrace.hpp>
+#include <util/HttpUtil.hpp>
+#include <util/Logger.hpp>
 
 using namespace insoulforge;
 using namespace drogon;
@@ -37,23 +38,18 @@ namespace {
         const auto value = req->getParameter(name);
         return value.empty() ? fallback : parseUInt64(value, fallback);
     }
-}
+} // namespace
 
 // ==================== LLM配置 ====================
 
-Task<> AdminController::getLLMConfigs(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+Task<> AdminController::getLLMConfigs(HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     const auto configs = ConfigStore::instance().getAllLLMConfigs();
     callback(HttpResponse::newHttpJsonResponse(configs));
     co_return;
 }
 
 Task<> AdminController::saveLLMConfig(
-    const HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+  const HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     const auto json = req->getJsonObject();
     if (!json || !json->isMember("name")) {
         Json::Value err;
@@ -111,10 +107,7 @@ Task<> AdminController::saveLLMConfig(
 
 // ==================== 提示词 ====================
 
-Task<> AdminController::getPrompts(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+Task<> AdminController::getPrompts(HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     const auto prompts = PromptStore::instance().getAllPrompts();
 
     Json::Value result;
@@ -125,10 +118,7 @@ Task<> AdminController::getPrompts(
     co_return;
 }
 
-Task<> AdminController::savePrompt(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+Task<> AdminController::savePrompt(HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     auto json = req->getJsonObject();
     if (!json || !json->isMember("key") || !json->isMember("content")) {
         Json::Value err;
@@ -142,8 +132,8 @@ Task<> AdminController::savePrompt(
     std::string description = json->isMember("description") ? (*json)["description"].asString() : "";
 
     // 防护: router 提示词的 JSON 格式示例若含双花括号(fmt 转义残留/旧页面缓存内容),模型会照抄导致解析失败
-    if ((key == "router_system" || key == "router_private_system")
-        && (content.find("{{") != std::string::npos || content.find("}}") != std::string::npos)) {
+    if ((key == "router_system" || key == "router_private_system") &&
+        (content.find("{{") != std::string::npos || content.find("}}") != std::string::npos)) {
         Json::Value err;
         err["success"] = false;
         err["error"] = "提示词包含双花括号{{ }}，JSON 格式示例应为单花括号，请刷新页面后重试";
@@ -163,10 +153,7 @@ Task<> AdminController::savePrompt(
 
 // ==================== 运行日志 ====================
 
-Task<> AdminController::getLogs(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+Task<> AdminController::getLogs(HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     LogQuery query;
 
     // 线上参数沿用 "groupId"（内部语义为 sessionId）
@@ -218,10 +205,7 @@ Task<> AdminController::getLogs(
 
 // ==================== HTTP 请求调试 ====================
 
-Task<> AdminController::getHttpTraces(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+Task<> AdminController::getHttpTraces(HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     const auto afterId = parseQueryUInt64(req, "afterId");
     const auto limit = std::clamp<size_t>(parseQueryUInt64(req, "limit", 50), 1, 500);
 
@@ -251,9 +235,7 @@ Task<> AdminController::getHttpTraces(
 }
 
 Task<> AdminController::clearHttpTraces(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     HttpTrace::instance().clear();
     Json::Value resp;
     resp["success"] = true;
@@ -263,16 +245,14 @@ Task<> AdminController::clearHttpTraces(
 
 // ==================== 用量统计 ====================
 
-Task<> AdminController::getUsage(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+Task<> AdminController::getUsage(HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     int days = 30;
     if (const std::string p = req->getParameter("days"); !p.empty()) {
         // 与 stoi 行为一致：跳过前导空白，解析失败时保留默认值
         const auto *begin = p.data();
         const auto *end = p.data() + p.size();
-        while (begin < end && (*begin == ' ' || *begin == '\t')) ++begin;
+        while (begin < end && (*begin == ' ' || *begin == '\t'))
+            ++begin;
         std::from_chars(begin, end, days);
     }
     days = std::clamp(days, 1, 365);
@@ -285,14 +265,11 @@ Task<> AdminController::getUsage(
 
 // ==================== 运行信息 ====================
 
-Task<> AdminController::getSystemInfo(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+Task<> AdminController::getSystemInfo(HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     const auto now = std::chrono::system_clock::now();
     const auto uptimeSeconds = std::chrono::duration_cast<std::chrono::seconds>(now - g_processStartTime).count();
-    const auto startEpoch = std::chrono::duration_cast<std::chrono::seconds>(g_processStartTime.time_since_epoch()).
-            count();
+    const auto startEpoch =
+      std::chrono::duration_cast<std::chrono::seconds>(g_processStartTime.time_since_epoch()).count();
 
     Json::Value resp;
     resp["startTime"] = startEpoch;
@@ -301,20 +278,14 @@ Task<> AdminController::getSystemInfo(
     co_return;
 }
 
-Task<> AdminController::getBotStatus(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+Task<> AdminController::getBotStatus(HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     Json::Value resp;
     resp["running"] = AgentSystem::instance().isRunning();
     callback(HttpResponse::newHttpJsonResponse(resp));
     co_return;
 }
 
-Task<> AdminController::setBotStatus(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+Task<> AdminController::setBotStatus(HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     const auto json = req->getJsonObject();
     if (!json || !json->isMember("running") || !(*json)["running"].isBool()) {
         Json::Value err;
@@ -338,18 +309,13 @@ Task<> AdminController::setBotStatus(
 
 // ==================== 表情包库（QQ 收藏表情，以实际收藏为基准） ====================
 
-Task<> AdminController::getEmojis(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+Task<> AdminController::getEmojis(HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     callback(HttpResponse::newHttpJsonResponse(co_await AgentToolManager::fetchFavoriteEmojis()));
     co_return;
 }
 
 Task<> AdminController::updateEmojiDesc(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     auto json = req->getJsonObject();
     if (!json || !json->isMember("res_id") || !json->isMember("desc")) {
         Json::Value err;
@@ -360,9 +326,8 @@ Task<> AdminController::updateEmojiDesc(
 
     const std::string resId = (*json)["res_id"].asString();
     const std::string desc = (*json)["desc"].asString();
-    if (!co_await OneBotClient::setCustomFaceDesc(
-            json->isMember("emoji_id") ? (*json)["emoji_id"].asString() : "0",
-            resId, json->isMember("md5") ? (*json)["md5"].asString() : "", desc)) {
+    if (!co_await OneBotClient::setCustomFaceDesc(json->isMember("emoji_id") ? (*json)["emoji_id"].asString() : "0",
+          resId, json->isMember("md5") ? (*json)["md5"].asString() : "", desc)) {
         Json::Value err;
         err["error"] = "修改表情描述失败，请确认 QQ 客户端在线";
         callback(HttpResponse::newHttpJsonResponse(err));
@@ -370,8 +335,7 @@ Task<> AdminController::updateEmojiDesc(
     }
 
     AgentToolManager::invalidateFavoriteEmojiCache();
-    spdlog::info("[Admin] 已修改表情描述: res_id={} desc={}",
-                 resId, desc);
+    spdlog::info("[Admin] 已修改表情描述: res_id={} desc={}", resId, desc);
 
     Json::Value respJson2;
     respJson2["success"] = true;
@@ -382,10 +346,7 @@ Task<> AdminController::updateEmojiDesc(
 
 // ==================== 管理员 ====================
 
-Task<> AdminController::getAdmins(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+Task<> AdminController::getAdmins(HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     const auto admins = AdminStore::instance().getAdmins();
 
     Json::Value result(Json::arrayValue);
@@ -398,10 +359,7 @@ Task<> AdminController::getAdmins(
     co_return;
 }
 
-Task<> AdminController::addAdmin(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+Task<> AdminController::addAdmin(HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     const auto json = req->getJsonObject();
     if (!json || !json->isMember("qq")) {
         Json::Value err;
@@ -421,10 +379,7 @@ Task<> AdminController::addAdmin(
 }
 
 Task<> AdminController::removeAdmin(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &qq
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback, const std::string &qq) const {
     const uint64_t qqNum = std::stoull(qq);
     AdminStore::instance().removeAdmin(qqNum);
 
@@ -437,10 +392,7 @@ Task<> AdminController::removeAdmin(
 
 // ==================== 启用群 ====================
 
-Task<> AdminController::getGroups(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+Task<> AdminController::getGroups(HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     auto groups = SessionStore::instance().getAllSessionsWithStatus();
 
     Json::Value result(Json::arrayValue);
@@ -462,10 +414,7 @@ Task<> AdminController::getGroups(
     co_return;
 }
 
-Task<> AdminController::enableSession(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+Task<> AdminController::enableSession(HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     auto json = req->getJsonObject();
     if (!json || (!json->isMember("sessionId") && !json->isMember("userId"))) {
         Json::Value err;
@@ -509,10 +458,7 @@ Task<> AdminController::enableSession(
 }
 
 Task<> AdminController::toggleSession(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &sessionId
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback, const std::string &sessionId) const {
     const uint64_t gid = std::stoull(sessionId);
     SessionStore::instance().toggleSessionStatus(gid);
 
@@ -524,10 +470,7 @@ Task<> AdminController::toggleSession(
 }
 
 Task<> AdminController::removeSession(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &sessionId
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback, const std::string &sessionId) const {
     const uint64_t gid = std::stoull(sessionId);
     SessionStore::instance().disableSession(gid);
 
@@ -539,10 +482,7 @@ Task<> AdminController::removeSession(
 }
 
 Task<> AdminController::refreshSessionName(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &sessionId
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback, const std::string &sessionId) const {
     const uint64_t gid = std::stoull(sessionId);
     const auto groupName = co_await MessageService::fetchAndUpdateSessionName(gid);
 
@@ -554,9 +494,7 @@ Task<> AdminController::refreshSessionName(
 }
 
 Task<> AdminController::refreshAllSessionNames(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     auto groups = SessionStore::instance().getAllSessionsWithStatus();
 
     for (const auto &[sessionId, groupName, enabled, messageCount]: groups) {
@@ -573,9 +511,7 @@ Task<> AdminController::refreshAllSessionNames(
 // ==================== 聊天记录 ====================
 
 Task<> AdminController::getChatSessions(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     auto groups = SessionStore::instance().getSessionsWithChatRecords();
 
     Json::Value result(Json::arrayValue);
@@ -596,10 +532,7 @@ Task<> AdminController::getChatSessions(
 }
 
 Task<> AdminController::getChatRecords(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &sessionId
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback, const std::string &sessionId) const {
     const uint64_t gid = std::stoull(sessionId);
 
     // 支持limit参数
@@ -622,10 +555,7 @@ Task<> AdminController::getChatRecords(
 }
 
 Task<> AdminController::updateChatRecord(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &recordId
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback, const std::string &recordId) const {
     const auto json = req->getJsonObject();
     if (!json || !json->isMember("content")) {
         Json::Value err;
@@ -646,10 +576,7 @@ Task<> AdminController::updateChatRecord(
 }
 
 Task<> AdminController::deleteChatRecord(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &recordId
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback, const std::string &recordId) const {
     const int id = std::stoi(recordId);
     ChatRecordStore::instance().deleteChatRecord(id);
 
@@ -661,10 +588,7 @@ Task<> AdminController::deleteChatRecord(
 }
 
 Task<> AdminController::clearSessionChatRecords(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &sessionId
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback, const std::string &sessionId) const {
     const uint64_t gid = std::stoull(sessionId);
     ChatRecordStore::instance().clearSessionChatRecords(gid);
 
@@ -675,54 +599,65 @@ Task<> AdminController::clearSessionChatRecords(
     co_return;
 }
 
-// ==================== 知识库配置 ====================
+// ==================== 长期记忆 ====================
 
-Task<> AdminController::getKBConfig(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
-    const auto config = ConfigStore::instance().getKBConfig();
-    callback(HttpResponse::newHttpJsonResponse(config));
-    co_return;
-}
-
-Task<> AdminController::saveKBConfig(
-    const HttpRequestPtr req,
-    const std::function<void(const HttpResponsePtr &)> callback
-) const {
-    const auto json = req->getJsonObject();
-    if (!json) {
-        Json::Value err;
-        err["error"] = "缺少配置数据";
-        callback(HttpResponse::newHttpJsonResponse(err));
-        co_return;
+Task<> AdminController::getLongTermMemories(
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
+    uint64_t sessionId = 0;
+    if (const std::string sessionParam = req->getParameter("sessionId"); !sessionParam.empty()) {
+        sessionId = std::stoull(sessionParam);
     }
 
-    ConfigStore::instance().saveKBConfig(*json);
+    int limit = 20;
+    if (const std::string limitParam = req->getParameter("limit"); !limitParam.empty()) {
+        limit = std::clamp(std::stoi(limitParam), 1, 100);
+    }
 
-    // 更新内存中的配置
-    auto &kbConfig = Config::instance().knowledgeBase;
-    kbConfig.enabled = json->get("enabled", true).asBool();
-    kbConfig.apiKey = json->get("apiKey", "").asString();
-    kbConfig.baseUrl = json->get("baseUrl", "").asString();
-    kbConfig.knowledgeDatasetId = json->get("knowledgeDatasetId", "").asString();
-    kbConfig.memoryDatasetId = json->get("memoryDatasetId", "").asString();
-    kbConfig.memoryDocumentId = json->get("memoryDocumentId", "").asString();
+    int offset = 0;
+    if (const std::string offsetParam = req->getParameter("offset"); !offsetParam.empty()) {
+        offset = std::max(0, std::stoi(offsetParam));
+    }
+
+    auto &store = LongTermMemoryStore::instance();
+    Json::Value items(Json::arrayValue);
+    for (const auto &[id, groupId, content, createdAt]: store.listMemories(sessionId, limit, offset)) {
+        Json::Value item;
+        item["id"] = id;
+        // 会话 ID（私聊带标志位）可能超出 JS 安全整数范围，统一以字符串输出
+        item["groupId"] = std::to_string(groupId);
+        item["content"] = content;
+        item["createdAt"] = createdAt;
+        items.append(item);
+    }
 
     Json::Value resp;
-    resp["success"] = true;
-    resp["message"] = "知识库配置已保存";
+    resp["items"] = items;
+    resp["total"] = static_cast<Json::Int64>(store.countMemories(sessionId));
     callback(HttpResponse::newHttpJsonResponse(resp));
     co_return;
 }
 
+Task<> AdminController::deleteLongTermMemory(
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback, const std::string &id) const {
+    if (!LongTermMemoryStore::instance().deleteMemory(std::stoll(id))) {
+        Json::Value err;
+        err["error"] = "记忆不存在或已被删除";
+        callback(HttpResponse::newHttpJsonResponse(err));
+        co_return;
+    }
+
+    Json::Value resp;
+    resp["success"] = true;
+    resp["message"] = "长期记忆已删除";
+    callback(HttpResponse::newHttpJsonResponse(resp));
+    co_return;
+}
+
+
 // ==================== 群记忆 ====================
 
 Task<> AdminController::getSessionMemory(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &sessionId
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback, const std::string &sessionId) const {
     const uint64_t gid = std::stoull(sessionId);
     const std::string memory = MemoryStore::instance().getShortTermMemory(gid);
 
@@ -734,10 +669,7 @@ Task<> AdminController::getSessionMemory(
 }
 
 Task<> AdminController::updateSessionMemory(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &sessionId
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback, const std::string &sessionId) const {
     const auto json = req->getJsonObject();
     if (!json || !json->isMember("memory")) {
         Json::Value err;
@@ -760,14 +692,11 @@ Task<> AdminController::updateSessionMemory(
 // ==================== 好感度 ====================
 
 Task<> AdminController::getSessionAffinity(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &sessionId
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback, const std::string &sessionId) const {
     const uint64_t gid = std::stoull(sessionId);
     auto affinityMap = AffinityStore::instance().getAffinityMap(gid);
 
-    std::vector<std::pair<uint64_t, int> > entries(affinityMap.begin(), affinityMap.end());
+    std::vector<std::pair<uint64_t, int>> entries(affinityMap.begin(), affinityMap.end());
     std::ranges::sort(entries, [](const auto &a, const auto &b) { return a.second > b.second; });
 
     Json::Value list(Json::arrayValue);
@@ -800,10 +729,7 @@ Task<> AdminController::getSessionAffinity(
 // ==================== 定时任务 ====================
 
 Task<> AdminController::getScheduledTasks(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &sessionId
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback, const std::string &sessionId) const {
     const uint64_t sid = parseUInt64(sessionId);
     if (sid == 0) {
         Json::Value err;
@@ -830,10 +756,7 @@ Task<> AdminController::getScheduledTasks(
 }
 
 Task<> AdminController::cancelScheduledTask(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &id
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback, const std::string &id) const {
     Json::Value resp;
     const uint64_t taskId = parseUInt64(id);
     if (taskId == 0) {
@@ -858,18 +781,14 @@ Task<> AdminController::cancelScheduledTask(
 // ==================== 记忆配置 ====================
 
 Task<> AdminController::getMemoryConfig(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     const auto config = ConfigStore::instance().getMemoryConfig();
     callback(HttpResponse::newHttpJsonResponse(config));
     co_return;
 }
 
 Task<> AdminController::saveMemoryConfig(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     const auto json = req->getJsonObject();
     if (!json) {
         Json::Value err;
@@ -882,8 +801,8 @@ Task<> AdminController::saveMemoryConfig(
     if (!json->isMember("windowTriggerCount") || (*json)["windowTriggerCount"].asInt() <= 0) {
         (*json)["windowTriggerCount"] = Config::instance().windowTriggerCount;
     }
-    if (!json->isMember("windowKeepCount") || (*json)["windowKeepCount"].asInt() <= 0
-        || (*json)["windowKeepCount"].asInt() >= (*json)["windowTriggerCount"].asInt()) {
+    if (!json->isMember("windowKeepCount") || (*json)["windowKeepCount"].asInt() <= 0 ||
+        (*json)["windowKeepCount"].asInt() >= (*json)["windowTriggerCount"].asInt()) {
         (*json)["windowKeepCount"] = (*json)["windowTriggerCount"].asInt() / 2;
     }
     if (!json->isMember("memoryExtractMaxTokens") || (*json)["memoryExtractMaxTokens"].asInt() <= 0) {
@@ -893,8 +812,8 @@ Task<> AdminController::saveMemoryConfig(
     if (!json->isMember("routerWindowTriggerCount") || (*json)["routerWindowTriggerCount"].asInt() <= 0) {
         (*json)["routerWindowTriggerCount"] = Config::instance().routerWindowTriggerCount;
     }
-    if (!json->isMember("routerWindowKeepCount") || (*json)["routerWindowKeepCount"].asInt() <= 0
-        || (*json)["routerWindowKeepCount"].asInt() >= (*json)["routerWindowTriggerCount"].asInt()) {
+    if (!json->isMember("routerWindowKeepCount") || (*json)["routerWindowKeepCount"].asInt() <= 0 ||
+        (*json)["routerWindowKeepCount"].asInt() >= (*json)["routerWindowTriggerCount"].asInt()) {
         (*json)["routerWindowKeepCount"] = (*json)["routerWindowTriggerCount"].asInt() / 2;
     }
 
@@ -919,19 +838,13 @@ Task<> AdminController::saveMemoryConfig(
 
 // ==================== QQ Bot 配置 ====================
 
-Task<> AdminController::getQQConfig(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+Task<> AdminController::getQQConfig(HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     const auto config = ConfigStore::instance().getQQConfig();
     callback(HttpResponse::newHttpJsonResponse(config));
     co_return;
 }
 
-Task<> AdminController::saveQQConfig(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+Task<> AdminController::saveQQConfig(HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     const auto json = req->getJsonObject();
     if (!json) {
         Json::Value err;
@@ -962,9 +875,7 @@ Task<> AdminController::saveQQConfig(
 // ==================== 自定义工具 ====================
 
 Task<> AdminController::getCustomTools(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     const auto tools = ToolStore::instance().getCustomTools();
 
     Json::Value result(Json::arrayValue);
@@ -985,10 +896,7 @@ Task<> AdminController::getCustomTools(
     co_return;
 }
 
-Task<> AdminController::addCustomTool(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+Task<> AdminController::addCustomTool(HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     const auto json = req->getJsonObject();
     if (!json || !json->isMember("name") || !json->isMember("executorType") || !json->isMember("executorConfig")) {
         Json::Value err;
@@ -1032,10 +940,7 @@ Task<> AdminController::addCustomTool(
 }
 
 Task<> AdminController::updateCustomTool(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &id
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback, const std::string &id) const {
     const auto json = req->getJsonObject();
     if (!json || !json->isMember("name") || !json->isMember("executorType") || !json->isMember("executorConfig")) {
         Json::Value err;
@@ -1068,10 +973,7 @@ Task<> AdminController::updateCustomTool(
 }
 
 Task<> AdminController::deleteCustomTool(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &id
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback, const std::string &id) const {
     const int toolId = std::stoi(id);
     ToolStore::instance().deleteCustomTool(toolId);
 
@@ -1086,10 +988,7 @@ Task<> AdminController::deleteCustomTool(
 }
 
 Task<> AdminController::toggleCustomTool(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &id
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback, const std::string &id) const {
     const int toolId = std::stoi(id);
     ToolStore::instance().toggleCustomTool(toolId);
 
@@ -1104,9 +1003,7 @@ Task<> AdminController::toggleCustomTool(
 }
 
 Task<> AdminController::reloadCustomTools(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     AgentToolManager::registerCustomTools();
 
     Json::Value resp;
@@ -1117,9 +1014,7 @@ Task<> AdminController::reloadCustomTools(
 }
 
 Task<> AdminController::testCustomTool(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     auto json = req->getJsonObject();
     if (!json) {
         Json::Value err;
@@ -1141,8 +1036,7 @@ Task<> AdminController::testCustomTool(
         // 从数据库加载工具
         int toolId = (*json)["toolId"].asInt();
         auto tools = ToolStore::instance().getCustomTools();
-        auto it =
-                std::ranges::find_if(tools, [toolId](const auto &t) { return t.id == toolId; });
+        auto it = std::ranges::find_if(tools, [toolId](const auto &t) { return t.id == toolId; });
         if (it == tools.end()) {
             Json::Value err;
             err["success"] = false;
@@ -1181,9 +1075,7 @@ Task<> AdminController::testCustomTool(
 // ==================== 自定义工具配置 ====================
 
 Task<> AdminController::getCustomToolConfig(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback
-) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     Json::Value resp;
     resp["pythonPath"] = ToolStore::instance().getCustomToolPython();
     callback(HttpResponse::newHttpJsonResponse(resp));
@@ -1191,9 +1083,7 @@ Task<> AdminController::getCustomToolConfig(
 }
 
 Task<> AdminController::saveCustomToolConfig(
-    const HttpRequestPtr req,
-    const std::function<void(const HttpResponsePtr &)> callback
-) const {
+  const HttpRequestPtr req, const std::function<void(const HttpResponsePtr &)> callback) const {
     const auto json = req->getJsonObject();
     if (!json || !json->isMember("pythonPath")) {
         Json::Value err;
@@ -1216,14 +1106,11 @@ Task<> AdminController::saveCustomToolConfig(
 // ============== 自定义工具导入导出 ==============
 
 Task<> AdminController::exportCustomTool(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback,
-    const std::string &id) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback, const std::string &id) const {
     int toolId = std::stoi(id);
     auto tools = ToolStore::instance().getCustomTools();
 
-    auto it = std::ranges::find_if(tools,
-                                   [toolId](const ToolStore::CustomTool &t) { return t.id == toolId; });
+    auto it = std::ranges::find_if(tools, [toolId](const ToolStore::CustomTool &t) { return t.id == toolId; });
 
     if (it == tools.end()) {
         Json::Value resp;
@@ -1278,8 +1165,7 @@ Task<> AdminController::exportCustomTool(
 }
 
 Task<> AdminController::importCustomTool(
-    HttpRequestPtr req,
-    std::function<void(const HttpResponsePtr &)> callback) const {
+  HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     auto json = req->getJsonObject();
     if (!json) {
         Json::Value resp;

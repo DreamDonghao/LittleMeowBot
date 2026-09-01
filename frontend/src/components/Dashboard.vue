@@ -104,9 +104,6 @@ const adminCount: Ref<number> = ref(0)
 const emojiCount: Ref<number> = ref(0)
 const toolCount: Ref<number> = ref(0)
 
-// ---- 知识库 ----
-const kbEnabled: Ref<boolean> = ref(false)
-
 const botOnline = computed(() => !!qqConfig?.qqHttpHost)
 
 const fmtNum = (n: number): string => n.toLocaleString()
@@ -229,15 +226,6 @@ const loadTools = async (): Promise<void> => {
   }
 }
 
-const loadKB = async (): Promise<void> => {
-  try {
-    const resp = await fetch('/admin/api/kb-config')
-    const data = await resp.json()
-    kbEnabled.value = data.enabled || false
-  } catch { /* ignore */
-  }
-}
-
 let wsMessageHandler: ((e: MessageEvent) => void) | null = null
 
 onMounted(() => {
@@ -249,7 +237,6 @@ onMounted(() => {
   loadAdmins()
   loadEmojis()
   loadTools()
-  loadKB()
 
   uptimeTimer = window.setInterval(() => {
     nowTick.value = Date.now()
@@ -306,10 +293,6 @@ onUnmounted(() => {
       <div class="status-item">
         <span :class="botOnline ? 'dot-green' : 'dot-gray'" class="status-dot"></span>
         <span>{{ botOnline ? 'OneBot 已配置' : 'OneBot 未配置' }}</span>
-      </div>
-      <div class="status-item">
-        <span :class="kbEnabled ? 'dot-green' : 'dot-gray'" class="status-dot"></span>
-        <span>{{ kbEnabled ? '知识库已启用' : '知识库已禁用' }}</span>
       </div>
     </div>
 

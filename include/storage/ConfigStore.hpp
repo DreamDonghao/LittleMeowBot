@@ -2,7 +2,7 @@
 /// @brief 配置存储
 /// @author donghao
 /// @date 2026-08-30
-/// @details 表：llm_config（多行 LLM 配置）、settings（KB/QQ/记忆配置以 JSON 键值存储）
+/// @details 表：llm_config（多行 LLM 配置）、settings（QQ/记忆配置以 JSON 键值存储）
 
 #pragma once
 #include <json/json.h>
@@ -25,12 +25,8 @@ namespace insoulforge {
         [[nodiscard]] Json::Value getAllLLMConfigs() const;
 
         // ============================================================
-        //              知识库 / QQ Bot / 记忆 配置（settings 存储）
+        //              QQ Bot / 记忆 配置（settings 存储）
         // ============================================================
-
-        [[nodiscard]] Json::Value getKBConfig() const;
-
-        void saveKBConfig(const Json::Value &config) const;
 
         [[nodiscard]] Json::Value getQQConfig() const;
 
