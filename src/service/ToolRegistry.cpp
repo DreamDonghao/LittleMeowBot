@@ -106,7 +106,7 @@ namespace insoulforge {
         auto &ctx = currentToolContext();
         ctx.sessionId = sessionId;
         if (sessionId != 0) {
-            ctx.groupName = SessionStore::instance().getSessionName(sessionId);
+            ctx.groupName = SessionStore::getSessionName(sessionId);
         }
 
         // 查找所有分类

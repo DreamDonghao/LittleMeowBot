@@ -41,9 +41,6 @@ namespace insoulforge::OneBotClient {
             co_return *json;
         }
 
-    } // namespace
-
-    namespace {
         /// @brief 发送消息的公共实现（群聊/私聊共用，仅 API 名与目标字段不同）
         drogon::Task<std::optional<uint64_t>> sendMessage(const std::string &api, const std::string &targetKey,
           const Json::UInt64 targetId, const std::string &message, const std::optional<uint64_t> sessionId) {

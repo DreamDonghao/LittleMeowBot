@@ -10,19 +10,13 @@
 
 namespace insoulforge {
     /// @brief 管理员存储
-    class AdminStore {
-    public:
-        static AdminStore &instance();
+    namespace AdminStore {
+        [[nodiscard]] bool isAdmin(uint64_t qqNumber);
 
-        [[nodiscard]] bool isAdmin(uint64_t qqNumber) const;
+        void addAdmin(uint64_t qqNumber);
 
-        void addAdmin(uint64_t qqNumber) const;
+        void removeAdmin(uint64_t qqNumber);
 
-        void removeAdmin(uint64_t qqNumber) const;
-
-        [[nodiscard]] std::vector<uint64_t> getAdmins() const;
-
-    private:
-        AdminStore() = default;
-    };
+        [[nodiscard]] std::vector<uint64_t> getAdmins();
+    } // namespace AdminStore
 } // namespace insoulforge

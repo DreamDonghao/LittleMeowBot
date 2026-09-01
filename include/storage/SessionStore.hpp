@@ -18,40 +18,34 @@ namespace insoulforge {
     };
 
     /// @brief 会话（群）配置与启用状态存储
-    class SessionStore {
-    public:
-        static SessionStore &instance();
+    namespace SessionStore {
+        [[nodiscard]] SessionConfig getSessionConfig(uint64_t sessionId);
 
-        [[nodiscard]] SessionConfig getSessionConfig(uint64_t sessionId) const;
+        void saveSessionConfig(uint64_t sessionId, const SessionConfig &config);
 
-        void saveSessionConfig(uint64_t sessionId, const SessionConfig &config) const;
+        void incrementMessageCount(uint64_t sessionId, size_t charCount);
 
-        void incrementMessageCount(uint64_t sessionId, size_t charCount) const;
+        [[nodiscard]] bool hasSessionConfig(uint64_t sessionId);
 
-        [[nodiscard]] bool hasSessionConfig(uint64_t sessionId) const;
+        [[nodiscard]] bool isSessionEnabled(uint64_t sessionId);
 
-        [[nodiscard]] bool isSessionEnabled(uint64_t sessionId) const;
+        void enableSession(uint64_t sessionId);
 
-        void enableSession(uint64_t sessionId) const;
+        void disableSession(uint64_t sessionId);
 
-        void disableSession(uint64_t sessionId) const;
-
-        [[nodiscard]] std::vector<uint64_t> getEnabledGroups() const;
+        [[nodiscard]] std::vector<uint64_t> getEnabledGroups();
 
         /// @brief 获取所有有聊天记录的群（用于聊天记录页面）
-        [[nodiscard]] std::vector<std::tuple<uint64_t, std::string, int>> getSessionsWithChatRecords() const;
+        [[nodiscard]] std::vector<std::tuple<uint64_t, std::string, int>> getSessionsWithChatRecords();
 
         /// @brief 获取所有群（包括已禁用的）
-        [[nodiscard]] std::vector<std::tuple<uint64_t, std::string, bool, int>> getAllSessionsWithStatus() const;
+        [[nodiscard]] std::vector<std::tuple<uint64_t, std::string, bool, int>> getAllSessionsWithStatus();
 
         /// @brief 切换群启用状态
-        void toggleSessionStatus(uint64_t sessionId) const;
+        void toggleSessionStatus(uint64_t sessionId);
 
-        void updateSessionName(uint64_t sessionId, const std::string &name) const;
+        void updateSessionName(uint64_t sessionId, const std::string &name);
 
-        [[nodiscard]] std::string getSessionName(uint64_t sessionId) const;
-
-    private:
-        SessionStore() = default;
-    };
+        [[nodiscard]] std::string getSessionName(uint64_t sessionId);
+    } // namespace SessionStore
 } // namespace insoulforge

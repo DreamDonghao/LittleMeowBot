@@ -103,7 +103,7 @@ insoulforge/
 │   ├── config/               # Config：从数据库加载全部配置的单例
 │   ├── model/                # 数据模型：QQMessage
 │   ├── service/              # 服务层：MessageService / MemoryService / LlmClient / OneBotClient / LongTermMemory / ToolRegistry / ChatRecordManager / MemoryManager / SessionConfigManager 等
-│   ├── storage/              # SQLite 存储：Database / 各领域 Store（Session / ChatRecord / Memory / Affinity / Prompt / Admin / Config / Usage / Tool / Task）
+│   ├── storage/              # SQLite 存储：Database / 各领域存储命名空间（Session / ChatRecord / Memory / Affinity / Prompt / Admin / Config / Usage / Tool / Task）
 │   └── util/                 # Log / Http / CommonUtil
 ├── src/                      # 源文件（与 include/ 一一对应，入口 main.cpp）
 ├── frontend/                 # Vue 3 + Vite + TypeScript 管理后台

@@ -576,7 +576,7 @@ namespace insoulforge {
                 if (sessionId == 0)
                     co_return std::string("会话上下文缺失，无法查询定时任务");
                 const auto [sessionType, targetId] = QQMessage::parseSessionTarget(sessionId);
-                const auto tasks = TaskStore::instance().getPendingScheduledTasksByTarget(sessionType, targetId);
+                const auto tasks = TaskStore::getPendingScheduledTasksByTarget(sessionType, targetId);
                 if (tasks.empty()) {
                     co_return std::string("当前会话没有待触发的定时任务");
                 }
@@ -625,14 +625,13 @@ namespace insoulforge {
 
     void AgentToolManager::registerCustomTools() {
         auto &registry = ToolRegistry::instance();
-        const auto &toolStore = ToolStore::instance();
 
         // 先清除所有已注册的自定义工具
         registry.clearAllCustomTools();
 
 
         // 只注册启用的工具
-        const auto tools = toolStore.getEnabledCustomTools();
+        const auto tools = ToolStore::getEnabledCustomTools();
         int count = 0;
 
         for (const auto &tool: tools) {
@@ -686,7 +685,7 @@ namespace insoulforge {
         }
 
         // 获取配置的Python解释器路径
-        std::string pythonPath = ToolStore::instance().getCustomToolPython();
+        std::string pythonPath = ToolStore::getCustomToolPython();
 
         // 构建输入参数 JSON
         Json::StreamWriterBuilder writerBuilder;

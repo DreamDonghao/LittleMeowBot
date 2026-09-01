@@ -17,7 +17,7 @@ namespace insoulforge {
             co_return false;
         }
 
-        if (!LongTermMemoryStore::instance().addMemory(sessionId, content, *embedding)) {
+        if (!LongTermMemoryStore::addMemory(sessionId, content, *embedding)) {
             Logger::session(sessionId).error("长期记忆写入数据库失败");
             co_return false;
         }
@@ -34,7 +34,7 @@ namespace insoulforge {
             co_return std::nullopt;
         }
 
-        const auto rows = LongTermMemoryStore::instance().searchSimilar(sessionId, *embedding, topK);
+        const auto rows = LongTermMemoryStore::searchSimilar(sessionId, *embedding, topK);
         std::string result;
         for (const auto &memory: rows) {
             if (memory.similarity < 0.3f)

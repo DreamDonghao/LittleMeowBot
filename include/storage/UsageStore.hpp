@@ -10,21 +10,15 @@
 
 namespace insoulforge {
     /// @brief LLM 用量统计存储
-    class UsageStore {
-    public:
-        static UsageStore &instance();
-
+    namespace UsageStore {
         /// @brief 记录一次 LLM 调用用量
         void addUsageRecord(const std::string &role, const std::string &model, int promptTokens, int completionTokens,
-          int totalTokens, int cachedTokens) const;
+          int totalTokens, int cachedTokens);
 
         /// @brief 获取最近 N 天用量汇总（按角色、按天聚合）
-        [[nodiscard]] Json::Value getUsageSummary(int days) const;
+        [[nodiscard]] Json::Value getUsageSummary(int days);
 
         /// @brief 获取最近调用明细
-        [[nodiscard]] Json::Value getRecentUsage(int limit) const;
-
-    private:
-        UsageStore() = default;
-    };
+        [[nodiscard]] Json::Value getRecentUsage(int limit);
+    } // namespace UsageStore
 } // namespace insoulforge

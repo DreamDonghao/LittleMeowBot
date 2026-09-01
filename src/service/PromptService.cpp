@@ -8,7 +8,6 @@
 
 namespace insoulforge {
     void PromptService::initialize() {
-        auto &db = PromptStore::instance();
 
         // 定义默认提示词
         const struct {
@@ -169,17 +168,17 @@ reply 的场景：
 
         // 插入默认提示词（如果不存在）
         for (const auto &[key, content, desc]: defaultPrompts) {
-            if (!db.hasPrompt(key)) {
-                db.setPrompt(key, content, desc);
+            if (!PromptStore::hasPrompt(key)) {
+                PromptStore::setPrompt(key, content, desc);
                 spdlog::info("插入默认提示词: {}", key);
             }
         }
 
         // 自愈: 早期版本 router_system 默认值带 fmt 转义残留(双花括号)，模型照抄导致 JSON 解析失败。
         // 若库中内容仍含损坏标记(未被用户编辑修复过)，覆盖为修复后的默认值
-        if (const std::string stored = db.getPrompt("router_system", "");
+        if (const std::string stored = PromptStore::getPrompt("router_system", "");
           stored.find("不要其他内容）：\n{{") != std::string::npos) {
-            db.setPrompt("router_system", defaultPrompts[1].content, defaultPrompts[1].desc);
+            PromptStore::setPrompt("router_system", defaultPrompts[1].content, defaultPrompts[1].desc);
             spdlog::warn("已自愈 router_system 默认值中的双花括号残留");
         }
 
@@ -187,7 +186,7 @@ reply 的场景：
     }
 
     std::string PromptService::getPrompt(const std::string &key) {
-        std::string content = PromptStore::instance().getPrompt(key, "");
+        std::string content = PromptStore::getPrompt(key, "");
         // 替换 {botName} 占位符
         if (content.find("{botName}") != std::string::npos) {
             const std::string &botName = Config::instance().botName;
@@ -201,7 +200,7 @@ reply 的场景：
     }
 
     void PromptService::setPrompt(const std::string &key, const std::string &content) {
-        PromptStore::instance().setPrompt(key, content);
+        PromptStore::setPrompt(key, content);
         spdlog::info("提示词已更新: {}", key);
     }
 
@@ -212,4 +211,4 @@ reply 的场景：
     std::string PromptService::getRouterSystemPrompt() { return getPrompt("router_system"); }
 
     std::string PromptService::getRouterPrivateSystemPrompt() { return getPrompt("router_private_system"); }
-}
+} // namespace insoulforge

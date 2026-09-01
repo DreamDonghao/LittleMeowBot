@@ -234,7 +234,7 @@ namespace insoulforge {
             const auto olderRecords = records | std::views::take(olderCount);
             const auto recentRecords = records | std::views::drop(olderCount);
 
-            const auto affinityMap = AffinityStore::instance().getAffinityMap(chatRecords.getSessionId());
+            const auto affinityMap = AffinityStore::getAffinityMap(chatRecords.getSessionId());
 
             std::string context;
 

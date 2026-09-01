@@ -10,41 +10,30 @@
 
 namespace insoulforge {
     /// @brief 配置存储
-    class ConfigStore {
-    public:
-        static ConfigStore &instance();
-
+    namespace ConfigStore {
         // ============================================================
         //                      LLM 配置
         // ============================================================
 
-        [[nodiscard]] Json::Value getLLMConfig(const std::string &name) const;
+        [[nodiscard]] Json::Value getLLMConfig(const std::string &name);
 
-        void saveLLMConfig(const std::string &name, const Json::Value &config) const;
+        void saveLLMConfig(const std::string &name, const Json::Value &config);
 
-        [[nodiscard]] Json::Value getAllLLMConfigs() const;
+        [[nodiscard]] Json::Value getAllLLMConfigs();
 
         // ============================================================
         //              QQ Bot / 记忆 配置（settings 存储）
         // ============================================================
 
-        [[nodiscard]] Json::Value getQQConfig() const;
+        [[nodiscard]] Json::Value getQQConfig();
 
-        void saveQQConfig(const Json::Value &config) const;
+        void saveQQConfig(const Json::Value &config);
 
-        [[nodiscard]] Json::Value getMemoryConfig() const;
+        [[nodiscard]] Json::Value getMemoryConfig();
 
-        void saveMemoryConfig(const Json::Value &config) const;
+        void saveMemoryConfig(const Json::Value &config);
 
         /// @brief 首次启动时初始化默认 LLM 配置（已存在则跳过）
-        void initDefaults() const;
-
-    private:
-        ConfigStore() = default;
-
-        /// @brief 读取 settings 中的 JSON 配置键，不存在或解析失败时补齐默认值
-        [[nodiscard]] Json::Value loadConfigJson(const std::string &key, const Json::Value &defaults) const;
-
-        void saveConfigJson(const std::string &key, const Json::Value &config) const;
-    };
+        void initDefaults();
+    } // namespace ConfigStore
 } // namespace insoulforge

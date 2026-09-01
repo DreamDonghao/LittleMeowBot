@@ -118,7 +118,7 @@ namespace insoulforge {
     }
 
     int64_t TaskScheduler::schedule(TaskStore::ScheduledTask task) {
-        const int64_t id = TaskStore::instance().addScheduledTask(task);
+        const int64_t id = TaskStore::addScheduledTask(task);
 
         Entry entry;
         entry.task = std::move(task);
@@ -147,7 +147,7 @@ namespace insoulforge {
             std::lock_guard lock(m_mutex);
             m_cancelledIds.insert(id);
         }
-        const bool ok = TaskStore::instance().cancelScheduledTask(id);
+        const bool ok = TaskStore::cancelScheduledTask(id);
         if (!ok) {
             std::lock_guard lock(m_mutex);
             m_cancelledIds.erase(id);
@@ -156,7 +156,7 @@ namespace insoulforge {
     }
 
     void TaskScheduler::restorePendingTasks() {
-        auto tasks = TaskStore::instance().getPendingScheduledTasks();
+        auto tasks = TaskStore::getPendingScheduledTasks();
         size_t overdue = 0;
         {
             std::lock_guard lock(m_mutex);
@@ -229,14 +229,14 @@ namespace insoulforge {
         }
 
         if (!task.isDaily) {
-            TaskStore::instance().finishScheduledTask(task.id);
+            TaskStore::finishScheduledTask(task.id);
             co_return;
         }
 
         // 每日任务推进到下次触发重新入堆；更新以 pending 为条件，
         // 触发途中被取消（cancelledIds 已登记）则不再重排
         const std::time_t nextFire = nextDailyFire(task.remindTime);
-        if (!TaskStore::instance().rescheduleDailyTask(task.id, nextFire)) {
+        if (!TaskStore::rescheduleDailyTask(task.id, nextFire)) {
             co_return;
         }
         Entry entry;

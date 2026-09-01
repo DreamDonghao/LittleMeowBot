@@ -10,8 +10,7 @@
 
 namespace insoulforge {
     /// @brief 自定义工具存储
-    class ToolStore {
-    public:
+    namespace ToolStore {
         /// @brief 自定义工具结构
         struct CustomTool {
             int id = 0;
@@ -25,39 +24,31 @@ namespace insoulforge {
             bool enabled = true;
         };
 
-        static ToolStore &instance();
-
         /// @brief 获取所有自定义工具
-        [[nodiscard]] std::vector<CustomTool> getCustomTools() const;
+        [[nodiscard]] std::vector<CustomTool> getCustomTools();
 
         /// @brief 获取启用的自定义工具（供 AgentToolManager 使用）
-        [[nodiscard]] std::vector<CustomTool> getEnabledCustomTools() const;
+        [[nodiscard]] std::vector<CustomTool> getEnabledCustomTools();
 
         /// @brief 添加自定义工具
-        [[nodiscard]] int addCustomTool(const CustomTool &tool) const;
+        [[nodiscard]] int addCustomTool(const CustomTool &tool);
 
         /// @brief 更新自定义工具
-        void updateCustomTool(const CustomTool &tool) const;
+        void updateCustomTool(const CustomTool &tool);
 
         /// @brief 删除自定义工具
-        void deleteCustomTool(int id) const;
+        void deleteCustomTool(int id);
 
         /// @brief 切换自定义工具启用状态
-        void toggleCustomTool(int id) const;
+        void toggleCustomTool(int id);
 
         /// @brief 检查工具名是否已存在
-        [[nodiscard]] bool hasCustomTool(const std::string &name) const;
+        [[nodiscard]] bool hasCustomTool(const std::string &name);
 
         /// @brief 获取自定义工具Python解释器路径
-        [[nodiscard]] std::string getCustomToolPython() const;
+        [[nodiscard]] std::string getCustomToolPython();
 
         /// @brief 设置自定义工具Python解释器路径
-        void setCustomToolPython(const std::string &pythonPath) const;
-
-    private:
-        ToolStore() = default;
-
-        /// @brief 从数据库加载自定义工具（onlyEnabled 时仅加载启用的）
-        [[nodiscard]] std::vector<CustomTool> loadCustomTools(bool onlyEnabled) const;
-    };
+        void setCustomToolPython(const std::string &pythonPath);
+    } // namespace ToolStore
 } // namespace insoulforge

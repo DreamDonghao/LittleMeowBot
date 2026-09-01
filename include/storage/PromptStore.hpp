@@ -10,19 +10,13 @@
 
 namespace insoulforge {
     /// @brief 提示词存储
-    class PromptStore {
-    public:
-        static PromptStore &instance();
-
-        [[nodiscard]] std::string getPrompt(const std::string &key, const std::string &defaultValue = "") const;
+    namespace PromptStore {
+        [[nodiscard]] std::string getPrompt(const std::string &key, const std::string &defaultValue = "");
 
         void setPrompt(const std::string &key, const std::string &content, const std::string &description = "");
 
-        [[nodiscard]] bool hasPrompt(const std::string &key) const;
+        [[nodiscard]] bool hasPrompt(const std::string &key);
 
-        [[nodiscard]] std::unordered_map<std::string, std::string> getAllPrompts() const;
-
-    private:
-        PromptStore() = default;
-    };
+        [[nodiscard]] std::unordered_map<std::string, std::string> getAllPrompts();
+    } // namespace PromptStore
 } // namespace insoulforge

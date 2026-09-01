@@ -123,13 +123,13 @@ namespace insoulforge {
             const auto resp = co_await OneBotClient::getStrangerInfo(userId, sessionId);
             if (resp.isMember("data") && resp["data"].isMember("nickname")) {
                 name = resp["data"]["nickname"].asString();
-                SessionStore::instance().updateSessionName(sessionId, name);
+                SessionStore::updateSessionName(sessionId, name);
             }
         } else {
             const auto result = co_await OneBotClient::getGroupInfo(sessionId);
             if (result.isMember("data") && result["data"].isMember("group_name")) {
                 name = result["data"]["group_name"].asString();
-                SessionStore::instance().updateSessionName(sessionId, name);
+                SessionStore::updateSessionName(sessionId, name);
             }
         }
 

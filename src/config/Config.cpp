@@ -23,7 +23,7 @@ namespace insoulforge {
         /// @param modelParams 模型参数（可为 nullptr，表示不加载）
         void loadLLMConfig(
           const std::string_view name, LLMApiConfig &apiConfig, LLMModelParams *modelParams = nullptr) {
-            const auto cfg = ConfigStore::instance().getLLMConfig(std::string(name));
+            const auto cfg = ConfigStore::getLLMConfig(std::string(name));
             if (cfg.isNull())
                 return;
 
@@ -57,7 +57,7 @@ namespace insoulforge {
         loadLLMConfig("embedding", embedding);
 
         // 加载记忆配置
-        if (auto memCfg = ConfigStore::instance().getMemoryConfig(); !memCfg.isNull()) {
+        if (auto memCfg = ConfigStore::getMemoryConfig(); !memCfg.isNull()) {
             windowTriggerCount = memCfg["windowTriggerCount"].asInt();
             windowKeepCount = memCfg["windowKeepCount"].asInt();
             memoryExtractMaxTokens = memCfg["memoryExtractMaxTokens"].asInt();
@@ -82,7 +82,7 @@ namespace insoulforge {
         }
 
         // 加载 QQ Bot 配置
-        if (auto qqCfg = ConfigStore::instance().getQQConfig(); !qqCfg.isNull()) {
+        if (auto qqCfg = ConfigStore::getQQConfig(); !qqCfg.isNull()) {
             accessToken = trim(qqCfg["accessToken"].asString());
             selfQQNumber = qqCfg["selfQQNumber"].asInt64();
             qqHttpHost = trim(qqCfg["qqHttpHost"].asString());

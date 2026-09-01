@@ -164,7 +164,7 @@ namespace insoulforge {
             }
         }
 
-        UsageStore::instance().addUsageRecord(role, model, promptTokens, completionTokens, totalTokens, cachedTokens);
+        UsageStore::addUsageRecord(role, model, promptTokens, completionTokens, totalTokens, cachedTokens);
 
         Json::Value evt;
         evt["role"] = role;

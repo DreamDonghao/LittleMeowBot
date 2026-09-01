@@ -100,7 +100,7 @@ Task<> ProcessQQMessages::receiveMessages(const HttpRequestPtr req,
     }
 
     // 只处理启用的会话（从数据库读取）
-    if (!SessionStore::instance().isSessionEnabled(sessionId)) {
+    if (!SessionStore::isSessionEnabled(sessionId)) {
         co_return;
     }
 

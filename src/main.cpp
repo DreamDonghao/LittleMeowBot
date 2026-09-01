@@ -43,8 +43,8 @@ int main() {
         // 启动定时任务调度器
         TaskScheduler::instance().start();
 
-        spdlog::info("系统初始化完成 - 启用群: {}, 管理员: {}", std::ssize(SessionStore::instance().getEnabledGroups()),
-          std::ssize(AdminStore::instance().getAdmins()));
+        spdlog::info("系统初始化完成 - 启用群: {}, 管理员: {}", std::ssize(SessionStore::getEnabledGroups()),
+          std::ssize(AdminStore::getAdmins()));
 
         // 启动服务
         // 启动控制台命令线程

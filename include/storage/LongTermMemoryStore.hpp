@@ -26,30 +26,24 @@ namespace insoulforge {
     };
 
     /// @brief 长期记忆存储
-    class LongTermMemoryStore {
-    public:
-        static LongTermMemoryStore &instance();
-
+    namespace LongTermMemoryStore {
         /// @brief 写入一条长期记忆（embedding 以 float 数组存 BLOB）
         /// @return 是否写入成功
-        bool addMemory(uint64_t groupId, const std::string &content, const std::vector<float> &embedding) const;
+        bool addMemory(uint64_t groupId, const std::string &content, const std::vector<float> &embedding);
 
         /// @brief 暴力余弦检索 topK 条相似记忆
         /// @return (id, 内容, 余弦相似度)，按相似度降序；维度不匹配的行跳过
         [[nodiscard]] std::vector<SimilarMemory> searchSimilar(
-          uint64_t groupId, const std::vector<float> &query, int topK) const;
+          uint64_t groupId, const std::vector<float> &query, int topK);
 
         /// @brief 分页列出长期记忆（新→旧）；sessionId 为 0 时列出全部会话
-        [[nodiscard]] std::vector<LongTermMemoryEntry> listMemories(uint64_t sessionId, int limit, int offset) const;
+        [[nodiscard]] std::vector<LongTermMemoryEntry> listMemories(uint64_t sessionId, int limit, int offset);
 
         /// @brief 统计长期记忆条数；sessionId 为 0 时统计全部会话
-        [[nodiscard]] int64_t countMemories(uint64_t sessionId) const;
+        [[nodiscard]] int64_t countMemories(uint64_t sessionId);
 
         /// @brief 删除一条长期记忆
         /// @return 是否删除成功（id 不存在返回 false）
-        bool deleteMemory(int64_t id) const;
-
-    private:
-        LongTermMemoryStore() = default;
-    };
+        bool deleteMemory(int64_t id);
+    } // namespace LongTermMemoryStore
 } // namespace insoulforge

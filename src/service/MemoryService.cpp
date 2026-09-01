@@ -181,8 +181,7 @@ namespace insoulforge {
                     Logger::session(sessionId).warn("记忆召回: 向量化失败，跳过该条查询");
                     continue;
                 }
-                for (const auto &hit:
-                  LongTermMemoryStore::instance().searchSimilar(sessionId, *embedding, kRecallPerMemory)) {
+                for (const auto &hit: LongTermMemoryStore::searchSimilar(sessionId, *embedding, kRecallPerMemory)) {
                     if (hit.similarity < threshold)
                         continue;
                     auto [it, inserted] = recalled.try_emplace(hit.id, hit);
@@ -413,7 +412,7 @@ namespace insoulforge {
                     continue;
                 if (const int delta = std::clamp(deltaValue.asInt(), -kMaxAffinityDelta, kMaxAffinityDelta);
                   delta != 0) {
-                    AffinityStore::instance().adjustAffinity(sessionId, qqNumber, delta);
+                    AffinityStore::adjustAffinity(sessionId, qqNumber, delta);
                     ++applied;
                 }
             }
@@ -426,12 +425,11 @@ namespace insoulforge {
             co_return; // 该群正在提取中，等下一轮消息触发
         }
 
-        const auto &memoryStore = MemoryStore::instance();
         auto &config = Config::instance();
 
         // 1. 检查窗口是否超限
-        const uint64_t watermark = memoryStore.getMemoryWatermark(sessionId);
-        const size_t count = ChatRecordStore::instance().getChatRecordCountSince(sessionId, watermark);
+        const uint64_t watermark = MemoryStore::getMemoryWatermark(sessionId);
+        const size_t count = ChatRecordStore::getChatRecordCountSince(sessionId, watermark);
         if (count <= static_cast<size_t>(config.windowTriggerCount)) {
             co_return;
         }
@@ -441,7 +439,7 @@ namespace insoulforge {
             toDrop = 1; // 配置异常兜底（keep >= trigger），至少推进一条，保证触发循环能终止
         }
 
-        auto records = ChatRecordStore::instance().getChatRecordsSince(sessionId, watermark, 0);
+        auto records = ChatRecordStore::getChatRecordsSince(sessionId, watermark, 0);
         if (records.size() < toDrop) {
             Logger::session(sessionId).warn("窗口记录数与计数不一致，跳过本轮");
             co_return;
@@ -452,7 +450,7 @@ namespace insoulforge {
         const bool longTermEnabled = !config.embedding.baseUrl.empty() && !config.embedding.model.empty();
 
         // 2. 分批"提取 → 召回 → 归类"，逐批推进水位线
-        std::string existingMemory = memoryStore.getShortTermMemory(sessionId);
+        std::string existingMemory = MemoryStore::getShortTermMemory(sessionId);
         uint64_t chunkEndId = watermark;
         size_t processed = 0;
         int successChunks = 0;
@@ -478,7 +476,7 @@ namespace insoulforge {
 
             if (extracted->empty()) {
                 // 本批没有新记忆，直接推进水位线
-                memoryStore.updateShortTermMemoryWithWatermark(sessionId, existingMemory, chunkEndId);
+                MemoryStore::updateShortTermMemoryWithWatermark(sessionId, existingMemory, chunkEndId);
                 processed = batchEnd;
                 successChunks++;
                 continue;
@@ -497,7 +495,7 @@ namespace insoulforge {
 
             // 先写短期记忆+水位线（崩溃安全；长期记忆操作失败不阻塞记忆流程）
             existingMemory = joinLines(reconcile->shortTerm);
-            memoryStore.updateShortTermMemoryWithWatermark(sessionId, existingMemory, chunkEndId);
+            MemoryStore::updateShortTermMemoryWithWatermark(sessionId, existingMemory, chunkEndId);
             processed = batchEnd;
             successChunks++;
 
@@ -506,7 +504,7 @@ namespace insoulforge {
             for (const auto &entry: reconcile->longTerm) {
                 if (co_await LongTermMemory::addMemory(entry.content, sessionId)) {
                     for (const int64_t id: entry.sources)
-                        LongTermMemoryStore::instance().deleteMemory(id);
+                        LongTermMemoryStore::deleteMemory(id);
                     longTermAdded++;
                     longTermReplaced += static_cast<int>(entry.sources.size());
                 } else {

@@ -33,7 +33,7 @@ namespace insoulforge {
 
         spdlog::info("数据库已打开: {}", dbPath);
         SchemaMigrator::migrate(m_db);
-        ConfigStore::instance().initDefaults();
+        ConfigStore::initDefaults();
         spdlog::info("数据库初始化完成");
     }
 

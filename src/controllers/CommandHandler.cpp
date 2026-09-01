@@ -43,8 +43,7 @@ namespace insoulforge {
         uint64_t sessionId = message.getSessionId(); ///< 会话 ID（群聊=群号；私聊=用户QQ号|私聊标志位）
         uint64_t senderQQ = message.getSenderQQNumber();
 
-        auto &adminStore = AdminStore::instance();
-        bool hasPermission = adminStore.isAdmin(senderQQ);
+        bool hasPermission = AdminStore::isAdmin(senderQQ);
 
         std::string cmdStr;
         size_t pos = 0;
@@ -90,7 +89,7 @@ namespace insoulforge {
                        "/about - 关于本项目\n\n"
                        "注意: 管理命令仅限管理员使用";
         } else if (cmd == "/status" || cmd == "/状态") {
-            bool enabled = SessionStore::instance().isSessionEnabled(sessionId);
+            bool enabled = SessionStore::isSessionEnabled(sessionId);
             auto [allMesCount, allCharCount] = SessionConfigManager::getConfig(sessionId);
             response = fmt::format("会话 {} 状态:\n"
                                    "- 启用: {}\n"
@@ -98,7 +97,7 @@ namespace insoulforge {
                                    "- 字符数: {}",
               sessionId, enabled ? "是" : "否", allMesCount, allCharCount);
         } else if (cmd == "/admins" || cmd == "/管理员") {
-            auto admins = adminStore.getAdmins();
+            auto admins = AdminStore::getAdmins();
             response = "管理员列表:\n";
             for (auto qq: admins) {
                 response += fmt::format("- {}\n", qq);
@@ -123,7 +122,7 @@ namespace insoulforge {
                     co_return "无效的ID格式";
                 }
             }
-            SessionStore::instance().enableSession(targetSession);
+            SessionStore::enableSession(targetSession);
             response = fmt::format("已启用会话: {}", targetSession);
         } else if (cmd == "/disable" || cmd == "/禁用") {
             uint64_t targetSession = sessionId;
@@ -134,10 +133,10 @@ namespace insoulforge {
                     co_return "无效的ID格式";
                 }
             }
-            SessionStore::instance().disableSession(targetSession);
+            SessionStore::disableSession(targetSession);
             response = fmt::format("已禁用会话: {}", targetSession);
         } else if (cmd == "/groups" || cmd == "/群列表") {
-            auto groups = SessionStore::instance().getEnabledGroups();
+            auto groups = SessionStore::getEnabledGroups();
             response = "启用的群聊列表:\n";
             for (auto gid: groups) {
                 response += fmt::format("- {}\n", gid);
@@ -151,7 +150,7 @@ namespace insoulforge {
                 co_return "用法: /addadmin <QQ号>";
             }
             if (const auto qq = tryParseUInt64(arg)) {
-                adminStore.addAdmin(*qq);
+                AdminStore::addAdmin(*qq);
                 response = fmt::format("已添加管理员: {}", *qq);
             } else {
                 response = "无效的QQ号格式";
@@ -162,7 +161,7 @@ namespace insoulforge {
                 co_return "用法: /deladmin <QQ号>";
             }
             if (const auto qq = tryParseUInt64(arg)) {
-                adminStore.removeAdmin(*qq);
+                AdminStore::removeAdmin(*qq);
                 response = fmt::format("已移除管理员: {}", *qq);
             } else {
                 response = "无效的QQ号格式";

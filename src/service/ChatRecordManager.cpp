@@ -12,17 +12,17 @@ namespace insoulforge {
     uint64_t ChatRecordManager::getSessionId() const { return m_sessionId; }
 
     void ChatRecordManager::addUserRecord(const std::string &content) const {
-        ChatRecordStore::instance().addChatRecord(m_sessionId, "user", content);
+        ChatRecordStore::addChatRecord(m_sessionId, "user", content);
     }
 
     void ChatRecordManager::addAssistantRecord(const std::string &content) const {
-        ChatRecordStore::instance().addChatRecord(m_sessionId, "assistant", content);
+        ChatRecordStore::addChatRecord(m_sessionId, "assistant", content);
     }
 
     std::deque<Json::Value> ChatRecordManager::getRecords() const {
-        const uint64_t watermark = MemoryStore::instance().getMemoryWatermark(m_sessionId);
-        const auto records = ChatRecordStore::instance().getChatRecordsSince(
-          m_sessionId, watermark, Config::instance().windowTriggerCount);
+        const uint64_t watermark = MemoryStore::getMemoryWatermark(m_sessionId);
+        const auto records =
+          ChatRecordStore::getChatRecordsSince(m_sessionId, watermark, Config::instance().windowTriggerCount);
         return {records.begin(), records.end()};
     }
 } // namespace insoulforge

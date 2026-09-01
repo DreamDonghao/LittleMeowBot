@@ -6,18 +6,16 @@
 
 namespace insoulforge {
     SessionConfig SessionConfigManager::getConfig(const uint64_t sessionId) {
-        return SessionStore::instance().getSessionConfig(sessionId);
+        return SessionStore::getSessionConfig(sessionId);
     }
 
-    bool SessionConfigManager::contains(const uint64_t sessionId) {
-        return SessionStore::instance().hasSessionConfig(sessionId);
-    }
+    bool SessionConfigManager::contains(const uint64_t sessionId) { return SessionStore::hasSessionConfig(sessionId); }
 
     void SessionConfigManager::addConfig(const uint64_t sessionId, const SessionConfig &config) {
-        SessionStore::instance().saveSessionConfig(sessionId, config);
+        SessionStore::saveSessionConfig(sessionId, config);
     }
 
     void SessionConfigManager::incrementMessageCount(const uint64_t sessionId, const size_t charCount) {
-        SessionStore::instance().incrementMessageCount(sessionId, charCount);
+        SessionStore::incrementMessageCount(sessionId, charCount);
     }
 } // namespace insoulforge

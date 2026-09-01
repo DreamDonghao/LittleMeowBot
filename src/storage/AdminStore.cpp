@@ -9,45 +9,42 @@
 #include <storage/Statement.hpp>
 
 namespace insoulforge {
-    AdminStore &AdminStore::instance() {
-        static AdminStore store;
-        return store;
-    }
-
-    bool AdminStore::isAdmin(const uint64_t qqNumber) const {
-        const auto &db = Database::instance();
-        std::shared_lock lock(db.mutex());
-        const Statement stmt(db.handle(), "SELECT 1 FROM admins WHERE qq_number = ?");
-        stmt.bind(1, qqNumber);
-        return stmt.step();
-    }
-
-    void AdminStore::addAdmin(const uint64_t qqNumber) const {
-        const auto &db = Database::instance();
-        std::unique_lock lock(db.mutex());
-        const Statement stmt(db.handle(), "INSERT OR IGNORE INTO admins (qq_number) VALUES (?)");
-        stmt.bind(1, qqNumber);
-        stmt.exec();
-        spdlog::info("已添加管理员: {}", qqNumber);
-    }
-
-    void AdminStore::removeAdmin(const uint64_t qqNumber) const {
-        const auto &db = Database::instance();
-        std::unique_lock lock(db.mutex());
-        const Statement stmt(db.handle(), "DELETE FROM admins WHERE qq_number = ?");
-        stmt.bind(1, qqNumber);
-        stmt.exec();
-        spdlog::info("已移除管理员: {}", qqNumber);
-    }
-
-    std::vector<uint64_t> AdminStore::getAdmins() const {
-        const auto &db = Database::instance();
-        std::shared_lock lock(db.mutex());
-        std::vector<uint64_t> admins;
-        const Statement stmt(db.handle(), "SELECT qq_number FROM admins");
-        while (stmt.step()) {
-            admins.push_back(stmt.getInt64(0));
+    namespace AdminStore {
+        bool isAdmin(const uint64_t qqNumber) {
+            const auto &db = Database::instance();
+            std::shared_lock lock(db.mutex());
+            const Statement stmt(db.handle(), "SELECT 1 FROM admins WHERE qq_number = ?");
+            stmt.bind(1, qqNumber);
+            return stmt.step();
         }
-        return admins;
-    }
+
+        void addAdmin(const uint64_t qqNumber) {
+            const auto &db = Database::instance();
+            std::unique_lock lock(db.mutex());
+            const Statement stmt(db.handle(), "INSERT OR IGNORE INTO admins (qq_number) VALUES (?)");
+            stmt.bind(1, qqNumber);
+            stmt.exec();
+            spdlog::info("已添加管理员: {}", qqNumber);
+        }
+
+        void removeAdmin(const uint64_t qqNumber) {
+            const auto &db = Database::instance();
+            std::unique_lock lock(db.mutex());
+            const Statement stmt(db.handle(), "DELETE FROM admins WHERE qq_number = ?");
+            stmt.bind(1, qqNumber);
+            stmt.exec();
+            spdlog::info("已移除管理员: {}", qqNumber);
+        }
+
+        std::vector<uint64_t> getAdmins() {
+            const auto &db = Database::instance();
+            std::shared_lock lock(db.mutex());
+            std::vector<uint64_t> admins;
+            const Statement stmt(db.handle(), "SELECT qq_number FROM admins");
+            while (stmt.step()) {
+                admins.push_back(stmt.getInt64(0));
+            }
+            return admins;
+        }
+    } // namespace AdminStore
 } // namespace insoulforge
