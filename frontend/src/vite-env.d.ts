@@ -79,6 +79,13 @@ export interface AffinityEntry {
     affinity: number
 }
 
+export interface ScheduledTask {
+    id: number
+    /** 触发时间（unix 秒） */
+    remindTime: number
+    content: string
+}
+
 export interface ApiResponse {
     success: boolean
     error?: string

@@ -31,6 +31,14 @@ namespace insoulforge {
         /// @brief 获取所有待触发的定时任务（按提醒时间升序）
         std::vector<ScheduledTask> getPendingScheduledTasks() const;
 
+        /// @brief 获取指定会话待触发的定时任务（按提醒时间升序）
+        std::vector<ScheduledTask> getPendingScheduledTasksByTarget(
+          const std::string &sessionType, uint64_t targetId) const;
+
+        /// @brief 取消待触发的定时任务
+        /// @return true=取消成功；false=任务不存在或已触发/已取消
+        bool cancelScheduledTask(int64_t id) const;
+
         /// @brief 标记定时任务已完成触发
         void finishScheduledTask(int64_t id) const;
 

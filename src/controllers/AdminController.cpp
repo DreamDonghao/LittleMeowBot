@@ -21,8 +21,10 @@
 #include <storage/MemoryStore.hpp>
 #include <storage/PromptStore.hpp>
 #include <storage/SessionStore.hpp>
+#include <storage/TaskStore.hpp>
 #include <storage/ToolStore.hpp>
 #include <storage/UsageStore.hpp>
+#include <service/TaskScheduler.hpp>
 
 using namespace insoulforge;
 using namespace drogon;
@@ -791,6 +793,63 @@ Task<> AdminController::getSessionAffinity(
     Json::Value resp;
     resp["groupIdStr"] = std::to_string(gid);
     resp["affinities"] = list;
+    callback(HttpResponse::newHttpJsonResponse(resp));
+    co_return;
+}
+
+// ==================== 定时任务 ====================
+
+Task<> AdminController::getScheduledTasks(
+    HttpRequestPtr req,
+    std::function<void(const HttpResponsePtr &)> callback,
+    const std::string &sessionId
+) const {
+    const uint64_t sid = parseUInt64(sessionId);
+    if (sid == 0) {
+        Json::Value err;
+        err["error"] = "无效的会话 ID";
+        callback(HttpResponse::newHttpJsonResponse(err));
+        co_return;
+    }
+
+    const auto [sessionType, targetId] = QQMessage::parseSessionTarget(sid);
+    Json::Value list(Json::arrayValue);
+    for (const auto &task: TaskStore::instance().getPendingScheduledTasksByTarget(sessionType, targetId)) {
+        Json::Value item;
+        item["id"] = task.id;
+        item["remindTime"] = task.remindTime;
+        item["content"] = task.content;
+        list.append(item);
+    }
+
+    Json::Value resp;
+    resp["tasks"] = list;
+    callback(HttpResponse::newHttpJsonResponse(resp));
+    co_return;
+}
+
+Task<> AdminController::cancelScheduledTask(
+    HttpRequestPtr req,
+    std::function<void(const HttpResponsePtr &)> callback,
+    const std::string &id
+) const {
+    Json::Value resp;
+    const uint64_t taskId = parseUInt64(id);
+    if (taskId == 0) {
+        resp["success"] = false;
+        resp["error"] = "无效的任务 ID";
+        callback(HttpResponse::newHttpJsonResponse(resp));
+        co_return;
+    }
+
+    if (TaskScheduler::instance().cancel(static_cast<int64_t>(taskId))) {
+        resp["success"] = true;
+        resp["message"] = fmt::format("定时任务 #{} 已取消", taskId);
+        spdlog::info("[Admin] 已取消定时任务 #{}", taskId);
+    } else {
+        resp["success"] = false;
+        resp["error"] = "任务不存在或已触发/已取消";
+    }
     callback(HttpResponse::newHttpJsonResponse(resp));
     co_return;
 }

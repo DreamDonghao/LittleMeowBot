@@ -11,6 +11,7 @@
 #include <drogon/drogon.h>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 namespace insoulforge {
     /// @brief QQ 消息模型类
@@ -48,6 +49,14 @@ namespace insoulforge {
         /// @return 是否私聊
         [[nodiscard]] static constexpr bool isPrivateSession(const uint64_t sessionId) {
             return (sessionId & kPrivateSessionFlag) != 0;
+        }
+
+        /// @brief 将会话 ID 解析为存储用的会话类型与目标 ID（定时任务等按此维度落库）
+        /// @param sessionId 会话 ID（私聊带 kPrivateSessionFlag）
+        /// @return {sessionType("group"|"private"), targetId(群号或未加标志位的 QQ 号)}
+        [[nodiscard]] static std::pair<std::string, uint64_t> parseSessionTarget(const uint64_t sessionId) {
+            return {isPrivateSession(sessionId) ? "private" : "group",
+                    isPrivateSession(sessionId) ? sessionId & ~kPrivateSessionFlag : sessionId};
         }
 
         /// @brief 是否私聊消息

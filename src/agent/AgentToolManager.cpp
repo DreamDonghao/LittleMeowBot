@@ -11,6 +11,7 @@
 #include <agent/AgentToolManager.hpp>
 #include <chrono>
 #include <config/Config.hpp>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -30,6 +31,18 @@
 #include <storage/ToolStore.hpp>
 
 namespace insoulforge {
+    namespace {
+        /// @brief unix 秒格式化为本地时间 YYYY-MM-DD HH:MM:SS
+        std::string formatUnixTime(const int64_t unixSec) {
+            const std::time_t t = unixSec;
+            std::tm tm{};
+            localtime_r(&t, &tm);
+            char buffer[32];
+            strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &tm);
+            return buffer;
+        }
+    } // namespace
+
     void AgentToolManager::registerAllTools() {
         auto &registry = ToolRegistry::instance();
 
@@ -556,22 +569,19 @@ namespace insoulforge {
                 if (sessionId == 0)
                     co_return std::string("会话上下文缺失，无法确定提醒目标");
                 const bool isPrivateSession = QQMessage::isPrivateSession(sessionId);
+                const auto [sessionType, targetId] = QQMessage::parseSessionTarget(sessionId);
 
                 TaskStore::ScheduledTask task;
-                task.sessionType = isPrivateSession ? "private" : "group";
-                task.targetId = isPrivateSession ? sessionId & ~QQMessage::kPrivateSessionFlag : sessionId;
+                task.sessionType = sessionType;
+                task.targetId = targetId;
                 task.remindTime = *remindTime;
                 task.content = content;
 
                 try {
                     const int64_t id = TaskScheduler::instance().schedule(std::move(task));
-                    const std::time_t t = *remindTime;
-                    std::tm tm{};
-                    localtime_r(&t, &tm);
-                    char buffer[32];
-                    strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &tm);
                     co_return fmt::format(
-                      "定时任务 #{} 已创建，将于 {} 在{}触发提醒", id, buffer, isPrivateSession ? "私聊" : "本群");
+                      "定时任务 #{} 已创建，将于 {} 在{}触发提醒", id, formatUnixTime(*remindTime),
+                      isPrivateSession ? "私聊" : "本群");
                 } catch (const std::exception &e) {
                     spdlog::error("[Scheduler] 创建定时任务入库失败: {}", e.what());
                     co_return std::string("创建定时任务失败，请稍后重试");
@@ -579,7 +589,57 @@ namespace insoulforge {
             }},
           ToolCategory::ACTION);
 
-        spdlog::info("ToolManager: 工具注册完成（共20个工具）");
+        // list_scheduled_tasks - 查看当前会话的定时任务
+        registry.registerTool(
+          {.name = "list_scheduled_tasks",
+            .description = "查看当前会话所有待触发的定时任务。当用户想确认已设置的提醒、或取消前需要获取任务编号"
+                           "时使用。返回任务编号、触发时间和备忘内容。",
+            .parameters = Json::Value(),
+            .handler = [](const Json::Value &) -> drogon::Task<std::string> {
+                const uint64_t sessionId = currentToolContext().sessionId;
+                if (sessionId == 0)
+                    co_return std::string("会话上下文缺失，无法查询定时任务");
+                const auto [sessionType, targetId] = QQMessage::parseSessionTarget(sessionId);
+                const auto tasks =
+                  TaskStore::instance().getPendingScheduledTasksByTarget(sessionType, targetId);
+                if (tasks.empty()) {
+                    co_return std::string("当前会话没有待触发的定时任务");
+                }
+
+                std::string out = fmt::format("当前会话共有 {} 个待触发定时任务：\n", tasks.size());
+                for (const auto &task: tasks) {
+                    out += fmt::format("- 任务#{}：{} 「{}」\n", task.id, formatUnixTime(task.remindTime), task.content);
+                }
+                out += "如需取消某个任务，调用 cancel_scheduled_task 并传入任务编号（#后的数字）";
+                co_return out;
+            }},
+          ToolCategory::INFORMATION);
+
+        // cancel_scheduled_task - 取消定时任务
+        Json::Value cancelTaskParams;
+        cancelTaskParams["type"] = "object";
+        cancelTaskParams["properties"]["task_id"]["type"] = "string";
+        cancelTaskParams["properties"]["task_id"]["description"] =
+          "要取消的任务编号（用 list_scheduled_tasks 查询，即任务#后的数字）";
+        cancelTaskParams["required"].append("task_id");
+        registry.registerTool(
+          {.name = "cancel_scheduled_task",
+            .description = "取消尚未触发的定时任务。当用户要求取消之前的提醒/定时任务时使用；"
+                           "如不知道任务编号，先用 list_scheduled_tasks 查询。",
+            .parameters = cancelTaskParams,
+            .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
+                const int64_t taskId =
+                  args.isMember("task_id") ? static_cast<int64_t>(parseUInt64(args["task_id"].asString())) : 0;
+                if (taskId == 0)
+                    co_return std::string("请提供有效的任务编号（可先用 list_scheduled_tasks 查询）");
+
+                co_return TaskScheduler::instance().cancel(taskId)
+                  ? fmt::format("已取消定时任务 #{}", taskId)
+                  : fmt::format("取消失败：任务 #{} 不存在或已触发/已取消", taskId);
+            }},
+          ToolCategory::ACTION);
+
+        spdlog::info("ToolManager: 工具注册完成（共20个内置工具）");
     }
 
     void AgentToolManager::registerCustomTools() {

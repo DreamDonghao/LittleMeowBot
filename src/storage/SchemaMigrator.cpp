@@ -142,7 +142,7 @@ namespace insoulforge {
         target_id INTEGER NOT NULL,
         remind_time INTEGER NOT NULL,
         content TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'done')),
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'done', 'cancelled')),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ))",
           R"(CREATE TABLE IF NOT EXISTS settings (
@@ -189,6 +189,7 @@ namespace insoulforge {
           &migrateV0ToV1, // 基线：历史遗留 Schema 调整到统一基线
           &migrateV1ToV2, // kb_config/memory_config/qq_config 并入 settings
           &migrateV2ToV3, // 新增 group_affinity 好感度表
+          &migrateV3ToV4, // scheduled_tasks 状态扩展（新增 cancelled）
         };
 
         for (int v = version; v < kLatestVersion; ++v) {
@@ -374,5 +375,25 @@ namespace insoulforge {
     void SchemaMigrator::migrateV2ToV3(sqlite3 *db) {
         spdlog::info("执行迁移: 新增 group_affinity 好感度表");
         execAll(db, v3Tables);
+    }
+
+    void SchemaMigrator::migrateV3ToV4(sqlite3 *db) {
+        spdlog::info("执行迁移: scheduled_tasks 状态扩展（新增 cancelled）");
+        // SQLite 无法直接修改 CHECK 约束，需重建表
+        execSQL(db, R"(CREATE TABLE scheduled_tasks_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_type TEXT NOT NULL CHECK(session_type IN ('group', 'private')),
+        target_id INTEGER NOT NULL,
+        remind_time INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'done', 'cancelled')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ))");
+        execSQL(db,
+          "INSERT INTO scheduled_tasks_new (id, session_type, target_id, remind_time, content, status, created_at) "
+          "SELECT id, session_type, target_id, remind_time, content, status, created_at FROM scheduled_tasks");
+        execSQL(db, "DROP TABLE scheduled_tasks");
+        execSQL(db, "ALTER TABLE scheduled_tasks_new RENAME TO scheduled_tasks");
+        execSQL(db, "CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_status ON scheduled_tasks(status, remind_time)");
     }
 } // namespace insoulforge

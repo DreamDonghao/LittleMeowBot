@@ -4,7 +4,7 @@
  * @brief 群管理组件 - 群启用状态、群记忆与聊天记录
  */
 import {computed, inject, nextTick, onMounted, onUnmounted, ref, type Ref, watch} from 'vue'
-import type {AffinityEntry, ApiResponse, ChatMessage, Group, QQConfig} from '../vite-env.d'
+import type {AffinityEntry, ApiResponse, ChatMessage, Group, QQConfig, ScheduledTask} from '../vite-env.d'
 
 const showToast = inject<(msg: string, isError?: boolean) => void>('showToast')
 const qqConfig = inject<QQConfig>('qqConfig')
@@ -315,6 +315,70 @@ const closeAffinity = (): void => {
 const affinityClass = (v: number): string =>
     v > 0 ? 'affinity-positive' : v < 0 ? 'affinity-negative' : 'affinity-neutral'
 
+// 定时任务弹窗
+const tasksGroupId: Ref<string | null> = ref(null)
+const tasksGroupName: Ref<string> = ref('')
+const tasksList: Ref<ScheduledTask[]> = ref([])
+const tasksLoading: Ref<boolean> = ref(false)
+const cancellingTaskId: Ref<number | null> = ref(null)
+
+const fmtTaskTime = (unixSec: number): string => {
+  const d = new Date(unixSec * 1000)
+  const p = (n: number): string => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+const fmtTaskRelative = (unixSec: number): string => {
+  const diff = unixSec - Math.floor(Date.now() / 1000)
+  if (diff <= 0) return '即将触发'
+  if (diff < 3600) return `${Math.ceil(diff / 60)} 分钟后`
+  if (diff < 86400) return `${Math.floor(diff / 3600)} 小时 ${Math.floor((diff % 3600) / 60)} 分后`
+  return `${Math.floor(diff / 86400)} 天后`
+}
+
+// 查看定时任务
+const viewTasks = async (sessionId: string, sessionName: string): Promise<void> => {
+  tasksGroupId.value = sessionId
+  tasksGroupName.value = sessionName
+  tasksLoading.value = true
+  tasksList.value = []
+
+  try {
+    const resp = await fetch(`/admin/api/scheduled-tasks/${sessionId}`)
+    const data = await resp.json()
+    tasksList.value = Array.isArray(data.tasks) ? data.tasks : []
+  } finally {
+    tasksLoading.value = false
+  }
+}
+
+// 关闭定时任务弹窗
+const closeTasks = (): void => {
+  tasksGroupId.value = null
+  tasksGroupName.value = ''
+  tasksList.value = []
+}
+
+// 取消定时任务
+const cancelTask = async (task: ScheduledTask): Promise<void> => {
+  if (!confirm(`确定取消定时任务 #${task.id}？\n触发时间：${fmtTaskTime(task.remindTime)}\n内容：${task.content}`)) {
+    return
+  }
+  cancellingTaskId.value = task.id
+  try {
+    const resp = await fetch(`/admin/api/scheduled-task/${task.id}`, {method: 'DELETE'})
+    const data: ApiResponse = await resp.json()
+    if (data.success) {
+      tasksList.value = tasksList.value.filter(t => t.id !== task.id)
+      showToast!('定时任务已取消')
+    } else {
+      showToast!(data.error || '取消失败', true)
+    }
+  } finally {
+    cancellingTaskId.value = null
+  }
+}
+
 // WebSocket 消息处理
 let originalOnMessage: ((event: MessageEvent) => void) | null | undefined = null
 
@@ -438,7 +502,7 @@ onUnmounted(restoreWebSocket)
                 <th>会话</th>
                 <th style="width: 120px;">群号/QQ号</th>
                 <th style="width: 70px;">消息</th>
-                <th style="width: 250px;">操作</th>
+                <th style="width: 300px;">操作</th>
               </tr>
               </thead>
               <tbody>
@@ -473,6 +537,9 @@ onUnmounted(restoreWebSocket)
                   </button>
                   <button class="btn btn-secondary btn-sm" style="margin-left: 6px;"
                           @click.stop="viewAffinity(sessionKey(group), sessionLabel(group))">好感度
+                  </button>
+                  <button class="btn btn-secondary btn-sm" style="margin-left: 6px;"
+                          @click.stop="viewTasks(sessionKey(group), sessionLabel(group))">任务
                   </button>
                   <button class="btn btn-danger btn-sm" style="margin-left: 6px;"
                           @click.stop="removeGroup(sessionKey(group))">删除
@@ -584,6 +651,49 @@ onUnmounted(restoreWebSocket)
           </table>
           <div v-else class="memory-loading">
             <p>暂无好感度数据，会随群聊互动自动累计</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 定时任务弹窗 -->
+    <div v-if="tasksGroupId" class="modal-overlay" @click.self="closeTasks">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>{{ tasksGroupName }} - 定时任务</h2>
+          <button class="btn btn-secondary btn-sm" @click="closeTasks">关闭</button>
+        </div>
+        <div class="modal-body">
+          <div v-if="tasksLoading" class="memory-loading">
+            <p>加载中...</p>
+          </div>
+          <table v-else-if="tasksList.length > 0" class="affinity-table">
+            <thead>
+            <tr>
+              <th style="width: 60px;">编号</th>
+              <th style="width: 160px;">触发时间</th>
+              <th>内容</th>
+              <th style="width: 80px;"></th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr v-for="task in tasksList" :key="task.id">
+              <td>#{{ task.id }}</td>
+              <td>
+                {{ fmtTaskTime(task.remindTime) }}
+                <div class="task-relative">{{ fmtTaskRelative(task.remindTime) }}</div>
+              </td>
+              <td class="task-content">{{ task.content }}</td>
+              <td style="text-align: right;">
+                <button :disabled="cancellingTaskId === task.id" class="btn btn-danger btn-sm"
+                        @click="cancelTask(task)">{{ cancellingTaskId === task.id ? '取消中' : '取消' }}
+                </button>
+              </td>
+            </tr>
+            </tbody>
+          </table>
+          <div v-else class="memory-loading">
+            <p>暂无待触发的定时任务，可在群聊中让 AI 设置提醒</p>
           </div>
         </div>
       </div>
@@ -975,5 +1085,15 @@ onUnmounted(restoreWebSocket)
 .affinity-neutral {
   background: var(--bg-secondary);
   color: var(--text-secondary);
+}
+
+/* 定时任务 */
+.task-relative {
+  font-size: 12px;
+  color: var(--primary);
+}
+
+.task-content {
+  word-break: break-word;
 }
 </style>

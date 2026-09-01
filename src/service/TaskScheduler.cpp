@@ -128,6 +128,20 @@ namespace insoulforge {
         return id;
     }
 
+    bool TaskScheduler::cancel(const int64_t id) {
+        // 先登记取消集合再写库：缩小"弹出时既不在集合里、库里也已非 pending"的竞态窗口
+        {
+            std::lock_guard lock(m_mutex);
+            m_cancelledIds.insert(id);
+        }
+        const bool ok = TaskStore::instance().cancelScheduledTask(id);
+        if (!ok) {
+            std::lock_guard lock(m_mutex);
+            m_cancelledIds.erase(id);
+        }
+        return ok;
+    }
+
     void TaskScheduler::restorePendingTasks() {
         auto tasks = TaskStore::instance().getPendingScheduledTasks();
         size_t overdue = 0;
@@ -172,6 +186,9 @@ namespace insoulforge {
             while (!m_heap.empty() && m_heap.top().fireTime <= Clock::to_time_t(Clock::now())) {
                 TaskStore::ScheduledTask task = std::move(const_cast<Entry &>(m_heap.top()).task);
                 m_heap.pop();
+                if (m_cancelledIds.erase(task.id) > 0) {
+                    continue;
+                }
                 lock.unlock();
                 drogon::async_run([task = std::move(task)]() -> drogon::Task<> { co_await trigger(task); });
                 lock.lock();
