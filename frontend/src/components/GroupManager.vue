@@ -458,6 +458,13 @@ const deleteLongTermMemory = async (id: number): Promise<void> => {
   }
 }
 
+// 弹窗打开时锁定页面滚动，滚轮只作用于弹窗内容
+const anyModalOpen = computed(() =>
+    !!(memoryGroupId.value || ltmGroupId.value || affinityGroupId.value || tasksGroupId.value))
+watch(anyModalOpen, (open) => {
+  document.body.style.overflow = open ? 'hidden' : ''
+})
+
 // WebSocket 消息处理
 let originalOnMessage: ((event: MessageEvent) => void) | null | undefined = null
 
@@ -506,7 +513,7 @@ onUnmounted(restoreWebSocket)
   <div>
     <div class="page-header">
       <h1 class="page-title">会话管理</h1>
-      <p class="page-subtitle">管理 Bot 启用的群聊与私聊会话、记忆与聊天记录</p>
+      <p class="page-subtitle">管理 Bot 启用的群聊与私聊会话、消息与记忆</p>
     </div>
 
     <template v-if="!selectedGroup">
@@ -581,7 +588,7 @@ onUnmounted(restoreWebSocket)
                 <th>会话</th>
                 <th style="width: 120px;">群号/QQ号</th>
                 <th style="width: 70px;">消息</th>
-                <th style="width: 300px;">操作</th>
+                <th style="width: 360px;">操作</th>
               </tr>
               </thead>
               <tbody>
@@ -609,19 +616,19 @@ onUnmounted(restoreWebSocket)
                 <td>{{ group.messageCount || 0 }}</td>
                 <td style="white-space: nowrap;">
                   <button class="btn btn-primary btn-sm"
-                          @click.stop="selectGroup(sessionKey(group), sessionLabel(group))">记录
+                          @click.stop="selectGroup(sessionKey(group), sessionLabel(group))">消息
                   </button>
                   <button class="btn btn-secondary btn-sm" style="margin-left: 6px;"
-                          @click.stop="viewMemory(sessionKey(group), sessionLabel(group))">记忆
+                          @click.stop="viewMemory(sessionKey(group), sessionLabel(group))">短期记忆
+                  </button>
+                  <button class="btn btn-secondary btn-sm" style="margin-left: 6px;"
+                          @click.stop="viewLongTermMemory(sessionKey(group), sessionLabel(group))">长期记忆
                   </button>
                   <button class="btn btn-secondary btn-sm" style="margin-left: 6px;"
                           @click.stop="viewAffinity(sessionKey(group), sessionLabel(group))">好感度
                   </button>
                   <button class="btn btn-secondary btn-sm" style="margin-left: 6px;"
                           @click.stop="viewTasks(sessionKey(group), sessionLabel(group))">任务
-                  </button>
-                  <button class="btn btn-secondary btn-sm" style="margin-left: 6px;"
-                          @click.stop="viewLongTermMemory(sessionKey(group), sessionLabel(group))">长期记忆
                   </button>
                   <button class="btn btn-danger btn-sm" style="margin-left: 6px;"
                           @click.stop="removeGroup(sessionKey(group))">删除
@@ -640,11 +647,11 @@ onUnmounted(restoreWebSocket)
       <div class="card-header">
         <div>
           <h3 class="card-title">{{ selectedGroupName }}</h3>
-          <span class="msg-count">{{ chatRecords.length }} 条记录</span>
+          <span class="msg-count">{{ chatRecords.length }} 条消息</span>
         </div>
         <div style="display: flex; gap: 8px;">
           <button :disabled="chatRecords.length === 0" class="btn btn-danger btn-sm" @click="clearGroupRecords">
-            清空记录
+            清空消息
           </button>
           <button class="btn btn-secondary btn-sm" @click="backToList">返回列表</button>
         </div>
@@ -687,7 +694,7 @@ onUnmounted(restoreWebSocket)
 
           <div v-if="chatRecords.length === 0" class="chat-empty">
             <div class="chat-empty-icon">💬</div>
-            <p>暂无聊天记录</p>
+            <p>暂无聊天消息</p>
           </div>
         </template>
       </div>
@@ -782,6 +789,32 @@ onUnmounted(restoreWebSocket)
       </div>
     </div>
 
+    <!-- 短期记忆弹窗 -->
+    <div v-if="memoryGroupId" class="modal-overlay" @click.self="closeMemory">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>{{ memoryGroupName }} - 短期记忆</h2>
+          <button class="btn btn-secondary btn-sm" @click="closeMemory">关闭</button>
+        </div>
+        <div class="modal-body">
+          <div v-if="memoryLoading" class="memory-loading">
+            <p>加载中...</p>
+          </div>
+          <textarea
+              v-else
+              v-model="groupMemory"
+              class="memory-editor"
+              placeholder="暂无短期记忆，可在此编辑..."
+          ></textarea>
+        </div>
+        <div class="modal-footer">
+          <button :disabled="memorySaving" class="btn btn-primary" @click="saveMemory">
+            {{ memorySaving ? '保存中...' : '保存' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- 长期记忆弹窗 -->
     <div v-if="ltmGroupId" class="modal-overlay" @click.self="closeLongTermMemory">
       <div class="modal-content">
@@ -819,32 +852,6 @@ onUnmounted(restoreWebSocket)
               </button>
             </div>
           </template>
-        </div>
-      </div>
-    </div>
-
-    <!-- 记忆弹窗 -->
-    <div v-if="memoryGroupId" class="modal-overlay" @click.self="closeMemory">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2>{{ memoryGroupName }} - 会话记忆</h2>
-          <button class="btn btn-secondary btn-sm" @click="closeMemory">关闭</button>
-        </div>
-        <div class="modal-body">
-          <div v-if="memoryLoading" class="memory-loading">
-            <p>加载中...</p>
-          </div>
-          <textarea
-              v-else
-              v-model="groupMemory"
-              class="memory-editor"
-              placeholder="暂无记忆，可在此编辑..."
-          ></textarea>
-        </div>
-        <div class="modal-footer">
-          <button :disabled="memorySaving" class="btn btn-primary" @click="saveMemory">
-            {{ memorySaving ? '保存中...' : '保存' }}
-          </button>
         </div>
       </div>
     </div>
@@ -1095,8 +1102,8 @@ onUnmounted(restoreWebSocket)
   background: var(--card-bg);
   border-radius: 16px;
   width: 90%;
-  max-width: 600px;
-  max-height: 70vh;
+  max-width: 760px;
+  max-height: 80vh;
   display: flex;
   flex-direction: column;
 }
@@ -1117,7 +1124,8 @@ onUnmounted(restoreWebSocket)
 .modal-body {
   flex: 1;
   padding: 16px 20px;
-  overflow: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .memory-loading {
@@ -1128,7 +1136,7 @@ onUnmounted(restoreWebSocket)
 
 .memory-editor {
   width: 100%;
-  height: 280px;
+  height: min(400px, 55vh);
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 8px;

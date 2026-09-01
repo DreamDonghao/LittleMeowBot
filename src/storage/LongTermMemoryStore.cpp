@@ -52,16 +52,16 @@ namespace insoulforge {
         return Statement::changes(db.handle()) > 0;
     }
 
-    std::vector<std::pair<std::string, float>> LongTermMemoryStore::searchSimilar(
+    std::vector<SimilarMemory> LongTermMemoryStore::searchSimilar(
       const uint64_t groupId, const std::vector<float> &query, const int topK) const {
         const auto &db = Database::instance();
         std::shared_lock lock(db.mutex());
-        const Statement stmt(db.handle(), "SELECT content, embedding FROM long_term_memory WHERE group_id = ?");
+        const Statement stmt(db.handle(), "SELECT id, content, embedding FROM long_term_memory WHERE group_id = ?");
         stmt.bind(1, groupId);
 
-        std::vector<std::pair<std::string, float>> scored;
+        std::vector<SimilarMemory> scored;
         while (stmt.step()) {
-            const auto bytes = stmt.getBlob(1);
+            const auto bytes = stmt.getBlob(2);
             if (bytes.empty() || bytes.size() % sizeof(float) != 0)
                 continue;
 
@@ -70,10 +70,12 @@ namespace insoulforge {
             // 维度不匹配说明换过 embedding 模型，旧向量不可比，跳过
             if (embedding.size() != query.size())
                 continue;
-            scored.emplace_back(stmt.getText(0), cosineSimilarity(query, embedding));
+            scored.push_back({stmt.getInt64(0), stmt.getText(1), cosineSimilarity(query, embedding)});
         }
 
-        const auto byScoreDesc = [](const auto &a, const auto &b) { return a.second > b.second; };
+        const auto byScoreDesc = [](const SimilarMemory &a, const SimilarMemory &b) {
+            return a.similarity > b.similarity;
+        };
         if (static_cast<size_t>(topK) < scored.size()) {
             std::ranges::partial_sort(scored, scored.begin() + topK, byScoreDesc);
             scored.resize(topK);

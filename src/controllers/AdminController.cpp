@@ -816,6 +816,11 @@ Task<> AdminController::saveMemoryConfig(
         (*json)["routerWindowKeepCount"].asInt() >= (*json)["routerWindowTriggerCount"].asInt()) {
         (*json)["routerWindowKeepCount"] = (*json)["routerWindowTriggerCount"].asInt() / 2;
     }
+    // 召回阈值: 必须在 (0,1) 开区间内
+    if (!json->isMember("longTermRecallThreshold") || (*json)["longTermRecallThreshold"].asDouble() <= 0.0 ||
+        (*json)["longTermRecallThreshold"].asDouble() >= 1.0) {
+        (*json)["longTermRecallThreshold"] = Config::instance().longTermRecallThreshold;
+    }
 
     ConfigStore::instance().saveMemoryConfig(*json);
 
@@ -827,7 +832,7 @@ Task<> AdminController::saveMemoryConfig(
     config.routerWindowTriggerCount = (*json)["routerWindowTriggerCount"].asInt();
     config.routerWindowKeepCount = (*json)["routerWindowKeepCount"].asInt();
     config.shortTermMemoryMax = (*json)["shortTermMemoryMax"].asInt();
-    config.memoryMigrateCount = (*json)["memoryMigrateCount"].asInt();
+    config.longTermRecallThreshold = (*json)["longTermRecallThreshold"].asDouble();
 
     Json::Value resp;
     resp["success"] = true;

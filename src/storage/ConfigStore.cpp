@@ -99,7 +99,7 @@ namespace insoulforge {
         defaults["routerWindowTriggerCount"] = 20;
         defaults["routerWindowKeepCount"] = 10;
         defaults["shortTermMemoryMax"] = 15;
-        defaults["memoryMigrateCount"] = 5;
+        defaults["longTermRecallThreshold"] = 0.65;
         return loadConfigJson("memory_config", defaults);
     }
 

@@ -162,8 +162,8 @@ MessageService::sendGroupMsg → OneBot API
   `LongTermMemory` 服务封装存取
 - **提取机制**（可配置）：聊天记录窗口超过 `windowTriggerCount` 条时，LLM 从待删除的旧记录中提取记忆并滑动窗口（保留最近
   `windowKeepCount` 条）；Router 有独立的子窗口参数（`routerWindowTriggerCount` / `routerWindowKeepCount`）
-- **迁移机制**：短期记忆超过 `shortTermMemoryMax` 条时，LLM 筛选 `memoryMigrateCount` 条重要记忆，逐条经 Embedding API
-  向量化后写入长期记忆库
+- **归类机制**：每轮提取后，LLM 以新记忆召回相似长期记忆（阈值 `longTermRecallThreshold`）并整理归类为短期/长期两部分；
+  新长期记忆逐条经 Embedding API 向量化写入长期记忆库，被合并取代的召回条目从库中删除
 - 记忆提取与合并复用 executor 模型（`LlmClient::requestLLM`）
 - 向量化使用独立的 embedding 配置（`LlmClient::requestEmbedding`）；`recall_memory` 工具按余弦相似度（阈值 0.3）检索长期记忆
 

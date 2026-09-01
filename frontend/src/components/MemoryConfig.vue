@@ -15,7 +15,7 @@ const memoryConfig = reactive<MemoryConfig>({
   routerWindowTriggerCount: 20,
   routerWindowKeepCount: 10,
   shortTermMemoryMax: 15,
-  memoryMigrateCount: 5
+  longTermRecallThreshold: 0.65
 })
 const saving: Ref<boolean> = ref(false)
 
@@ -93,12 +93,13 @@ const saveMemoryConfig = async (): Promise<void> => {
         <div class="form-group">
           <label class="form-label">短期记忆上限</label>
           <input v-model="memoryConfig.shortTermMemoryMax" class="form-input" type="number">
-          <p class="form-hint">超过此数量触发迁移，合并时也以此为上限</p>
+          <p class="form-hint">归类整理时短期记忆的条数上限</p>
         </div>
         <div class="form-group">
-          <label class="form-label">每次迁移条数</label>
-          <input v-model="memoryConfig.memoryMigrateCount" class="form-input" type="number">
-          <p class="form-hint">每次迁移到长期记忆的条数</p>
+          <label class="form-label">长期记忆召回阈值</label>
+          <input v-model="memoryConfig.longTermRecallThreshold" class="form-input" max="1" min="0" step="0.05"
+                 type="number">
+          <p class="form-hint">新记忆召回长期记忆做合并去重的相似度阈值（0~1，越高越严格）</p>
         </div>
       </div>
       <button :disabled="saving" class="btn btn-primary" @click="saveMemoryConfig">

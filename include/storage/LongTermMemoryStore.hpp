@@ -7,7 +7,6 @@
 #pragma once
 #include <cstdint>
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace insoulforge {
@@ -17,6 +16,13 @@ namespace insoulforge {
         uint64_t groupId;
         std::string content;
         std::string createdAt;
+    };
+
+    /// @brief 相似检索命中（含 id，供召回合并后删除被取代的原条目）
+    struct SimilarMemory {
+        int64_t id;
+        std::string content;
+        float similarity;
     };
 
     /// @brief 长期记忆存储
@@ -29,8 +35,8 @@ namespace insoulforge {
         bool addMemory(uint64_t groupId, const std::string &content, const std::vector<float> &embedding) const;
 
         /// @brief 暴力余弦检索 topK 条相似记忆
-        /// @return (内容, 余弦相似度)，按相似度降序；维度不匹配的行跳过
-        [[nodiscard]] std::vector<std::pair<std::string, float>> searchSimilar(
+        /// @return (id, 内容, 余弦相似度)，按相似度降序；维度不匹配的行跳过
+        [[nodiscard]] std::vector<SimilarMemory> searchSimilar(
           uint64_t groupId, const std::vector<float> &query, int topK) const;
 
         /// @brief 分页列出长期记忆（新→旧）；sessionId 为 0 时列出全部会话

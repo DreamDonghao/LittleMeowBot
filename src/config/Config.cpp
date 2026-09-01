@@ -64,7 +64,7 @@ namespace insoulforge {
             routerWindowTriggerCount = memCfg["routerWindowTriggerCount"].asInt();
             routerWindowKeepCount = memCfg["routerWindowKeepCount"].asInt();
             shortTermMemoryMax = memCfg["shortTermMemoryMax"].asInt();
-            memoryMigrateCount = memCfg["memoryMigrateCount"].asInt();
+            longTermRecallThreshold = memCfg["longTermRecallThreshold"].asDouble();
             // 兜底: 保留条数必须小于触发条数,否则触发后永远删不完
             if (windowTriggerCount <= 0)
                 windowTriggerCount = 100;
@@ -76,6 +76,8 @@ namespace insoulforge {
             if (routerWindowKeepCount <= 0 || routerWindowKeepCount >= routerWindowTriggerCount) {
                 routerWindowKeepCount = routerWindowTriggerCount / 2;
             }
+            if (longTermRecallThreshold <= 0.0 || longTermRecallThreshold >= 1.0)
+                longTermRecallThreshold = 0.65;
             spdlog::info("记忆配置已从数据库加载");
         }
 

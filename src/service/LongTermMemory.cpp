@@ -36,10 +36,10 @@ namespace insoulforge {
 
         const auto rows = LongTermMemoryStore::instance().searchSimilar(sessionId, *embedding, topK);
         std::string result;
-        for (const auto &[content, similarity]: rows) {
-            if (similarity < 0.3f)
+        for (const auto &memory: rows) {
+            if (memory.similarity < 0.3f)
                 continue;
-            result += content + "\n";
+            result += memory.content + "\n";
         }
 
         if (result.empty())

@@ -11,8 +11,9 @@
 #include <sstream>
 #include <storage/AffinityStore.hpp>
 #include <storage/ChatRecordStore.hpp>
+#include <storage/LongTermMemoryStore.hpp>
 #include <storage/MemoryStore.hpp>
-#include <storage/SessionStore.hpp>
+#include <unordered_map>
 #include <unordered_set>
 #include <util/CommonUtil.hpp>
 #include <util/Logger.hpp>
@@ -27,6 +28,10 @@ namespace insoulforge {
         constexpr int kMaxAffinityDelta = 5;
         /// @brief 好感度评分单次输入记录上限（积压过大时截断）
         constexpr size_t kMaxAffinityRecords = 300;
+        /// @brief 每条新记忆最多召回的长期记忆条数
+        constexpr int kRecallPerMemory = 2;
+        /// @brief 单轮召回候选总量上限（超出时保留相似度最高的）
+        constexpr size_t kMaxRecalledEntries = 20;
 
         /// @brief 同群并发 eviction 防重入
         /// @details 不能用 std::mutex 直接跨 co_await（协程可能在不同线程恢复），
@@ -67,54 +72,252 @@ namespace insoulforge {
             return s.substr(begin, end - begin + 1);
         }
 
-        /// @brief 一次 LLM 调用完成"提取 + 合并"：结合现有记忆从对话中提取新条目并输出合并结果
-        /// @return nullopt 表示 API 失败（调用方不得推进水位线）
-        drogon::Task<std::optional<std::string>> maintainMemory(const std::string &existingMemory,
+        /// @brief 容忍模型输出 ```json 围栏等杂质：截取首尾大括号之间的内容
+        bool extractJsonObject(const std::string &text, std::string &payload) {
+            const size_t start = text.find('{');
+            const size_t end = text.rfind('}');
+            if (start == std::string::npos || end == std::string::npos || end <= start)
+                return false;
+            payload = text.substr(start, end - start + 1);
+            return true;
+        }
+
+        /// @brief 按行拆分文本，跳过空行
+        std::vector<std::string> splitLines(const std::string &text) {
+            std::vector<std::string> lines;
+            std::istringstream stream(text);
+            std::string line;
+            while (std::getline(stream, line)) {
+                if (!line.empty())
+                    lines.push_back(line);
+            }
+            return lines;
+        }
+
+        /// @brief 把若干行拼接回文本（每行末尾换行，与既有存储格式一致）
+        std::string joinLines(const std::vector<std::string> &lines) {
+            std::string result;
+            for (const auto &line: lines)
+                result += line + '\n';
+            return result;
+        }
+
+        /// @brief 把条目编号为 "1. xxx" 的多行文本（空列表显示占位符）
+        std::string numberedLines(const std::vector<std::string> &lines) {
+            std::string text;
+            for (size_t i = 0; i < lines.size(); ++i)
+                text += std::to_string(i + 1) + ". " + lines[i] + '\n';
+            return text.empty() ? "（空）" : text;
+        }
+
+        /// @brief 从聊天记录中提取新记忆，每条只包含一条完整信息
+        /// @return nullopt 表示 API 失败或输出不是合法 JSON（调用方不得推进水位线）
+        drogon::Task<std::optional<std::vector<std::string>>> extractMemories(
           const std::string &chatRecords, const int maxTokens, const uint64_t sessionId) {
             Json::Value messages;
             Json::Value item;
             item["role"] = "system";
-            item["content"] = R"(你是一个【群聊记忆维护器】。
-从对话中提取值得记住的信息，与现有记忆合并，直接输出合并后的最终记忆列表。
+            item["content"] = R"(你是一个【群聊记忆提取器】。
+从群聊记录中提取值得记住的信息。
 
 提取规则：
 - 每条记忆必须带人物归属（群友名或外号），如：小明喜欢猫
-- 每条独立成行，简短客观（5-15字）
+- 每条只包含一条完整信息，简短客观（5-15字）
 - 不要推测未出现的信息，不要扩写背景
 - 着重提取：外号别称、喜好、习惯、关系、重要约定
-
-合并规则：
-- 去除重复或相似条目
-- 合并相关条目（"小明喜欢Python"+"小明经常写脚本"→"小明喜欢用Python写脚本"）
-- 冲突时保留新信息
-- 最多保留)" + std::to_string(Config::instance().shortTermMemoryMax) +
-                              R"(条
 
 不提取：
 - 一次性玩笑或情绪宣泄
 - 系统指令或控制信息
 - 固定套话、无价值内容
 
-示例：
-对话："小明：我天天写Python" → 记忆："小明喜欢写Python"
-对话："老王：以后叫我老王" → 记忆："小明的外号是老王"
-
-如果没有任何值得记住的内容，输出：无)";
+只输出一个 JSON 对象，memories 为字符串数组：
+{"memories": ["小明喜欢写Python", "老王的外号是老王"]}
+没有任何值得记住的内容时输出：{"memories": []})";
 
             messages.append(item);
             item.clear();
             item["role"] = "user";
-            item["content"] = "现有记忆：\n" + (existingMemory.empty() ? "（空）" : existingMemory) +
-                              "\n\n=== 最近对话 ===\n" + chatRecords +
-                              "\n\n请直接输出合并后的记忆列表，每行一条，不要解释：";
+            item["content"] = "=== 群聊记录 ===\n" + chatRecords + "\n\n请输出提取结果 JSON：";
             messages.append(item);
 
             const auto result = co_await LlmClient::requestLLM(messages, 0.4f, 0.9f, maxTokens, "memory", sessionId);
             if (!result) {
-                Logger::session(sessionId).error("maintainMemory: API 请求失败");
+                Logger::session(sessionId).error("extractMemories: API 请求失败");
                 co_return std::nullopt;
             }
-            co_return trim(result.value());
+
+            std::string payload;
+            if (!extractJsonObject(result.value(), payload)) {
+                Logger::session(sessionId).warn("记忆提取: 响应中无 JSON: {}", result->substr(0, 100));
+                co_return std::nullopt;
+            }
+
+            Json::Value parsed;
+            if (!Json::Reader().parse(payload, parsed) || !parsed.isObject() || !parsed["memories"].isArray()) {
+                Logger::session(sessionId).warn("记忆提取: JSON 解析失败，本批重试");
+                co_return std::nullopt;
+            }
+
+            std::vector<std::string> memories;
+            for (const auto &entry: parsed["memories"]) {
+                if (std::string text = trim(entry.asString()); !text.empty())
+                    memories.push_back(std::move(text));
+            }
+            co_return memories;
+        }
+
+        /// @brief 用新记忆在长期记忆库中召回合并候选：每条至多 kRecallPerMemory 条、相似度需达到召回阈值，
+        ///        跨查询按 id 去重（同一旧记忆只参与一次整理），候选总量超限时保留相似度最高的
+        /// @return 召回条目（id + 内容 + 相似度）；Embedding 失败的查询跳过（召回是优化，不阻塞记忆流程）
+        drogon::Task<std::vector<SimilarMemory>> recallForMerge(
+          const std::vector<std::string> &newMemories, const uint64_t sessionId) {
+            const float threshold = static_cast<float>(Config::instance().longTermRecallThreshold);
+            std::unordered_map<int64_t, SimilarMemory> recalled;
+
+            for (const auto &memory: newMemories) {
+                const auto embedding = co_await LlmClient::requestEmbedding(memory, sessionId);
+                if (!embedding) {
+                    Logger::session(sessionId).warn("记忆召回: 向量化失败，跳过该条查询");
+                    continue;
+                }
+                for (const auto &hit:
+                  LongTermMemoryStore::instance().searchSimilar(sessionId, *embedding, kRecallPerMemory)) {
+                    if (hit.similarity < threshold)
+                        continue;
+                    auto [it, inserted] = recalled.try_emplace(hit.id, hit);
+                    if (!inserted && it->second.similarity < hit.similarity)
+                        it->second.similarity = hit.similarity;
+                }
+            }
+
+            std::vector<SimilarMemory> result;
+            result.reserve(recalled.size());
+            for (auto &item: recalled)
+                result.push_back(item.second);
+            if (result.size() > kMaxRecalledEntries) {
+                std::ranges::sort(result, [](const auto &a, const auto &b) { return a.similarity > b.similarity; });
+                result.resize(kMaxRecalledEntries);
+            }
+            co_return result;
+        }
+
+        /// @brief 单条合并后的长期记忆（sources 为被它合并或取代的召回条目 id）
+        struct MergedLongTermMemory {
+            std::vector<int64_t> sources;
+            std::string content;
+        };
+
+        /// @brief 归类整理结果
+        struct ReconcileResult {
+            std::vector<std::string> shortTerm;
+            std::vector<MergedLongTermMemory> longTerm;
+        };
+
+        /// @brief 把新记忆、当前短期记忆与召回的长期记忆合并归类为短期/长期两部分
+        /// @param longTermEnabled Embedding 是否可用（不可用时禁止输出长期记忆）
+        /// @return nullopt 表示 API 失败或输出不是合法 JSON（调用方不得推进水位线）
+        drogon::Task<std::optional<ReconcileResult>> reconcileMemory(const std::vector<std::string> &currentShortTerm,
+          const std::vector<std::string> &newMemories, const std::vector<SimilarMemory> &recalled,
+          const bool longTermEnabled, const uint64_t sessionId) {
+            const auto &config = Config::instance();
+
+            std::string systemPrompt = R"(你是一个【群聊记忆整理器】。
+把新提取的记忆与当前短期记忆、召回的长期记忆合并整理，归类为短期记忆和长期记忆两部分。
+
+合并规则：
+- 去除重复或相似条目
+- 合并相关条目（"小明喜欢Python"+"小明经常写脚本"→"小明喜欢用Python写脚本"）
+- 冲突时保留较新的信息（新提取的记忆最新，召回的长期记忆最旧）
+- 每条记忆带人物归属（群友名或外号），简短客观（5-15字）
+
+归类规则：
+- 短期记忆：临时状态、近期事件、上下文相关，最多)" +
+                                       std::to_string(config.shortTermMemoryMax) +
+                                       R"(条
+- 长期记忆：稳定特征（性格、习惯、偏好、外号别称）、关系、重要约定，宁缺毋滥
+- 召回的长期记忆内容没有变化时不要输出（保持原样）；只有被合并、修改或补充时才输出
+- 长期记忆条目的 sources 填写被它合并或取代的召回条目 id（输入中方括号里的数字）；全新条目填空数组
+
+只输出一个 JSON 对象，格式如下：
+{"shortTerm": ["小明喜欢用Python写脚本"], "longTerm": [{"sources": [12], "content": "小明是程序员，喜欢用Python写脚本"}]})";
+            if (!longTermEnabled) {
+                systemPrompt += "\n长期记忆库当前不可用：所有记忆都归入短期记忆，longTerm 固定输出空数组。";
+            }
+
+            Json::Value messages;
+            Json::Value item;
+            item["role"] = "system";
+            item["content"] = systemPrompt;
+            messages.append(item);
+            item.clear();
+
+            std::string recalledText;
+            for (const auto &entry: recalled)
+                recalledText += "[" + std::to_string(entry.id) + "] " + entry.content + '\n';
+            if (recalledText.empty())
+                recalledText = "（无）\n";
+
+            item["role"] = "user";
+            item["content"] = "=== 当前短期记忆 ===\n" + numberedLines(currentShortTerm) + "\n=== 新提取的记忆 ===\n" +
+                              numberedLines(newMemories) + "\n=== 召回的长期记忆 ===\n" + recalledText +
+                              "\n请输出整理结果 JSON：";
+            messages.append(item);
+
+            const auto result =
+              co_await LlmClient::requestLLM(messages, 0.3f, 0.9f, config.memoryExtractMaxTokens, "memory", sessionId);
+            if (!result) {
+                Logger::session(sessionId).error("reconcileMemory: API 请求失败");
+                co_return std::nullopt;
+            }
+
+            std::string payload;
+            if (!extractJsonObject(result.value(), payload)) {
+                Logger::session(sessionId).warn("记忆整理: 响应中无 JSON: {}", result->substr(0, 100));
+                co_return std::nullopt;
+            }
+
+            Json::Value parsed;
+            if (!Json::Reader().parse(payload, parsed) || !parsed.isObject() || !parsed["shortTerm"].isArray()) {
+                Logger::session(sessionId).warn("记忆整理: JSON 解析失败，本批重试");
+                co_return std::nullopt;
+            }
+
+            ReconcileResult reconcile;
+            for (const auto &entry: parsed["shortTerm"]) {
+                if (std::string text = trim(entry.asString()); !text.empty())
+                    reconcile.shortTerm.push_back(std::move(text));
+            }
+            const size_t maxShortTerm = static_cast<size_t>(std::max(config.shortTermMemoryMax, 0));
+            if (reconcile.shortTerm.size() > maxShortTerm) {
+                Logger::session(sessionId).warn("记忆整理: 短期记忆超限({} > {})，截断保留前 {} 条",
+                  reconcile.shortTerm.size(), maxShortTerm, maxShortTerm);
+                reconcile.shortTerm.resize(maxShortTerm);
+            }
+
+            if (longTermEnabled && parsed["longTerm"].isArray()) {
+                for (const auto &entry: parsed["longTerm"]) {
+                    if (!entry.isObject())
+                        continue;
+                    std::string content = trim(entry["content"].asString());
+                    if (content.empty())
+                        continue;
+                    MergedLongTermMemory merged;
+                    merged.content = std::move(content);
+                    if (entry["sources"].isArray()) {
+                        for (const auto &source: entry["sources"]) {
+                            if (!source.isIntegral())
+                                continue;
+                            const auto id = static_cast<int64_t>(source.asInt64());
+                            // 只接受真实召回过的 id，防止模型编造误删无关条目
+                            if (std::ranges::any_of(recalled, [id](const auto &r) { return r.id == id; }))
+                                merged.sources.push_back(id);
+                        }
+                    }
+                    reconcile.longTerm.push_back(std::move(merged));
+                }
+            }
+            co_return reconcile;
         }
 
         /// @brief 把记录区间拼接为 JSON 数组字符串（与旧 getChatRecordsText 格式一致）
@@ -188,17 +391,14 @@ namespace insoulforge {
                 co_return;
             }
 
-            // 容忍模型输出 ```json 围栏等杂质：截取首尾大括号之间的内容
-            const std::string &text = result.value();
-            const size_t start = text.find('{');
-            const size_t end = text.rfind('}');
-            if (start == std::string::npos || end == std::string::npos || end <= start) {
-                Logger::session(sessionId).warn("好感度评分: 响应中无 JSON，跳过: {}", text.substr(0, 100));
+            std::string payload;
+            if (!extractJsonObject(result.value(), payload)) {
+                Logger::session(sessionId).warn("好感度评分: 响应中无 JSON，跳过: {}", result->substr(0, 100));
                 co_return;
             }
 
             Json::Value deltas;
-            if (!Json::Reader().parse(text.substr(start, end - start + 1), deltas) || !deltas.isObject()) {
+            if (!Json::Reader().parse(payload, deltas) || !deltas.isObject()) {
                 Logger::session(sessionId).warn("好感度评分: JSON 解析失败，跳过");
                 co_return;
             }
@@ -218,183 +418,6 @@ namespace insoulforge {
                 }
             }
             Logger::session(sessionId).info("好感度评分完成: {} 条记录，更新 {} 人", limit, applied);
-        }
-
-        /// @brief 统计文本行数
-        int countLines(const std::string &text) {
-            if (text.empty())
-                return 0;
-            int count = 0;
-            std::istringstream stream(text);
-            std::string line;
-            while (std::getline(stream, line)) {
-                if (!line.empty())
-                    count++;
-            }
-            return count;
-        }
-
-        /// @brief 截断记忆到最多 N 条（保留前 N 条，重要信息通常排在前面）
-        std::string trimToMaxLines(const std::string &memory, const int maxLines) {
-            std::vector<std::string> lines;
-            std::istringstream stream(memory);
-            std::string line;
-            while (std::getline(stream, line)) {
-                if (!line.empty()) {
-                    lines.push_back(line);
-                }
-            }
-
-            if (static_cast<int>(lines.size()) <= maxLines) {
-                return memory;
-            }
-
-            std::string result;
-            for (int i = 0; i < maxLines && i < static_cast<int>(lines.size()); ++i) {
-                result += lines[i] + "\n";
-            }
-            return result;
-        }
-
-        /// @brief 筛选值得长期保存的记忆
-        drogon::Task<std::string> selectMemoriesToMigrate(
-          const std::string &shortTermMemory, const uint64_t sessionId) {
-            const int migrateCount = Config::instance().memoryMigrateCount;
-
-            Json::Value messages;
-            Json::Value item;
-            item["role"] = "system";
-            item["content"] = R"(你是一个【记忆筛选器】。
-从以下短期记忆中筛选值得长期保存的条目。
-筛选标准：
-- 描述稳定特征（性格、习惯、偏好）
-- 描述关系（朋友、矛盾）
-- 重要事件或约定
-- 反复出现的信息
-不筛选：
-- 临时状态（正在做某事）
-- 单次事件（今天去了某地）
-- 不确定信息（似乎、可能）
-输出规则：
-- 每行一条，保持原文或稍作归纳
-- 如果没有值得长期保存的，输出：无
-- 最多筛选)" + std::to_string(migrateCount) +
-                              R"(条，宁缺毋滥，不足时不要凑数
-
-短期记忆：
-)" + shortTermMemory;
-
-            messages.append(item);
-            item.clear();
-            item["role"] = "user";
-            item["content"] = "请输出值得长期保存的记忆：";
-            messages.append(item);
-
-            auto result = co_await LlmClient::requestLLM(messages, 0.3f, 0.9f, 256, "memory", sessionId);
-            if (!result) {
-                Logger::session(sessionId).error("selectMemoriesToMigrate: API 请求失败");
-                co_return "无";
-            }
-            co_return result.value();
-        }
-
-        /// @brief 从文本中删除已迁移的行（双向子串匹配）
-        std::string removeMigratedLines(const std::string &original, const std::string &migrated) {
-            std::vector<std::string> migratedLines;
-            std::istringstream stream(migrated);
-            std::string line;
-            while (std::getline(stream, line)) {
-                if (!line.empty() && line != "无") {
-                    migratedLines.push_back(line);
-                }
-            }
-
-            std::string remaining;
-            std::istringstream origStream(original);
-            while (std::getline(origStream, line)) {
-                if (line.empty())
-                    continue;
-
-                bool shouldRemove = false;
-                for (const auto &migratedLine: migratedLines) {
-                    if (line.find(migratedLine) != std::string::npos || migratedLine.find(line) != std::string::npos) {
-                        shouldRemove = true;
-                        break;
-                    }
-                }
-
-                if (!shouldRemove) {
-                    remaining += line + "\n";
-                }
-            }
-
-            return remaining;
-        }
-
-        /// @brief 从短期记忆迁移到长期记忆库
-        drogon::Task<std::string> migrateToLongTermMemory(uint64_t sessionId, const std::string &shortTermMemory) {
-            const int maxLines = Config::instance().shortTermMemoryMax;
-
-            // 检查 Embedding 是否实际可用（不仅配置存在，还需要 baseUrl/model）
-            if (const auto &emb = Config::instance().embedding; emb.baseUrl.empty() || emb.model.empty()) {
-                Logger::session(sessionId).info("短期记忆超限，Embedding 未配置，仅保留 {} 条", maxLines);
-                std::string trimmed = trimToMaxLines(shortTermMemory, maxLines);
-                MemoryStore::instance().updateShortTermMemory(sessionId, trimmed);
-                co_return trimmed;
-            }
-
-            // 获取群名
-            std::string groupName = SessionStore::instance().getSessionName(sessionId);
-            if (groupName.empty()) {
-                groupName = std::to_string(sessionId);
-            }
-
-            // 1. 让 LLM 筛选值得长期保存的记忆
-            const std::string toMigrate = co_await selectMemoriesToMigrate(shortTermMemory, sessionId);
-
-            if (toMigrate.empty() || toMigrate == "无") {
-                Logger::session(sessionId).info("无记忆需要迁移");
-                std::string trimmed = trimToMaxLines(shortTermMemory, maxLines);
-                MemoryStore::instance().updateShortTermMemory(sessionId, trimmed);
-                co_return trimmed;
-            }
-
-            // 2. 逐条存入长期记忆库
-            int successCount = 0;
-            std::istringstream stream(toMigrate);
-            std::string line;
-            while (std::getline(stream, line)) {
-                if (line.empty() || line == "无")
-                    continue;
-
-                // 每条记忆单独存储，加上群名前缀
-                std::string prefixedMemory = "[" + groupName + "] ";
-                prefixedMemory += line;
-                if (co_await LongTermMemory::addMemory(prefixedMemory, sessionId)) {
-                    Logger::session(sessionId).info("迁移记忆 [{}]: {}", groupName, line);
-                    successCount++;
-                } else {
-                    Logger::session(sessionId).warn("迁移记忆 [{}] 失败: {}", groupName, line);
-                }
-            }
-
-            if (successCount == 0) {
-                Logger::session(sessionId).warn("迁移到长期记忆库全部失败，保留短期记忆");
-                std::string trimmed = trimToMaxLines(shortTermMemory, maxLines);
-                MemoryStore::instance().updateShortTermMemory(sessionId, trimmed);
-                co_return trimmed;
-            }
-
-            // 3. 从短期记忆中删除已迁移的条目
-            std::string remaining = removeMigratedLines(shortTermMemory, toMigrate);
-
-            // 4. 确保不超过maxLines
-            remaining = trimToMaxLines(remaining, maxLines);
-            MemoryStore::instance().updateShortTermMemory(sessionId, remaining);
-
-            Logger::session(sessionId).info(
-              "迁移完成，成功 {} 条，短期记忆保留 {} 条", successCount, countLines(remaining));
-            co_return remaining;
         }
     } // namespace
 
@@ -425,54 +448,82 @@ namespace insoulforge {
         }
         stripRecordImages(records);
 
-        // 2. 分批提取+合并，逐批推进水位线
+        // Embedding 未配置时跳过召回与长期记忆写入，只在短期记忆内整理
+        const bool longTermEnabled = !config.embedding.baseUrl.empty() && !config.embedding.model.empty();
+
+        // 2. 分批"提取 → 召回 → 归类"，逐批推进水位线
         std::string existingMemory = memoryStore.getShortTermMemory(sessionId);
         uint64_t chunkEndId = watermark;
         size_t processed = 0;
         int successChunks = 0;
+        int longTermAdded = 0;
+        int longTermReplaced = 0;
 
         while (processed < toDrop) {
             const size_t batchEnd = std::min(processed + kMaxExtractBatch, toDrop);
-            // 附带后续最多 10 条做上下文连贯（可能来自待删除区或保留区，重复提取由 LLM 合并去重）
+            // 附带后续最多 10 条做上下文连贯（可能来自待删除区或保留区，重复内容由归类合并去重）
             const size_t overlapEnd = std::min(records.size(), batchEnd + kOverlapCount);
             const std::string chunkText = formatRecordsText(records, processed, overlapEnd);
 
             Logger::session(sessionId).info("记忆提取: 待删第 {}-{} 条（共 {} 条）", processed + 1, batchEnd, toDrop);
 
-            const auto result =
-              co_await maintainMemory(existingMemory, chunkText, config.memoryExtractMaxTokens, sessionId);
-            if (!result) {
+            const auto extracted = co_await extractMemories(chunkText, config.memoryExtractMaxTokens, sessionId);
+            if (!extracted) {
                 // API 失败：水位线停在本批之前，下条消息自动重试
                 Logger::session(sessionId).warn("记忆提取失败，水位线保持 {}，下条消息将重试", chunkEndId);
                 break;
             }
-            if (!result->empty() && *result != "无") {
-                existingMemory = *result;
+
+            chunkEndId = records[batchEnd - 1]["id"].asUInt64();
+
+            if (extracted->empty()) {
+                // 本批没有新记忆，直接推进水位线
+                memoryStore.updateShortTermMemoryWithWatermark(sessionId, existingMemory, chunkEndId);
+                processed = batchEnd;
+                successChunks++;
+                continue;
             }
 
-            // 原子写记忆+水位线，崩溃后重提取同批记录，LLM 合并去重保证幂等
-            chunkEndId = records[batchEnd - 1]["id"].asUInt64();
+            std::vector<SimilarMemory> recalled;
+            if (longTermEnabled)
+                recalled = co_await recallForMerge(*extracted, sessionId);
+
+            const auto reconcile =
+              co_await reconcileMemory(splitLines(existingMemory), *extracted, recalled, longTermEnabled, sessionId);
+            if (!reconcile) {
+                Logger::session(sessionId).warn("记忆整理失败，水位线保持 {}，下条消息将重试", chunkEndId);
+                break;
+            }
+
+            // 先写短期记忆+水位线（崩溃安全；长期记忆操作失败不阻塞记忆流程）
+            existingMemory = joinLines(reconcile->shortTerm);
             memoryStore.updateShortTermMemoryWithWatermark(sessionId, existingMemory, chunkEndId);
             processed = batchEnd;
             successChunks++;
+
+            // 长期记忆：先插入合并结果，成功后才删除被取代的召回条目；
+            // 失败不回滚——召回条目保留，下轮相关新记忆会再次召回并重新合并
+            for (const auto &entry: reconcile->longTerm) {
+                if (co_await LongTermMemory::addMemory(entry.content, sessionId)) {
+                    for (const int64_t id: entry.sources)
+                        LongTermMemoryStore::instance().deleteMemory(id);
+                    longTermAdded++;
+                    longTermReplaced += static_cast<int>(entry.sources.size());
+                } else {
+                    Logger::session(sessionId).warn("长期记忆写入失败，保留原召回条目: {}", entry.content);
+                }
+            }
         }
 
         if (successChunks == 0) {
             co_return;
         }
 
-        Logger::session(sessionId).info(
-          "窗口已滑动: 滑出 {} 条，水位线 -> {}，记忆 {} 条", processed, chunkEndId, countLines(existingMemory));
+        Logger::session(sessionId).info("窗口已滑动: 滑出 {} 条，水位线 -> {}，短期记忆 {} 条，长期记忆 +{}/-{}",
+          processed, chunkEndId, splitLines(existingMemory).size(), longTermAdded, longTermReplaced);
 
         // 3. 好感度评分（独立请求，只针对本次滑出的记录）
         co_await updateAffinityFromRecords(sessionId, records, processed);
-
-        // 4. 检查是否需要迁移到长期记忆
-        if (countLines(existingMemory) > config.shortTermMemoryMax) {
-            Logger::session(sessionId).info(
-              "短期记忆超限({}>{})，触发迁移", countLines(existingMemory), config.shortTermMemoryMax);
-            co_await migrateToLongTermMemory(sessionId, existingMemory);
-        }
 
         co_return;
     }
