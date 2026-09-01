@@ -27,6 +27,7 @@ export interface MemoryConfig {
     routerWindowKeepCount: number
     shortTermMemoryMax: number
     longTermRecallThreshold: number
+    longTermInjectThreshold: number
 }
 
 export interface LongTermMemoryEntry {

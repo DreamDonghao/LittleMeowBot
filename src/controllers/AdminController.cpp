@@ -820,6 +820,11 @@ Task<> AdminController::saveMemoryConfig(
         (*json)["longTermRecallThreshold"].asDouble() >= 1.0) {
         (*json)["longTermRecallThreshold"] = Config::instance().longTermRecallThreshold;
     }
+    // 注入阈值: 必须在 (0,1) 开区间内
+    if (!json->isMember("longTermInjectThreshold") || (*json)["longTermInjectThreshold"].asDouble() <= 0.0 ||
+        (*json)["longTermInjectThreshold"].asDouble() >= 1.0) {
+        (*json)["longTermInjectThreshold"] = Config::instance().longTermInjectThreshold;
+    }
 
     ConfigStore::saveMemoryConfig(*json);
 
@@ -832,6 +837,7 @@ Task<> AdminController::saveMemoryConfig(
     config.routerWindowKeepCount = (*json)["routerWindowKeepCount"].asInt();
     config.shortTermMemoryMax = (*json)["shortTermMemoryMax"].asInt();
     config.longTermRecallThreshold = (*json)["longTermRecallThreshold"].asDouble();
+    config.longTermInjectThreshold = (*json)["longTermInjectThreshold"].asDouble();
 
     Json::Value resp;
     resp["success"] = true;

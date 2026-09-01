@@ -3,6 +3,7 @@
 
 #include <config/Config.hpp>
 #include <service/ChatRecordManager.hpp>
+#include <service/MessageRecall.hpp>
 #include <storage/ChatRecordStore.hpp>
 #include <storage/MemoryStore.hpp>
 
@@ -13,10 +14,12 @@ namespace insoulforge {
 
     void ChatRecordManager::addUserRecord(const std::string &content) const {
         ChatRecordStore::addChatRecord(m_sessionId, "user", content);
+        MessageRecall::onRecordAdded(m_sessionId, content, false);
     }
 
     void ChatRecordManager::addAssistantRecord(const std::string &content) const {
         ChatRecordStore::addChatRecord(m_sessionId, "assistant", content);
+        MessageRecall::onRecordAdded(m_sessionId, content, true);
     }
 
     std::deque<Json::Value> ChatRecordManager::getRecords() const {

@@ -6,10 +6,14 @@
 ///          支持用户消息和 AI 回复的记录与检索。
 
 #pragma once
+#include <cstddef>
 #include <deque>
 #include <json/value.h>
 
 namespace insoulforge {
+    /// @brief 提示词中完整保留的最近记录条数（更早记录简化处理；召回缓存按此长度对齐淘汰）
+    inline constexpr size_t kRecentRecordCount = 12;
+
     /// @brief 聊天记录管理类
     /// @details 管理单个会话的聊天记录，使用 SQLite 存储。
     ///          每个会话对应一个 ChatRecordManager 实例。

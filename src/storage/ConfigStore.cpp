@@ -141,6 +141,7 @@ namespace insoulforge {
             defaults["routerWindowKeepCount"] = 10;
             defaults["shortTermMemoryMax"] = 15;
             defaults["longTermRecallThreshold"] = 0.65;
+            defaults["longTermInjectThreshold"] = 0.45;
             return loadConfigJson("memory_config", defaults);
         }
 

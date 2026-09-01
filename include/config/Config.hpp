@@ -40,6 +40,7 @@ namespace insoulforge {
         int routerWindowKeepCount = 10; // Router 子窗口保留条数
         int shortTermMemoryMax = 15;
         double longTermRecallThreshold = 0.65; // 长期记忆召回合并的相似度阈值（独立于 recall_memory 的 0.3）
+        double longTermInjectThreshold = 0.45; // 长期记忆被动注入提示词的相似度阈值（消息入库时逐条召回）
 
         // QQ Bot 配置
         std::string accessToken;

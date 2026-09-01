@@ -14,14 +14,18 @@
 #include <regex>
 #include <service/ChatRecordManager.hpp>
 #include <service/LlmClient.hpp>
+#include <service/MessageRecall.hpp>
 #include <service/PromptService.hpp>
 #include <service/ToolRegistry.hpp>
 #include <spdlog/spdlog.h>
 #include <storage/AffinityStore.hpp>
 #include <string>
+#include <unordered_map>
 #include <util/CommonUtil.hpp>
 #include <util/HttpUtil.hpp>
 #include <util/Logger.hpp>
+#include <utility>
+#include <vector>
 
 namespace insoulforge {
     namespace {
@@ -224,17 +228,33 @@ namespace insoulforge {
         }
 
         /// @brief 构建聊天记录上下文（窗口内，旧 → 新）：
-        /// 最新 12 条原样保留，更早的每条 text 截断到 500 字；每条 sender 注入当前好感度 affinity
+        /// 最新 kRecentRecordCount 条原样保留，更早的每条 text 截断到 500 字；
+        /// 每条 sender 注入当前好感度 affinity；最近记录按 message_id 注入召回的长期记忆 memories
+        /// （同一条记忆被多条消息命中时只挂在相似度最高的那条消息上）
         std::string buildChatContextText(const ChatRecordManager &chatRecords) {
-            constexpr size_t kRecentFullCount = 12;
-
             const auto records = chatRecords.getRecords(); // 旧 → 新
             const size_t totalRecords = records.size();
-            const size_t olderCount = totalRecords > kRecentFullCount ? totalRecords - kRecentFullCount : 0;
+            const size_t olderCount = totalRecords > kRecentRecordCount ? totalRecords - kRecentRecordCount : 0;
             const auto olderRecords = records | std::views::take(olderCount);
             const auto recentRecords = records | std::views::drop(olderCount);
 
             const auto affinityMap = AffinityStore::getAffinityMap(chatRecords.getSessionId());
+
+            // 最近记录的召回缓存（下标与 recentRecords 旧 → 新对齐），并统计每条记忆的最佳归属消息
+            std::vector<std::vector<MessageRecallHit>> recentHits;
+            std::unordered_map<int64_t, std::pair<float, size_t>> bestOwner; // 记忆 id → (最高相似度, 消息下标)
+            for (const auto &record: recentRecords) {
+                std::vector<MessageRecallHit> hits;
+                const std::string messageIdStr = parseRecordContent(record).get("message_id", "").asString();
+                if (const uint64_t messageId = parseUInt64(messageIdStr); messageId > 0)
+                    hits = MessageRecall::getHits(chatRecords.getSessionId(), messageId);
+                for (const auto &hit: hits) {
+                    auto [it, inserted] = bestOwner.try_emplace(hit.id, hit.similarity, recentHits.size());
+                    if (!inserted && hit.similarity > it->second.first)
+                        it->second = {hit.similarity, recentHits.size()};
+                }
+                recentHits.push_back(std::move(hits));
+            }
 
             std::string context;
 
@@ -245,9 +265,21 @@ namespace insoulforge {
                 }) + "\n\n";
             }
 
-            // 处理最近对话
-            context += "【最近对话】\n" + joinRecords(recentRecords, [&affinityMap](const Json::Value &record) {
-                return injectAffinity(parseRecordContent(record), affinityMap);
+            // 处理最近对话（注入好感度与召回记忆）
+            size_t recentIndex = 0;
+            context += "【最近对话】\n" + joinRecords(recentRecords, [&](const Json::Value &record) {
+                const size_t index = recentIndex++;
+                Json::Value content = injectAffinity(parseRecordContent(record), affinityMap);
+                if (!recentHits[index].empty()) {
+                    Json::Value memories(Json::arrayValue);
+                    for (const auto &hit: recentHits[index]) {
+                        if (bestOwner.at(hit.id).second == index)
+                            memories.append(hit.content);
+                    }
+                    if (!memories.empty())
+                        content["memories"] = memories;
+                }
+                return content;
             });
             return context;
         }
