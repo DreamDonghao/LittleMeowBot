@@ -89,30 +89,25 @@ cd frontend && npm run type-check
 - 控制台输入 `quit` 优雅退出
 
 注意：构建产物会输出到 `build/`，而 `data/`、`logs/` 与 `public/` 位于仓库根目录。开发时如果从仓库根目录运行
-`./build/insoulforge/exe/insoulforge`，读取的是根目录的 `data/`；如果直接进入 `build/insoulforge/` 运行，则会在 `build/insoulforge/` 下生成数据目录。
+`./build/insoulforge/exe/insoulforge`，读取的是根目录的 `data/`；如果直接进入 `build/insoulforge/` 运行，则会在
+`build/insoulforge/` 下生成数据目录。
 
 ## 项目结构
 
 ```
 insoulforge/
-├── main.cpp                  # 入口：初始化日志/数据库/配置/Agent，启动 Drogon
 ├── CMakeLists.txt            # C++23 构建脚本（含前端自动构建）
-├── controllers/              # Drogon HTTP 控制器（.h 为传统命名，勿改）
-│   ├── ProcessQQMessages.*   # POST / 接收 OneBot 消息，驱动 Agent 流水线
-│   ├── AdminController.*     # /admin/api/* 管理后台 REST API
-│   └── AdminWebSocket.*      # /admin/ws 实时聊天记录推送
 ├── include/                  # 头文件（按模块分目录）
 │   ├── agent/                # Agent 系统：AgentSystem / RouterAgent / ExecutorAgent / AgentToolManager / AgentTypes
-│   ├── api/                  # ApiClient：封装 OpenAI 格式 LLM API 调用
+│   ├── controllers/          # ProcessQQMessages / AdminController / AdminWebSocket / LogWebSocket / CommandHandler
 │   ├── config/               # Config：从数据库加载全部配置的单例
-│   ├── handler/              # CommandHandler：群聊 /xxx 命令
-│   ├── model/                # 数据模型：QQMessage / ChatRecordManager / MemoryManager / GroupConfigManager
-│   ├── service/              # 服务层：ToolRegistry / MemoryService / PromptService / RAGFlowClient / MessageService / WebSocketManager
-│   ├── storage/              # Database：SQLite 单例
-│   └── util/                 # Log / Prompt / tool.h
-├── src/                      # 源文件（与 include/ 一一对应）
+│   ├── model/                # 数据模型：QQMessage
+│   ├── service/              # 服务层：MessageService / MemoryService / LlmClient / OneBotClient / RAGFlowClient / ToolRegistry / ChatRecordManager / MemoryManager / SessionConfigManager 等
+│   ├── storage/              # SQLite 存储：Database / 各领域 Store（Session / ChatRecord / Memory / Affinity / Prompt / Admin / Config / Usage / Tool / Task）
+│   └── util/                 # Log / Http / CommonUtil
+├── src/                      # 源文件（与 include/ 一一对应，入口 main.cpp）
 ├── frontend/                 # Vue 3 + Vite + TypeScript 管理后台
-│   └── src/components/       # 11 个管理页面（LLM配置、提示词、自定义工具、表情库、管理员、群管理、聊天记录、知识库配置、记忆与上下文、OneBot配置、用量统计）
+│   └── src/components/       # 14 个功能组件（Dashboard、LLM配置、提示词、自定义工具、表情库、管理员、群管理、运行日志、请求调试、知识库配置、记忆与上下文、OneBot配置、用量统计、关于）
 ├── agentTools/               # 自定义工具的 JSON 配置（random / get_time / get_weather / search_web）
 ├── docs/                     # 文档
 └── run.sh                    # 部署启动脚本
@@ -167,7 +162,7 @@ MessageService::sendGroupMsg → OneBot API
 - **提取机制**（可配置）：聊天记录窗口超过 `windowTriggerCount` 条时，LLM 从待删除的旧记录中提取记忆并滑动窗口（保留最近
   `windowKeepCount` 条）；Router 有独立的子窗口参数（`routerWindowTriggerCount` / `routerWindowKeepCount`）
 - **迁移机制**：短期记忆超过 `shortTermMemoryMax` 条时，LLM 筛选 `memoryMigrateCount` 条重要记忆写入 RAGFlow
-- 记忆提取与合并复用 executor 模型（`ApiClient::requestLLM`）
+- 记忆提取与合并复用 executor 模型（`LlmClient::requestLLM`）
 
 ### 配置系统
 
@@ -176,7 +171,7 @@ temperature 等参数，可选 `reasoningEffort`）、知识库（RAGFlow，含 
 LLM 配置项存储于数据库，但当前记忆提取复用 executor 模型。提示词由 `PromptService` 管理（`executor_system` /
 `router_system`），支持 `{botName}` 占位符，修改后写回数据库。
 
-**用量统计**：每次 LLM 调用通过 `ApiClient::logUsage` 记录模型与 token 用量，后台"用量统计"页读取 `/admin/api/usage` 展示。
+**用量统计**：每次 LLM 调用通过 `LlmClient::logUsage` 记录模型与 token 用量，后台"用量统计"页读取 `/admin/api/usage` 展示。
 
 ### 数据库
 
@@ -231,7 +226,7 @@ registry.registerTool(
 
 ### 添加管理 API
 
-1. 在 `../controllers/AdminController.h` 中声明路由与 handler
+1. 在 `include/controllers/AdminController.hpp` 中声明路由与 handler
 2. 在 `../controllers/AdminController.cpp` 中实现（协程写法 `Task<HttpResponsePtr>` + `co_return`）
 3. 数据访问统一通过 `Database` 单例
 
@@ -250,7 +245,7 @@ registry.registerTool(
 
 ## 调试
 
-- **日志**：`spdlog` 输出到控制台与 `logs/bot.log`，模块间通过 `util/Log.hpp` 封装。排查消息流水线问题时先看日志中 Router
+- **日志**：`spdlog` 输出到控制台与 `logs/bot.log`，模块间通过 `util/Logger.hpp` 封装。排查消息流水线问题时先看日志中 Router
   决策与 Executor 输出
 - **协程**：所有异步 I/O 使用 `drogon::Task<T>` / `co_await`，注意 `co_await` 后对象生命周期（捕获 `shared_ptr` 而非裸指针）
 - **组内互斥**：`AgentSystem` 保证同一群的消息串行处理，新增消息处理逻辑时不要绕过该机制
@@ -260,8 +255,7 @@ registry.registerTool(
 
 完整规范见 [CODING_STYLE.md](./CODING_STYLE.md)，要点：
 
-- 头文件 `.hpp`、源文件 `.cc`、类 PascalCase、方法 camelCase、成员 `m_` 前缀、静态 `s_` 前缀
-- 控制器头文件沿用传统 `.h` 命名（历史原因）
+- 头文件 `.hpp`、源文件 `.cpp`、类 PascalCase、方法 camelCase、成员 `m_` 前缀、静态 `s_` 前缀
 - 包含顺序：标准库 → 第三方 → 项目头文件
 - 格式化使用 `.clang-format`（Google 风格，4 空格缩进，120 列），提交前建议运行 clang-format 与 clang-tidy
 - 单例统一 `static ClassName& instance()` + 私有构造

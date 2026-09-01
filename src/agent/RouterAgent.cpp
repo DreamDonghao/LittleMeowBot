@@ -2,23 +2,20 @@
 /// @brief Router Agent - 实现（合并路由判断与规划）
 
 #include <agent/RouterAgent.hpp>
-#include <api/ApiClient.hpp>
+#include <algorithm>
+#include <service/LlmClient.hpp>
+#include <cctype>
 #include <config/Config.hpp>
+#include <fmt/core.h>
+#include <service/ChatRecordManager.hpp>
 #include <model/QQMessage.hpp>
-#include <model/ChatRecordManager.hpp>
+#include <ranges>
+#include <regex>
 #include <service/PromptService.hpp>
+#include <spdlog/spdlog.h>
+#include <string>
 #include <util/HttpUtil.hpp>
 #include <util/Logger.hpp>
-#include <spdlog/spdlog.h>
-#include <fmt/core.h>
-#include <regex>
-#include <ranges>
-#include <algorithm>
-#include <string>
-#include <deque>
-#include <string>
-#include <model/QQMessage.hpp>
-#include <model/ChatRecordManager.hpp>
 
 namespace insoulforge {
     namespace {
@@ -27,13 +24,14 @@ namespace insoulforge {
             std::string rawMsg = message.getRawMessage();
             std::erase_if(rawMsg, [](const char c) { return std::isspace(static_cast<unsigned char>(c)); });
 
-            if (rawMsg.empty()) return true;
-            if (rawMsg.length() <= 2) return true;
+            if (rawMsg.empty())
+                return true;
+            if (rawMsg.length() <= 2)
+                return true;
 
             // 纯表情包
             static const std::regex facePattern(R"(^\[CQ:face.*\]$)");
-            if (rawMsg.find("[CQ:face") != std::string::npos
-                && std::regex_match(rawMsg, facePattern)) {
+            if (rawMsg.find("[CQ:face") != std::string::npos && std::regex_match(rawMsg, facePattern)) {
                 return true;
             }
 
@@ -60,7 +58,8 @@ namespace insoulforge {
             if (Json::Reader reader; reader.parse(content, root)) {
                 const std::string name = root["sender"]["name"].asString();
                 const std::string text = compressCQCodes(root["text"].asString());
-                if (includeSender && !name.empty()) return name + ": " + text;
+                if (includeSender && !name.empty())
+                    return name + ": " + text;
                 return text;
             }
             return content;
@@ -80,14 +79,14 @@ namespace insoulforge {
 
             const auto &records = chatRecords.getRecords();
             const size_t windowSize = keep + (records.size() % slide);
-            const size_t startIdx = std::ssize(records) > windowSize ? std::ssize(records) - windowSize : 0;
+            const size_t startIdx = records.size() > windowSize ? records.size() - windowSize : 0;
 
             std::string context = "【聊天记录】（最后一条是当前消息）\n";
             bool spokeInWindow = false;
             size_t silentCount = 0;
 
             // 使用范围循环简化代码
-            for (const auto &record : records | std::views::drop(startIdx)) {
+            for (const auto &record: records | std::views::drop(startIdx)) {
                 const bool isAssistant = record["role"].asString() == "assistant";
                 if (isAssistant) {
                     spokeInWindow = true;
@@ -95,28 +94,30 @@ namespace insoulforge {
                 } else {
                     ++silentCount;
                 }
-                context += isAssistant
-                               ? fmt::format("[{}]: {}\n", config.botName,
-                                             compactContent(record["content"].asString(), false))
-                               : fmt::format("[用户] {}\n", compactContent(record["content"].asString(), true));
+                context += isAssistant ? fmt::format("[{}]: {}\n", config.botName,
+                                           compactContent(record["content"].asString(), false))
+                                       : fmt::format("[用户] {}\n", compactContent(record["content"].asString(), true));
             }
 
             // 发言间隔作为事实注入末尾（置于末尾以保持前缀稳定，缓存不受影响）
-            const std::string &botName = Config::instance().botName;
+            const std::string &botName = config.botName;
             if (spokeInWindow) {
                 context += fmt::format("\n【发言间隔】{} 距上次发言已隔 {} 条消息。\n", botName, silentCount);
-                Logger::session(chatRecords.getSessionId()).info("[Router] 发言间隔: 距上次发言 {} 条消息", silentCount);
+                Logger::session(chatRecords.getSessionId())
+                  .info("[Router] 发言间隔: 距上次发言 {} 条消息", silentCount);
             } else {
                 const size_t windowLen = records.size() - startIdx;
-                context += fmt::format("\n【发言间隔】聊天记录中看不到 {} 的发言，已沉默至少 {} 条消息。\n", botName, windowLen);
-                Logger::session(chatRecords.getSessionId()).info("[Router] 发言间隔: 窗口内无发言记录(至少已沉默 {} 条)", windowLen);
+                context +=
+                  fmt::format("\n【发言间隔】聊天记录中看不到 {} 的发言，已沉默至少 {} 条消息。\n", botName, windowLen);
+                Logger::session(chatRecords.getSessionId())
+                  .info("[Router] 发言间隔: 窗口内无发言记录(至少已沉默 {} 条)", windowLen);
             }
             return context;
         }
 
         /// @brief 解析 LLM 响应
         [[nodiscard]] std::optional<RouterDecision> parseResponse(
-            const std::string &content, const uint64_t sessionId) {
+          const std::string &content, const uint64_t sessionId) {
             // 提取 JSON
             size_t start = content.find('{');
             size_t end = content.rfind('}');
@@ -137,10 +138,9 @@ namespace insoulforge {
 
             // 解析 action
             std::string actionStr = root.get("action", "reply").asString();
-            std::ranges::transform(actionStr, actionStr.begin(), ::tolower);
-            decision.action = (actionStr == "skip")
-                                  ? RouterDecision::Action::SKIP
-                                  : RouterDecision::Action::REPLY;
+            std::ranges::transform(
+              actionStr, actionStr.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            decision.action = (actionStr == "skip") ? RouterDecision::Action::SKIP : RouterDecision::Action::REPLY;
 
             // 解析 reason
             decision.reason = root.get("reason", "").asString();
@@ -160,16 +160,14 @@ namespace insoulforge {
         }
 
         /// @brief 构建 LLM Prompt
-        Json::Value buildPrompt(
-            const ChatRecordManager &chatRecords,
-            const bool isPrivate) {
+        Json::Value buildPrompt(const ChatRecordManager &chatRecords, const bool isPrivate) {
             Json::Value messages;
 
             // System Prompt（数据库存储，管理后台可编辑；私聊使用独立的私聊路由提示词）
             Json::Value systemMsg;
             systemMsg["role"] = "system";
-            systemMsg["content"] = isPrivate ? PromptService::getRouterPrivateSystemPrompt()
-                                             : PromptService::getRouterSystemPrompt();
+            systemMsg["content"] =
+              isPrivate ? PromptService::getRouterPrivateSystemPrompt() : PromptService::getRouterSystemPrompt();
             messages.append(systemMsg);
 
             Json::Value userMsg;
@@ -181,9 +179,8 @@ namespace insoulforge {
         }
 
         /// @brief LLM 路由与规划（合并判断 + 策略）
-        [[nodiscard]] drogon::Task<std::optional<RouterDecision> > llmRouteAndPlan(
-            const ChatRecordManager &chatRecords,
-            const bool isPrivate) {
+        [[nodiscard]] drogon::Task<std::optional<RouterDecision>> llmRouteAndPlan(
+          const ChatRecordManager &chatRecords, const bool isPrivate) {
             const auto &config = Config::instance();
 
             const Json::Value messages = buildPrompt(chatRecords, isPrivate);
@@ -199,20 +196,19 @@ namespace insoulforge {
             }
 
             const auto resp = co_await HttpUtil::send("[Router]", config.router.baseUrl, config.router.path,
-                                                      drogon::Post, body, config.router.apiKey, 90.0,
-                                                      chatRecords.getSessionId());
+              drogon::Post, body, config.router.apiKey, 90.0, chatRecords.getSessionId());
             if (!resp) {
                 co_return std::nullopt;
             }
 
             const auto json = (*resp)->getJsonObject();
             if ((*resp)->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
-                Logger::session(chatRecords.getSessionId()).error("[Router] LLM请求失败: status={}",
-                                                              static_cast<int>((*resp)->getStatusCode()));
+                Logger::session(chatRecords.getSessionId())
+                  .error("[Router] LLM请求失败: status={}", static_cast<int>((*resp)->getStatusCode()));
                 co_return std::nullopt;
             }
 
-            ApiClient::logUsage(*json, config.router.model, "router", chatRecords.getSessionId());
+            LlmClient::logUsage(*json, config.router.model, "router", chatRecords.getSessionId());
 
             const std::string content = (*json)["choices"][0]["message"]["content"].asString();
             Logger::session(chatRecords.getSessionId()).debug("[Router] LLM响应: {}", content);
@@ -221,8 +217,8 @@ namespace insoulforge {
         }
 
         /// @brief 构造硬规则决策结果
-        RouterDecision makeDecision(const RouterDecision::Action action, std::string reason,
-                                    int maxLength = 25, bool priority = false) {
+        RouterDecision makeDecision(
+          const RouterDecision::Action action, std::string reason, int maxLength = 25, bool priority = false) {
             RouterDecision decision;
             decision.action = action;
             decision.shouldReply = action == RouterDecision::Action::REPLY;
@@ -231,11 +227,9 @@ namespace insoulforge {
             decision.isPriority = priority;
             return decision;
         }
-    }
+    } // namespace
 
-    drogon::Task<RouterDecision> route(
-        const ChatRecordManager &chatRecords,
-        const QQMessage &message) {
+    drogon::Task<RouterDecision> route(const ChatRecordManager &chatRecords, const QQMessage &message) {
         // ========== Step 1: 硬规则检查（无需 LLM）==========
 
         // 1.0 系统定时任务触发 → 高优先级回复（调度器以系统账号合成的消息，确定性放行；
@@ -272,9 +266,9 @@ namespace insoulforge {
             co_return makeDecision(RouterDecision::Action::REPLY, "LLM调用失败，保守回复");
         }
 
-        Logger::session(chatRecords.getSessionId()).info("[Router] 决策: {} ({})",
-                                                     llmDecision->action, llmDecision->reason);
+        Logger::session(chatRecords.getSessionId())
+          .info("[Router] 决策: {} ({})", llmDecision->action, llmDecision->reason);
 
         co_return llmDecision.value();
     }
-}
+} // namespace insoulforge

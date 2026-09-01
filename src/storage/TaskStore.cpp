@@ -3,9 +3,9 @@
 /// @author donghao
 /// @date 2026-08-30
 
-#include <storage/TaskStore.hpp>
 #include <storage/Database.hpp>
 #include <storage/Statement.hpp>
+#include <storage/TaskStore.hpp>
 
 namespace insoulforge {
     TaskStore &TaskStore::instance() {
@@ -14,11 +14,10 @@ namespace insoulforge {
     }
 
     int64_t TaskStore::addScheduledTask(const ScheduledTask &task) const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::unique_lock lock(db.mutex());
-        Statement stmt(db.handle(),
-                       "INSERT INTO scheduled_tasks (session_type, target_id, remind_time, content) "
-                       "VALUES (?, ?, ?, ?)");
+        const Statement stmt(db.handle(), "INSERT INTO scheduled_tasks (session_type, target_id, remind_time, content) "
+                                          "VALUES (?, ?, ?, ?)");
         stmt.bind(1, task.sessionType);
         stmt.bind(2, task.targetId);
         stmt.bind(3, task.remindTime);
@@ -28,12 +27,12 @@ namespace insoulforge {
     }
 
     std::vector<TaskStore::ScheduledTask> TaskStore::getPendingScheduledTasks() const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::shared_lock lock(db.mutex());
         std::vector<ScheduledTask> tasks;
-        Statement stmt(db.handle(),
-                       "SELECT id, session_type, target_id, remind_time, content FROM scheduled_tasks "
-                       "WHERE status = 'pending' ORDER BY remind_time ASC");
+        const Statement stmt(db.handle(),
+          "SELECT id, session_type, target_id, remind_time, content FROM scheduled_tasks "
+          "WHERE status = 'pending' ORDER BY remind_time ASC");
         while (stmt.step()) {
             ScheduledTask task;
             task.id = stmt.getInt64(0);
@@ -47,9 +46,9 @@ namespace insoulforge {
     }
 
     void TaskStore::finishScheduledTask(const int64_t id) const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::unique_lock lock(db.mutex());
-        Statement stmt(db.handle(), "UPDATE scheduled_tasks SET status='done' WHERE id=?");
+        const Statement stmt(db.handle(), "UPDATE scheduled_tasks SET status='done' WHERE id=?");
         stmt.bind(1, id);
         stmt.exec();
     }

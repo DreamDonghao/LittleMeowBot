@@ -14,9 +14,9 @@ namespace insoulforge {
     }
 
     std::unordered_map<uint64_t, int> AffinityStore::getAffinityMap(const uint64_t sessionId) const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::shared_lock lock(db.mutex());
-        Statement stmt(db.handle(), "SELECT qq_number, affinity FROM group_affinity WHERE group_id = ?");
+        const Statement stmt(db.handle(), "SELECT qq_number, affinity FROM group_affinity WHERE group_id = ?");
         stmt.bind(1, sessionId);
         std::unordered_map<uint64_t, int> affinityMap;
         while (stmt.step()) {
@@ -26,12 +26,12 @@ namespace insoulforge {
     }
 
     void AffinityStore::adjustAffinity(const uint64_t sessionId, const uint64_t qqNumber, const int delta) const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::unique_lock lock(db.mutex());
         // max/min 标量函数在 SQL 层夹紧，并发叠加也不会越界
-        Statement stmt(db.handle(),
-                       "INSERT INTO group_affinity (group_id, qq_number, affinity) VALUES (?, ?, max(min(?, 100), -100)) "
-                       "ON CONFLICT(group_id, qq_number) DO UPDATE SET affinity = max(min(affinity + ?, 100), -100)");
+        const Statement stmt(db.handle(),
+          "INSERT INTO group_affinity (group_id, qq_number, affinity) VALUES (?, ?, max(min(?, 100), -100)) "
+          "ON CONFLICT(group_id, qq_number) DO UPDATE SET affinity = max(min(affinity + ?, 100), -100)");
         stmt.bind(1, sessionId);
         stmt.bind(2, qqNumber);
         stmt.bind(3, delta);

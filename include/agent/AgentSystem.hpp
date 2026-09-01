@@ -9,15 +9,15 @@
 ///          - Router REPLY → Executor 生成回复
 
 #pragma once
-#include <model/ChatRecordManager.hpp>
-#include <model/MemoryManager.hpp>
-#include <model/QQMessage.hpp>
-#include <drogon/utils/coroutine.h>
 #include <atomic>
+#include <drogon/utils/coroutine.h>
+#include <service/ChatRecordManager.hpp>
+#include <service/MemoryManager.hpp>
+#include <model/QQMessage.hpp>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
-#include <mutex>
 
 namespace insoulforge {
     /// @brief Agent 系统单例类
@@ -38,10 +38,8 @@ namespace insoulforge {
         /// @param memory 长期记忆管理器
         /// @param message QQ 消息
         /// @return 回复内容（如果需要回复）
-        drogon::Task<std::optional<std::string> > process(
-            const ChatRecordManager &chatRecords,
-            const MemoryManager &memory,
-            const QQMessage &message);
+        drogon::Task<std::optional<std::string>> process(
+          const ChatRecordManager &chatRecords, const MemoryManager &memory, const QQMessage &message);
 
     private:
         AgentSystem() = default;
@@ -67,4 +65,4 @@ namespace insoulforge {
         /// @brief 完成处理，移除会话标记
         void finishProcessing(uint64_t sessionId);
     };
-}
+} // namespace insoulforge

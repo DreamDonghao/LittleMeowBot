@@ -1,7 +1,7 @@
 /// @file SessionConfigManager.cpp
 /// @brief 群组配置管理器 - 实现
 
-#include <model/SessionConfigManager.hpp>
+#include <service/SessionConfigManager.hpp>
 #include <storage/SessionStore.hpp>
 
 namespace insoulforge {
@@ -20,4 +20,4 @@ namespace insoulforge {
     void SessionConfigManager::incrementMessageCount(const uint64_t sessionId, const size_t charCount) {
         SessionStore::instance().incrementMessageCount(sessionId, charCount);
     }
-}
+} // namespace insoulforge

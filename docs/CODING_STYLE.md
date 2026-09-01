@@ -4,13 +4,13 @@
 
 ### 文件命名
 
-- **头文件**: `PascalCase.hpp` (如 `MemoryManager.hpp`, `ApiClient.hpp`)
-- **源文件**: `PascalCase.cc` (如 `ProcessQQMessages.cc`)
-- **控制器**: `PascalCaseController.cc/.h` (如 `AdminController.cc`)
+- **头文件**: `PascalCase.hpp` (如 `MemoryManager.hpp`, `LlmClient.hpp`)
+- **源文件**: `PascalCase.cpp` (如 `ProcessQQMessages.cpp`)
+- **控制器**: `PascalCase.hpp/.cpp` (如 `AdminController.hpp`)
 
 ### 类命名
 
-- **PascalCase**: `MemoryManager`, `ApiClient`, `AgentSystem`
+- **PascalCase**: `MemoryManager`, `LlmClient`, `AgentSystem`
 - **接口/抽象类**: 以 `I` 开头 (如 `IHandler`)
 - **异常类**: 以 `Exception` 结尾 (如 `ConfigException`)
 

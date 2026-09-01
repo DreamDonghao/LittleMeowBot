@@ -1,11 +1,11 @@
 #include <regex>
 #include <agent/AgentSystem.hpp>
 #include <controllers/ProcessQQMessages.hpp>
-#include <handler/CommandHandler.hpp>
-#include <model/ChatRecordManager.hpp>
-#include <model/MemoryManager.hpp>
+#include <controllers/CommandHandler.hpp>
+#include <service/ChatRecordManager.hpp>
+#include <service/MemoryManager.hpp>
 #include <model/QQMessage.hpp>
-#include <model/SessionConfigManager.hpp>
+#include <service/SessionConfigManager.hpp>
 #include <service/MemoryService.hpp>
 #include <service/MessageService.hpp>
 #include <service/WebSocketManager.hpp>
@@ -94,7 +94,7 @@ Task<> ProcessQQMessages::receiveMessages(const HttpRequestPtr req,
 
         ChatRecordManager chatRecords(sessionId);
 
-        std::string cmdResponse = co_await handleCommand(qqMessage, chatRecords);
+        std::string cmdResponse = co_await handleCommand(qqMessage);
         co_await sendReply(qqMessage, cmdResponse, chatRecords);
         co_return;
     }

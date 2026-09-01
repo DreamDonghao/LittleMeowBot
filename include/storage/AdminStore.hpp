@@ -14,13 +14,13 @@ namespace insoulforge {
     public:
         static AdminStore &instance();
 
-        bool isAdmin(uint64_t qqNumber) const;
+        [[nodiscard]] bool isAdmin(uint64_t qqNumber) const;
 
         void addAdmin(uint64_t qqNumber) const;
 
         void removeAdmin(uint64_t qqNumber) const;
 
-        std::vector<uint64_t> getAdmins() const;
+        [[nodiscard]] std::vector<uint64_t> getAdmins() const;
 
     private:
         AdminStore() = default;

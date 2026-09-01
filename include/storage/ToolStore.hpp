@@ -28,13 +28,13 @@ namespace insoulforge {
         static ToolStore &instance();
 
         /// @brief 获取所有自定义工具
-        std::vector<CustomTool> getCustomTools() const;
+        [[nodiscard]] std::vector<CustomTool> getCustomTools() const;
 
         /// @brief 获取启用的自定义工具（供 AgentToolManager 使用）
-        std::vector<CustomTool> getEnabledCustomTools() const;
+        [[nodiscard]] std::vector<CustomTool> getEnabledCustomTools() const;
 
         /// @brief 添加自定义工具
-        int addCustomTool(const CustomTool &tool) const;
+        [[nodiscard]] int addCustomTool(const CustomTool &tool) const;
 
         /// @brief 更新自定义工具
         void updateCustomTool(const CustomTool &tool) const;
@@ -46,10 +46,10 @@ namespace insoulforge {
         void toggleCustomTool(int id) const;
 
         /// @brief 检查工具名是否已存在
-        bool hasCustomTool(const std::string &name) const;
+        [[nodiscard]] bool hasCustomTool(const std::string &name) const;
 
         /// @brief 获取自定义工具Python解释器路径
-        std::string getCustomToolPython() const;
+        [[nodiscard]] std::string getCustomToolPython() const;
 
         /// @brief 设置自定义工具Python解释器路径
         void setCustomToolPython(const std::string &pythonPath) const;
@@ -58,6 +58,6 @@ namespace insoulforge {
         ToolStore() = default;
 
         /// @brief 从数据库加载自定义工具（onlyEnabled 时仅加载启用的）
-        std::vector<CustomTool> loadCustomTools(bool onlyEnabled) const;
+        [[nodiscard]] std::vector<CustomTool> loadCustomTools(bool onlyEnabled) const;
     };
 } // namespace insoulforge

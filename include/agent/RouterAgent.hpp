@@ -6,17 +6,15 @@
 ///          决策结果包含是否回复 + 回复策略（语气、长度、是否启用思考等）
 
 #pragma once
-#include "AgentTypes.hpp"
-#include <model/ChatRecordManager.hpp>
-#include <model/QQMessage.hpp>
+#include <agent/AgentTypes.hpp>
 #include <drogon/utils/coroutine.h>
+#include <service/ChatRecordManager.hpp>
+#include <model/QQMessage.hpp>
 
 namespace insoulforge {
     /// @brief 路由决策与规划
     /// @param chatRecords 聊天记录
     /// @param message QQ 消息
     /// @return 路由决策结果（包含回复策略）
-    [[nodiscard]] drogon::Task<RouterDecision> route(
-        const ChatRecordManager &chatRecords,
-        const QQMessage &message);
-}
+    [[nodiscard]] drogon::Task<RouterDecision> route(const ChatRecordManager &chatRecords, const QQMessage &message);
+} // namespace insoulforge

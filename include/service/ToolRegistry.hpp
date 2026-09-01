@@ -9,11 +9,11 @@
 
 #pragma once
 
-#include <json/value.h>
 #include <drogon/utils/coroutine.h>
+#include <functional>
+#include <json/value.h>
 #include <map>
 #include <string>
-#include <functional>
 #include <vector>
 
 namespace insoulforge {
@@ -27,7 +27,7 @@ namespace insoulforge {
     ToolContext &currentToolContext();
 
     /// @brief 异步工具处理器
-    using ToolHandler = std::function<drogon::Task<std::string>(const Json::Value & args)>;
+    using ToolHandler = std::function<drogon::Task<std::string>(const Json::Value &args)>;
 
     struct Tool {
         std::string name;
@@ -55,8 +55,8 @@ namespace insoulforge {
         [[nodiscard]] Json::Value getAllTools() const;
 
         /// @brief 执行工具（异步）
-        [[nodiscard]] drogon::Task<std::string> executeTool(const std::string &name, const Json::Value &args,
-                                                            uint64_t sessionId = 0) const;
+        [[nodiscard]] drogon::Task<std::string> executeTool(
+          const std::string &name, const Json::Value &args, uint64_t sessionId = 0) const;
 
         /// @brief 检查工具是否存在
         [[nodiscard]] bool hasTool(const std::string &name) const;

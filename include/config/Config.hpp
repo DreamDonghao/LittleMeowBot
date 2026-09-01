@@ -1,8 +1,8 @@
 /// @file Config.hpp
 /// @brief 全局配置管理
 #pragma once
-#include <json/value.h>
 #include <cstdint>
+#include <json/value.h>
 #include <string>
 
 namespace insoulforge {
@@ -66,4 +66,4 @@ namespace insoulforge {
     private:
         Config() = default;
     };
-}
+} // namespace insoulforge

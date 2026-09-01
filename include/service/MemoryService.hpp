@@ -8,8 +8,7 @@
 ///          - 超限时迁移到长期记忆库（RAGFlow）
 
 #pragma once
-#include <api/ApiClient.hpp>
-
+#include <service/LlmClient.hpp>
 
 /// @brief 记忆服务 - 短期记忆提取、合并与迁移逻辑
 namespace insoulforge::MemoryService {
@@ -18,4 +17,4 @@ namespace insoulforge::MemoryService {
     /// @details 窗口条数超过 windowTriggerCount 时触发，删除至 windowKeepCount 条。
     ///          API 失败时水位线不推进，下条消息自动重试；判定"无"时正常推进水位线。
     drogon::Task<> appendAndMergeMemory(uint64_t sessionId);
-}
+} // namespace insoulforge::MemoryService

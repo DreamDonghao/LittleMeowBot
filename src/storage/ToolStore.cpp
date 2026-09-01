@@ -3,11 +3,11 @@
 /// @author donghao
 /// @date 2026-08-30
 
-#include <storage/ToolStore.hpp>
+#include <fmt/core.h>
+#include <spdlog/spdlog.h>
 #include <storage/Database.hpp>
 #include <storage/Statement.hpp>
-#include <spdlog/spdlog.h>
-#include <fmt/core.h>
+#include <storage/ToolStore.hpp>
 
 namespace insoulforge {
     ToolStore &ToolStore::instance() {
@@ -16,13 +16,13 @@ namespace insoulforge {
     }
 
     std::vector<ToolStore::CustomTool> ToolStore::loadCustomTools(const bool onlyEnabled) const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::shared_lock lock(db.mutex());
         std::vector<CustomTool> tools;
-        Statement stmt(db.handle(),
-                       fmt::format(
-                           "SELECT id, name, description, parameters, executor_type, executor_config, script_content, readme, enabled "
-                           "FROM custom_tools{} ORDER BY id", onlyEnabled ? " WHERE enabled = 1" : ""));
+        const Statement stmt(db.handle(), fmt::format("SELECT id, name, description, parameters, executor_type, "
+                                                      "executor_config, script_content, readme, enabled "
+                                                      "FROM custom_tools{} ORDER BY id",
+                                            onlyEnabled ? " WHERE enabled = 1" : ""));
         while (stmt.step()) {
             CustomTool tool;
             tool.id = stmt.getInt(0);
@@ -39,20 +39,16 @@ namespace insoulforge {
         return tools;
     }
 
-    std::vector<ToolStore::CustomTool> ToolStore::getCustomTools() const {
-        return loadCustomTools(false);
-    }
+    std::vector<ToolStore::CustomTool> ToolStore::getCustomTools() const { return loadCustomTools(false); }
 
-    std::vector<ToolStore::CustomTool> ToolStore::getEnabledCustomTools() const {
-        return loadCustomTools(true);
-    }
+    std::vector<ToolStore::CustomTool> ToolStore::getEnabledCustomTools() const { return loadCustomTools(true); }
 
     int ToolStore::addCustomTool(const CustomTool &tool) const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::unique_lock lock(db.mutex());
-        Statement stmt(db.handle(),
-                       "INSERT INTO custom_tools (name, description, parameters, executor_type, executor_config, script_content, readme, enabled) "
-                       "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+        const Statement stmt(db.handle(), "INSERT INTO custom_tools (name, description, parameters, executor_type, "
+                                          "executor_config, script_content, readme, enabled) "
+                                          "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
         stmt.bind(1, tool.name);
         stmt.bind(2, tool.description);
         stmt.bind(3, tool.parameters);
@@ -67,11 +63,11 @@ namespace insoulforge {
     }
 
     void ToolStore::updateCustomTool(const CustomTool &tool) const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::unique_lock lock(db.mutex());
-        Statement stmt(db.handle(),
-                       "UPDATE custom_tools SET name=?, description=?, parameters=?, executor_type=?, executor_config=?, script_content=?, readme=?, enabled=? "
-                       "WHERE id=?");
+        const Statement stmt(db.handle(), "UPDATE custom_tools SET name=?, description=?, parameters=?, "
+                                          "executor_type=?, executor_config=?, script_content=?, readme=?, enabled=? "
+                                          "WHERE id=?");
         stmt.bind(1, tool.name);
         stmt.bind(2, tool.description);
         stmt.bind(3, tool.parameters);
@@ -86,34 +82,34 @@ namespace insoulforge {
     }
 
     void ToolStore::deleteCustomTool(const int id) const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::unique_lock lock(db.mutex());
-        Statement stmt(db.handle(), "DELETE FROM custom_tools WHERE id=?");
+        const Statement stmt(db.handle(), "DELETE FROM custom_tools WHERE id=?");
         stmt.bind(1, id);
         stmt.exec();
         spdlog::info("已删除自定义工具 ID: {}", id);
     }
 
     void ToolStore::toggleCustomTool(const int id) const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::unique_lock lock(db.mutex());
-        Statement stmt(db.handle(), "UPDATE custom_tools SET enabled = NOT enabled WHERE id=?");
+        const Statement stmt(db.handle(), "UPDATE custom_tools SET enabled = NOT enabled WHERE id=?");
         stmt.bind(1, id);
         stmt.exec();
     }
 
     bool ToolStore::hasCustomTool(const std::string &name) const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::shared_lock lock(db.mutex());
-        Statement stmt(db.handle(), "SELECT 1 FROM custom_tools WHERE name=?");
+        const Statement stmt(db.handle(), "SELECT 1 FROM custom_tools WHERE name=?");
         stmt.bind(1, name);
         return stmt.step();
     }
 
     std::string ToolStore::getCustomToolPython() const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::shared_lock lock(db.mutex());
-        Statement stmt(db.handle(), "SELECT value FROM settings WHERE key='custom_tool_python'");
+        const Statement stmt(db.handle(), "SELECT value FROM settings WHERE key='custom_tool_python'");
         if (stmt.step()) {
             return stmt.getText(0);
         }
@@ -121,10 +117,10 @@ namespace insoulforge {
     }
 
     void ToolStore::setCustomToolPython(const std::string &pythonPath) const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::unique_lock lock(db.mutex());
-        Statement stmt(db.handle(),
-                       "INSERT OR REPLACE INTO settings (key, value) VALUES ('custom_tool_python', ?)");
+        const Statement stmt(
+          db.handle(), "INSERT OR REPLACE INTO settings (key, value) VALUES ('custom_tool_python', ?)");
         stmt.bind(1, pythonPath);
         stmt.exec();
         spdlog::info("自定义工具Python路径已设置: {}", pythonPath);

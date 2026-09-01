@@ -240,8 +240,10 @@ onUnmounted(() => disconnectWebSocket())
         <div v-for="entry in entries" :key="entry.id" :class="['log-line', levelClass(entry.level)]">
           <span class="log-time">{{ entry.timestamp }}</span>
           <span class="log-level">{{ entry.level }}</span>
-          <span class="log-group"
-                :title="entry.groupId ? groupTag(entry.groupId) : '系统'">{{ entry.groupId ? groupTag(entry.groupId) : '系统' }}</span>
+          <span :title="entry.groupId ? groupTag(entry.groupId) : '系统'"
+                class="log-group">{{
+              entry.groupId ? groupTag(entry.groupId) : '系统'
+            }}</span>
           <span class="log-message">{{ entry.message }}</span>
         </div>
       </div>

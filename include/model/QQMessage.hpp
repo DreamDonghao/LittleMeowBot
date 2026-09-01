@@ -9,8 +9,8 @@
 
 #pragma once
 #include <drogon/drogon.h>
-#include <unordered_map>
 #include <string>
+#include <unordered_map>
 
 namespace insoulforge {
     /// @brief QQ 消息模型类
@@ -103,10 +103,6 @@ namespace insoulforge {
         static std::unordered_map<std::string, uint64_t> getNameToQQMap();
 
     private:
-        /// @brief 设置消息 JSON（仅构造函数使用）
-        /// @param qqMessageJson OneBot 消息 JSON
-        void setMessageJson(const Json::Value &qqMessageJson);
-
         /// @brief 获取发送者昵称
         /// @return 发送者昵称
         [[nodiscard]] Json::String getSenderQQName() const;
@@ -116,8 +112,7 @@ namespace insoulforge {
         uint64_t m_replyTo{0}; ///< 引用的消息ID
         bool m_isAtMe{false}; ///< 是否 @ 了机器人
 
-
         inline static std::unordered_map<Json::UInt64, Json::String> m_QQNameMap; ///< QQ 号到昵称映射
         inline static std::unordered_map<Json::UInt64, Json::String> m_customQQNameMap; ///< 自定义昵称映射
     };
-}
+} // namespace insoulforge

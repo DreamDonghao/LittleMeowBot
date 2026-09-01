@@ -20,10 +20,8 @@ find_library(SQLITE3_STATIC_LIB NAMES libsqlite3.a)
 find_library(JSONCPP_STATIC_LIB NAMES libjsoncpp.a)
 find_path(JSONCPP_INCLUDE_DIR NAMES json/value.h)
 
-# 将所有源文件集中到两个主要源码目录（src 和 controllers）
-file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS src/*.cpp controllers/*.cpp)
-# 单独添加根目录的 main.cpp
-list(APPEND SRC_FILES main.cpp)
+# 集中所有源文件（src 目录）
+file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS src/*.cpp)
 
 add_executable(${PROJECT_NAME} ${SRC_FILES})
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)

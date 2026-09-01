@@ -3,9 +3,9 @@
 /// @author donghao
 /// @date 2026-03-28
 
+#include <ranges>
 #include <service/ToolRegistry.hpp>
 #include <spdlog/spdlog.h>
-#include <ranges>
 #include <storage/SessionStore.hpp>
 
 namespace insoulforge {
@@ -43,9 +43,7 @@ namespace insoulforge {
             toolDef["type"] = "function";
             toolDef["function"]["name"] = tool.name;
             toolDef["function"]["description"] = tool.description;
-            Json::Value params = tool.parameters.isNull()
-                                     ? Json::Value(Json::objectValue)
-                                     : tool.parameters;
+            Json::Value params = tool.parameters.isNull() ? Json::Value(Json::objectValue) : tool.parameters;
             if (!params.isNull()) {
                 params["type"] = "object";
                 if (!params.isMember("properties")) {
@@ -65,9 +63,7 @@ namespace insoulforge {
             toolDef["type"] = "function";
             toolDef["function"]["name"] = tool.name;
             toolDef["function"]["description"] = tool.description;
-            Json::Value params = tool.parameters.isNull()
-                                     ? Json::Value(Json::objectValue)
-                                     : tool.parameters;
+            Json::Value params = tool.parameters.isNull() ? Json::Value(Json::objectValue) : tool.parameters;
             if (!params.isNull()) {
                 params["type"] = "object";
                 if (!params.isMember("properties")) {
@@ -87,9 +83,7 @@ namespace insoulforge {
             toolDef["type"] = "function";
             toolDef["function"]["name"] = tool.name;
             toolDef["function"]["description"] = tool.description;
-            Json::Value params = tool.parameters.isNull()
-                                     ? Json::Value(Json::objectValue)
-                                     : tool.parameters;
+            Json::Value params = tool.parameters.isNull() ? Json::Value(Json::objectValue) : tool.parameters;
             if (!params.isNull()) {
                 params["type"] = "object";
                 if (!params.isMember("properties")) {
@@ -106,8 +100,8 @@ namespace insoulforge {
         return tools;
     }
 
-    drogon::Task<std::string> ToolRegistry::executeTool(const std::string &name, const Json::Value &args,
-                                                        uint64_t sessionId) const {
+    drogon::Task<std::string> ToolRegistry::executeTool(
+      const std::string &name, const Json::Value &args, uint64_t sessionId) const {
         // 设置上下文
         auto &ctx = currentToolContext();
         ctx.sessionId = sessionId;
@@ -129,9 +123,7 @@ namespace insoulforge {
     }
 
     bool ToolRegistry::hasTool(const std::string &name) const {
-        return m_terminalTools.contains(name) ||
-               m_infoTools.contains(name) ||
-               m_actionTools.contains(name);
+        return m_terminalTools.contains(name) || m_infoTools.contains(name) || m_actionTools.contains(name);
     }
 
     void ToolRegistry::unregisterTool(const std::string &name) {
@@ -156,10 +148,14 @@ namespace insoulforge {
 
     std::string ToolRegistry::categoryToString(ToolCategory category) {
         switch (category) {
-            case ToolCategory::TERMINAL: return "TERMINAL";
-            case ToolCategory::INFORMATION: return "INFORMATION";
-            case ToolCategory::ACTION: return "ACTION";
-            default: return "UNKNOWN";
+            case ToolCategory::TERMINAL:
+                return "TERMINAL";
+            case ToolCategory::INFORMATION:
+                return "INFORMATION";
+            case ToolCategory::ACTION:
+                return "ACTION";
+            default:
+                return "UNKNOWN";
         }
     }
 } // namespace insoulforge

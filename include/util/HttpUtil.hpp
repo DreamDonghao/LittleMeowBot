@@ -9,10 +9,10 @@
 
 #pragma once
 
-#include <drogon/utils/coroutine.h>
-#include <drogon/HttpClient.h>
-#include <json/value.h>
 #include <cstdint>
+#include <drogon/HttpClient.h>
+#include <drogon/utils/coroutine.h>
+#include <json/value.h>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -27,13 +27,7 @@ namespace insoulforge::HttpUtil {
     /// @param bearerToken Bearer 认证 token（空串则不添加 Authorization 头）
     /// @param timeout 超时秒数
     /// @return 响应；网络异常（含地址解析失败、超时）返回 std::nullopt
-    drogon::Task<std::optional<drogon::HttpResponsePtr> > send(
-        std::string_view tag,
-        const std::string &baseUrl,
-        const std::string &path,
-        drogon::HttpMethod method,
-        const Json::Value &body,
-        const std::string &bearerToken,
-        double timeout,
-        std::optional<uint64_t> sessionId = std::nullopt);
+    drogon::Task<std::optional<drogon::HttpResponsePtr>> send(std::string_view tag, const std::string &baseUrl,
+      const std::string &path, drogon::HttpMethod method, const Json::Value &body, const std::string &bearerToken,
+      double timeout, std::optional<uint64_t> sessionId = std::nullopt);
 } // namespace insoulforge::HttpUtil

@@ -5,15 +5,15 @@
 
 #include <filesystem>
 #include <memory>
-#include <string_view>
-#include <vector>
-#include <spdlog/spdlog.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
-#include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/async.h>
-#include <util/Logger.hpp>
+#include <spdlog/sinks/rotating_file_sink.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/spdlog.h>
+#include <string_view>
 #include <util/LogBuffer.hpp>
 #include <util/LogSink.hpp>
+#include <util/Logger.hpp>
+#include <vector>
 
 namespace insoulforge {
     namespace {
@@ -32,7 +32,7 @@ namespace insoulforge {
         try {
             std::filesystem::create_directories(kLogDir);
             const auto fileSink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-                kLogFile.data(), kLogFileMaxSize, kLogFileMaxCount);
+              kLogFile.data(), kLogFileMaxSize, kLogFileMaxCount);
             fileSink->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%l] %v");
             sinks.push_back(fileSink);
         } catch (const std::exception &e) {
@@ -41,8 +41,7 @@ namespace insoulforge {
 
         spdlog::init_thread_pool(8192, 1);
         const auto logger = std::make_shared<spdlog::async_logger>(
-            "main", sinks.begin(), sinks.end(),
-            spdlog::thread_pool(), spdlog::async_overflow_policy::block);
+          "main", sinks.begin(), sinks.end(), spdlog::thread_pool(), spdlog::async_overflow_policy::block);
         logger->set_level(spdlog::level::trace);
         logger->flush_on(spdlog::level::warn);
         spdlog::set_default_logger(logger);
@@ -65,11 +64,7 @@ namespace insoulforge {
         return {level.data(), level.size()};
     }
 
-    SessionLogger Logger::session(const uint64_t sessionId) {
-        return SessionLogger(sessionId);
-    }
+    SessionLogger Logger::session(const uint64_t sessionId) { return SessionLogger(sessionId); }
 
-    void Logger::shutdown() {
-        spdlog::shutdown();
-    }
+    void Logger::shutdown() { spdlog::shutdown(); }
 } // namespace insoulforge

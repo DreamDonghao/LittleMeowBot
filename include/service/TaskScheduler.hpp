@@ -9,16 +9,16 @@
 ///          - 重启时从数据库恢复全部 pending 任务；已过期的任务照常触发并标注延时
 #pragma once
 
-#include <storage/TaskStore.hpp>
-#include <condition_variable>
-#include <chrono>
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <ctime>
+#include <drogon/utils/coroutine.h>
 #include <mutex>
 #include <optional>
 #include <queue>
+#include <storage/TaskStore.hpp>
 #include <thread>
-#include <ctime>
-#include <drogon/utils/coroutine.h>
 
 namespace insoulforge {
     /// @brief 定时任务调度器
@@ -40,7 +40,7 @@ namespace insoulforge {
         /// @brief 解析模型给出的时间字符串为本地时间 unix 秒。
         /// 兼容 YYYY-MM-DD / YYYY/MM/DD 与 HH:MM(:SS 可省)，分隔符 T 视同空格
         /// @return 解析结果；无法解析返回 nullopt
-        [[nodiscard]] static std::optional<std::time_t> parseTimeString(const std::string &text);
+        [[nodiscard]] static std::optional<std::time_t> parseTimeString(const std::string &input);
 
     private:
         TaskScheduler() = default;
@@ -64,7 +64,7 @@ namespace insoulforge {
         /// @brief 把任务合成 OneBot 消息注入接收接口并标记完成（在 drogon 循环上执行）
         static drogon::Task<> trigger(TaskStore::ScheduledTask task);
 
-        std::priority_queue<Entry, std::vector<Entry>, std::greater<> > m_heap;
+        std::priority_queue<Entry, std::vector<Entry>, std::greater<>> m_heap;
         mutable std::mutex m_mutex;
         std::condition_variable m_cv;
         std::jthread m_thread;

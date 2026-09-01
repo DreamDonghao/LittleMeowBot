@@ -3,11 +3,11 @@
 /// @author donghao
 /// @date 2026-08-30
 
-#include <storage/SchemaMigrator.hpp>
-#include <storage/Statement.hpp>
-#include <spdlog/spdlog.h>
 #include <fmt/core.h>
 #include <json/json.h>
+#include <spdlog/spdlog.h>
+#include <storage/SchemaMigrator.hpp>
+#include <storage/Statement.hpp>
 
 namespace insoulforge {
     namespace {
@@ -23,31 +23,35 @@ namespace insoulforge {
 
         template<size_t N>
         void execAll(sqlite3 *db, const std::array<const char *, N> &statements) {
-            for (const auto *sql: statements) execSQL(db, sql);
+            for (const auto *sql: statements)
+                execSQL(db, sql);
         }
 
         bool tableExists(sqlite3 *db, std::string_view name) {
-            Statement stmt(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");
+            const Statement stmt(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");
             stmt.bind(1, name);
             return stmt.step();
         }
 
         bool columnExists(sqlite3 *db, std::string_view table, std::string_view column) {
-            Statement stmt(db, fmt::format("PRAGMA table_info({})", table));
+            const Statement stmt(db, fmt::format("PRAGMA table_info({})", table));
             while (stmt.step()) {
-                if (stmt.getText(1) == column) return true;
+                if (stmt.getText(1) == column)
+                    return true;
             }
             return false;
         }
 
         void ensureColumn(sqlite3 *db, std::string_view table, std::string_view column, std::string_view ddl) {
-            if (columnExists(db, table, column)) return;
+            if (columnExists(db, table, column))
+                return;
             spdlog::info("数据库迁移: 新增 {}.{}", table, column);
             execSQL(db, fmt::format("ALTER TABLE {} ADD COLUMN {}", table, ddl));
         }
 
         void dropColumnIfExists(sqlite3 *db, std::string_view table, std::string_view column) {
-            if (!columnExists(db, table, column)) return;
+            if (!columnExists(db, table, column))
+                return;
             spdlog::info("数据库迁移: 移除废弃的 {}.{}", table, column);
             execSQL(db, fmt::format("ALTER TABLE {} DROP COLUMN {}", table, column));
         }
@@ -57,7 +61,7 @@ namespace insoulforge {
             builder["indentation"] = "";
             const std::string payload = Json::writeString(builder, value);
 
-            Statement stmt(db, "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)");
+            const Statement stmt(db, "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)");
             stmt.bind(1, key);
             stmt.bind(2, payload);
             stmt.exec();
@@ -65,41 +69,41 @@ namespace insoulforge {
 
         /// @brief v2 Schema 的全部建表语句（IF NOT EXISTS，可安全重复执行）
         constexpr std::array v2Tables = {
-            R"(CREATE TABLE IF NOT EXISTS group_config (
+          R"(CREATE TABLE IF NOT EXISTS group_config (
         group_id INTEGER PRIMARY KEY,
         all_mes_count INTEGER DEFAULT 0,
         all_char_count INTEGER DEFAULT 0
     ))",
-            R"(CREATE TABLE IF NOT EXISTS chat_records (
+          R"(CREATE TABLE IF NOT EXISTS chat_records (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         group_id INTEGER NOT NULL,
         role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
         content TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ))",
-            R"(CREATE TABLE IF NOT EXISTS short_term_memory (
+          R"(CREATE TABLE IF NOT EXISTS short_term_memory (
         group_id INTEGER PRIMARY KEY,
         memory_content TEXT,
         watermark_id INTEGER DEFAULT 0,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ))",
-            R"(CREATE TABLE IF NOT EXISTS prompts (
+          R"(CREATE TABLE IF NOT EXISTS prompts (
         prompt_key TEXT PRIMARY KEY,
         prompt_content TEXT NOT NULL,
         description TEXT,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ))",
-            R"(CREATE TABLE IF NOT EXISTS enabled_groups (
+          R"(CREATE TABLE IF NOT EXISTS enabled_groups (
         group_id INTEGER PRIMARY KEY,
         group_name TEXT,
         enabled INTEGER DEFAULT 1,
         added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ))",
-            R"(CREATE TABLE IF NOT EXISTS admins (
+          R"(CREATE TABLE IF NOT EXISTS admins (
         qq_number INTEGER PRIMARY KEY,
         added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ))",
-            R"(CREATE TABLE IF NOT EXISTS llm_config (
+          R"(CREATE TABLE IF NOT EXISTS llm_config (
         name TEXT PRIMARY KEY,
         api_key TEXT,
         base_url TEXT,
@@ -110,7 +114,7 @@ namespace insoulforge {
         top_p REAL DEFAULT 0.9,
         reasoning_effort TEXT DEFAULT ''
     ))",
-            R"(CREATE TABLE IF NOT EXISTS llm_usage (
+          R"(CREATE TABLE IF NOT EXISTS llm_usage (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         role TEXT NOT NULL DEFAULT '',
         model TEXT NOT NULL,
@@ -120,7 +124,7 @@ namespace insoulforge {
         cached_tokens INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ))",
-            R"(CREATE TABLE IF NOT EXISTS custom_tools (
+          R"(CREATE TABLE IF NOT EXISTS custom_tools (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE NOT NULL,
         description TEXT NOT NULL,
@@ -132,7 +136,7 @@ namespace insoulforge {
         enabled INTEGER DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ))",
-            R"(CREATE TABLE IF NOT EXISTS scheduled_tasks (
+          R"(CREATE TABLE IF NOT EXISTS scheduled_tasks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         session_type TEXT NOT NULL CHECK(session_type IN ('group', 'private')),
         target_id INTEGER NOT NULL,
@@ -141,35 +145,30 @@ namespace insoulforge {
         status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'done')),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ))",
-            R"(CREATE TABLE IF NOT EXISTS settings (
+          R"(CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value TEXT
-    ))"
-        };
+    ))"};
 
-        constexpr std::array indexes = {
-            "CREATE INDEX IF NOT EXISTS idx_chat_records_group ON chat_records(group_id)",
-            "CREATE INDEX IF NOT EXISTS idx_chat_records_time ON chat_records(group_id, created_at DESC)",
-            "CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_status ON scheduled_tasks(status, remind_time)"
-        };
+        constexpr std::array indexes = {"CREATE INDEX IF NOT EXISTS idx_chat_records_group ON chat_records(group_id)",
+          "CREATE INDEX IF NOT EXISTS idx_chat_records_time ON chat_records(group_id, created_at DESC)",
+          "CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_status ON scheduled_tasks(status, remind_time)"};
 
         /// @brief 基线 v1 Schema 额外需要的三张单行配置表（v2 已并入 settings）
         constexpr std::array v1ExtraTables = {
-            R"(CREATE TABLE IF NOT EXISTS kb_config (id INTEGER PRIMARY KEY CHECK (id = 1), enabled INTEGER DEFAULT 1, api_key TEXT, base_url TEXT, knowledge_dataset_id TEXT, memory_dataset_id TEXT, memory_document_id TEXT))",
-            R"(CREATE TABLE IF NOT EXISTS memory_config (id INTEGER PRIMARY KEY CHECK (id = 1), window_trigger_count INTEGER DEFAULT 100, window_keep_count INTEGER DEFAULT 50, memory_extract_max_tokens INTEGER DEFAULT 4000, router_window_trigger_count INTEGER DEFAULT 20, router_window_keep_count INTEGER DEFAULT 10, short_term_memory_max INTEGER DEFAULT 15, memory_migrate_count INTEGER DEFAULT 5))",
-            R"(CREATE TABLE IF NOT EXISTS qq_config (id INTEGER PRIMARY KEY CHECK (id = 1), access_token TEXT, self_qq_number INTEGER, qq_http_host TEXT, bot_name TEXT DEFAULT '小喵'))"
-        };
+          R"(CREATE TABLE IF NOT EXISTS kb_config (id INTEGER PRIMARY KEY CHECK (id = 1), enabled INTEGER DEFAULT 1, api_key TEXT, base_url TEXT, knowledge_dataset_id TEXT, memory_dataset_id TEXT, memory_document_id TEXT))",
+          R"(CREATE TABLE IF NOT EXISTS memory_config (id INTEGER PRIMARY KEY CHECK (id = 1), window_trigger_count INTEGER DEFAULT 100, window_keep_count INTEGER DEFAULT 50, memory_extract_max_tokens INTEGER DEFAULT 4000, router_window_trigger_count INTEGER DEFAULT 20, router_window_keep_count INTEGER DEFAULT 10, short_term_memory_max INTEGER DEFAULT 15, memory_migrate_count INTEGER DEFAULT 5))",
+          R"(CREATE TABLE IF NOT EXISTS qq_config (id INTEGER PRIMARY KEY CHECK (id = 1), access_token TEXT, self_qq_number INTEGER, qq_http_host TEXT, bot_name TEXT DEFAULT '小喵'))"};
 
         /// @brief v3 新增表：group_affinity（每个会话独立维护 QQ 号 → 好感度映射，[-100, 100]）
         constexpr std::array v3Tables = {
-            R"(CREATE TABLE IF NOT EXISTS group_affinity (
+          R"(CREATE TABLE IF NOT EXISTS group_affinity (
         group_id INTEGER NOT NULL,
         qq_number INTEGER NOT NULL,
         affinity INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (group_id, qq_number)
-    ))"
-        };
-    }
+    ))"};
+    } // namespace
 
     void SchemaMigrator::migrate(sqlite3 *db) {
         const int version = getUserVersion(db);
@@ -180,15 +179,16 @@ namespace insoulforge {
             return;
         }
 
-        if (version >= kLatestVersion) return;
+        if (version >= kLatestVersion)
+            return;
 
         spdlog::info("数据库版本 v{}，开始迁移到 v{}", version, kLatestVersion);
 
         // 迁移步骤表：steps[i] 将版本 i 升级到版本 i+1
-        constexpr std::array<void (*)(sqlite3 *), kLatestVersion> steps = {
-            &migrateV0ToV1, // 基线：历史遗留 Schema 调整到统一基线
-            &migrateV1ToV2, // kb_config/memory_config/qq_config 并入 settings
-            &migrateV2ToV3, // 新增 group_affinity 好感度表
+        constexpr std::array steps = {
+          &migrateV0ToV1, // 基线：历史遗留 Schema 调整到统一基线
+          &migrateV1ToV2, // kb_config/memory_config/qq_config 并入 settings
+          &migrateV2ToV3, // 新增 group_affinity 好感度表
         };
 
         for (int v = version; v < kLatestVersion; ++v) {
@@ -216,7 +216,7 @@ namespace insoulforge {
     }
 
     int SchemaMigrator::getUserVersion(sqlite3 *db) {
-        Statement stmt(db, "PRAGMA user_version");
+        const Statement stmt(db, "PRAGMA user_version");
         return stmt.step() ? stmt.getInt(0) : 0;
     }
 
@@ -225,8 +225,7 @@ namespace insoulforge {
     }
 
     bool SchemaMigrator::hasUserTables(sqlite3 *db) {
-        Statement stmt(db,
-                       "SELECT 1 FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' LIMIT 1");
+        const Statement stmt(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' LIMIT 1");
         return stmt.step();
     }
 
@@ -254,7 +253,7 @@ namespace insoulforge {
         // 注：表可能刚被上面创建为空表，需先检查旧表是否有数据
         if (tableExists(db, "long_term_memory")) {
             int64_t oldCount = 0;
-            if (Statement stmt(db, "SELECT COUNT(*) FROM long_term_memory"); stmt.step()) {
+            if (const Statement stmt(db, "SELECT COUNT(*) FROM long_term_memory"); stmt.step()) {
                 oldCount = stmt.getInt64(0);
             }
             if (oldCount > 0) {
@@ -272,8 +271,10 @@ namespace insoulforge {
         // 上下文窗口配置（窗口触发条数/保留条数/提取 maxTokens）
         ensureColumn(db, "memory_config", "window_trigger_count", "window_trigger_count INTEGER DEFAULT 100");
         ensureColumn(db, "memory_config", "window_keep_count", "window_keep_count INTEGER DEFAULT 50");
-        ensureColumn(db, "memory_config", "memory_extract_max_tokens", "memory_extract_max_tokens INTEGER DEFAULT 4000");
-        ensureColumn(db, "memory_config", "router_window_trigger_count", "router_window_trigger_count INTEGER DEFAULT 20");
+        ensureColumn(
+          db, "memory_config", "memory_extract_max_tokens", "memory_extract_max_tokens INTEGER DEFAULT 4000");
+        ensureColumn(
+          db, "memory_config", "router_window_trigger_count", "router_window_trigger_count INTEGER DEFAULT 20");
         ensureColumn(db, "memory_config", "router_window_keep_count", "router_window_keep_count INTEGER DEFAULT 10");
         ensureColumn(db, "memory_config", "short_term_memory_max", "short_term_memory_max INTEGER DEFAULT 15");
         ensureColumn(db, "memory_config", "memory_migrate_count", "memory_migrate_count INTEGER DEFAULT 5");
@@ -285,11 +286,10 @@ namespace insoulforge {
 
         // 老群已有短期记忆：水位线初始化为该群最新记录 id，
         // 避免升级后首次触发时把全部历史重新提取一遍（历史已浓缩在现有记忆中）
-        execSQL(db,
-                "UPDATE short_term_memory SET watermark_id = "
-                "(SELECT COALESCE(MAX(id), 0) FROM chat_records c WHERE c.group_id = short_term_memory.group_id) "
-                "WHERE watermark_id = 0 "
-                "AND EXISTS (SELECT 1 FROM chat_records c WHERE c.group_id = short_term_memory.group_id)");
+        execSQL(db, "UPDATE short_term_memory SET watermark_id = "
+                    "(SELECT COALESCE(MAX(id), 0) FROM chat_records c WHERE c.group_id = short_term_memory.group_id) "
+                    "WHERE watermark_id = 0 "
+                    "AND EXISTS (SELECT 1 FROM chat_records c WHERE c.group_id = short_term_memory.group_id)");
 
         // emojis 表已废弃（表情包改为直接使用 QQ 收藏表情，不再存库）
         if (tableExists(db, "emojis")) {
@@ -303,8 +303,8 @@ namespace insoulforge {
 
         Json::Value kb;
         {
-            Statement stmt(db,
-                           "SELECT enabled, api_key, base_url, knowledge_dataset_id, memory_dataset_id, memory_document_id FROM kb_config WHERE id = 1");
+            const Statement stmt(db, "SELECT enabled, api_key, base_url, knowledge_dataset_id, memory_dataset_id, "
+                                     "memory_document_id FROM kb_config WHERE id = 1");
             if (stmt.step()) {
                 kb["enabled"] = stmt.getInt(0) != 0;
                 kb["apiKey"] = stmt.getText(1);
@@ -325,8 +325,9 @@ namespace insoulforge {
 
         Json::Value memory;
         {
-            Statement stmt(db,
-                           "SELECT window_trigger_count, window_keep_count, memory_extract_max_tokens, router_window_trigger_count, router_window_keep_count, short_term_memory_max, memory_migrate_count FROM memory_config WHERE id = 1");
+            const Statement stmt(db, "SELECT window_trigger_count, window_keep_count, memory_extract_max_tokens, "
+                                     "router_window_trigger_count, router_window_keep_count, short_term_memory_max, "
+                                     "memory_migrate_count FROM memory_config WHERE id = 1");
             if (stmt.step()) {
                 memory["windowTriggerCount"] = stmt.getInt(0);
                 memory["windowKeepCount"] = stmt.getInt(1);
@@ -349,11 +350,11 @@ namespace insoulforge {
 
         Json::Value qq;
         {
-            Statement stmt(db,
-                           "SELECT access_token, self_qq_number, qq_http_host, bot_name FROM qq_config WHERE id = 1");
+            const Statement stmt(
+              db, "SELECT access_token, self_qq_number, qq_http_host, bot_name FROM qq_config WHERE id = 1");
             if (stmt.step()) {
                 qq["accessToken"] = stmt.getText(0);
-                qq["selfQQNumber"] = static_cast<Json::Int64>(stmt.getInt64(1));
+                qq["selfQQNumber"] = stmt.getInt64(1);
                 qq["qqHttpHost"] = stmt.getText(2);
                 qq["botName"] = stmt.getText(3);
             } else {

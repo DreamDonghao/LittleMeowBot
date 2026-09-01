@@ -9,11 +9,11 @@
 
 #pragma once
 
+#include <cstdint>
 #include <drogon/HttpClient.h>
 #include <drogon/utils/coroutine.h>
-#include <cstdint>
-#include <string>
 #include <optional>
+#include <string>
 
 
 /// @brief RAGFlow 知识库检索客户端 - 封装 RAGFlow API 调用，支持知识检索和记忆存储
@@ -22,22 +22,18 @@ namespace insoulforge::RAGFlowClient {
     /// @param question 查询问题
     /// @param topK 返回结果数量，默认3
     /// @return 检索结果文本，失败返回 std::nullopt
-    drogon::Task<std::optional<std::string> > searchKnowledge(
-        const std::string &question,
-        int topK = 3,
-        std::optional<uint64_t> sessionId = std::nullopt);
+    drogon::Task<std::optional<std::string>> searchKnowledge(
+      const std::string &question, int topK = 3, std::optional<uint64_t> sessionId = std::nullopt);
 
     /// @brief 检索记忆库（长期记忆检索）
     /// @param question 查询问题
     /// @param topK 返回结果数量，默认3
     /// @return 检索结果文本，失败返回 std::nullopt
-    drogon::Task<std::optional<std::string> > searchMemory(
-        const std::string &question,
-        int topK = 3,
-        std::optional<uint64_t> sessionId = std::nullopt);
+    drogon::Task<std::optional<std::string>> searchMemory(
+      const std::string &question, int topK = 3, std::optional<uint64_t> sessionId = std::nullopt);
 
     /// @brief 添加记忆到记忆库
     /// @param content 记忆内容文本
     /// @return 是否成功
     drogon::Task<bool> addMemory(const std::string &content, std::optional<uint64_t> sessionId = std::nullopt);
-}
+} // namespace insoulforge::RAGFlowClient

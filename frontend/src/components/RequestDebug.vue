@@ -120,7 +120,7 @@ onUnmounted(() => window.clearInterval(timer))
       <label class="auto-refresh">
         <input v-model="autoRefresh" type="checkbox"> 自动刷新(5s)
       </label>
-      <button class="btn btn-secondary" type="button" :disabled="loading" @click="load">刷新</button>
+      <button :disabled="loading" class="btn btn-secondary" type="button" @click="load">刷新</button>
       <button class="btn btn-danger" type="button" @click="clearAll">清空</button>
     </div>
 

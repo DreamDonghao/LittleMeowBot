@@ -1,8 +1,8 @@
 /// @file PromptService.cpp
 /// @brief 提示词服务 - 实现
 
-#include <service/PromptService.hpp>
 #include <config/Config.hpp>
+#include <service/PromptService.hpp>
 #include <spdlog/spdlog.h>
 #include <storage/PromptStore.hpp>
 
@@ -15,10 +15,9 @@ namespace insoulforge {
             std::string key;
             std::string content;
             std::string desc;
-        } defaultPrompts[] = {
-            // Executor - 角色系统提示词
-            {
-                "executor_system", R"(你是{botName}，在群聊中聊天的机器人。
+        } defaultPrompts[] = {// Executor - 角色系统提示词
+          {.key = "executor_system",
+            .content = R"(你是{botName}，在群聊中聊天的机器人。
 
 说话风格：
 - 像正常人网上聊天，不要端着
@@ -35,11 +34,11 @@ namespace insoulforge {
 - 不要说"关于xxx的问题...关于yyy的问题..."这种分点回复
 - 自然地针对最后发言者回复即可
 )",
-                "Executor 角色系统提示词"
-            },
-            // Router - 消息路由决策提示词
-            {
-                "router_system", R"(你是{botName}的消息路由决策器。结合完整聊天记录判断{botName}是否应该回复最新一条消息，并给出回复策略。
+            .desc = "Executor 角色系统提示词"},
+          // Router - 消息路由决策提示词
+          {.key = "router_system",
+            .content =
+              R"(你是{botName}的消息路由决策器。结合完整聊天记录判断{botName}是否应该回复最新一条消息，并给出回复策略。
 
 角色定位：
 - {botName}是群里的普通群友，不是客服，也不是随时待命的AI
@@ -96,11 +95,10 @@ reply 的场景：
     "maxLength": 25
   }
 })",
-                "Router 消息路由决策提示词"
-            },
-            // Executor - 私聊角色系统提示词
-            {
-                "executor_private_system", R"(你是{botName}，一个在QQ上和用户一对一私聊的机器人。
+            .desc = "Router 消息路由决策提示词"},
+          // Executor - 私聊角色系统提示词
+          {.key = "executor_private_system",
+            .content = R"(你是{botName}，一个在QQ上和用户一对一私聊的机器人。
 
 说话风格：
 - 像正常人网上聊天，不要端着
@@ -118,11 +116,11 @@ reply 的场景：
 - 不要说"关于xxx的问题...关于yyy的问题..."这种分点回复
 - 不要用引用回复（reply_with_quote），直接回复即可
 )",
-                "Executor 私聊角色系统提示词"
-            },
-            // Router - 私聊消息路由决策提示词
-            {
-                "router_private_system", R"(你是{botName}的路由决策器。当前是{botName}与用户的一对一私聊，判断是否应该回复最新一条消息，并给出回复策略。
+            .desc = "Executor 私聊角色系统提示词"},
+          // Router - 私聊消息路由决策提示词
+          {.key = "router_private_system",
+            .content =
+              R"(你是{botName}的路由决策器。当前是{botName}与用户的一对一私聊，判断是否应该回复最新一条消息，并给出回复策略。
 
 角色定位：
 - 用户主动来私聊，就是想和{botName}说话，默认应该 reply
@@ -167,9 +165,7 @@ reply 的场景：
     "maxLength": 25
   }
 })",
-                "Router 私聊消息路由决策提示词"
-            }
-        };
+            .desc = "Router 私聊消息路由决策提示词"}};
 
         // 插入默认提示词（如果不存在）
         for (const auto &[key, content, desc]: defaultPrompts) {
@@ -182,7 +178,7 @@ reply 的场景：
         // 自愈: 早期版本 router_system 默认值带 fmt 转义残留(双花括号)，模型照抄导致 JSON 解析失败。
         // 若库中内容仍含损坏标记(未被用户编辑修复过)，覆盖为修复后的默认值
         if (const std::string stored = db.getPrompt("router_system", "");
-            stored.find("不要其他内容）：\n{{") != std::string::npos) {
+          stored.find("不要其他内容）：\n{{") != std::string::npos) {
             db.setPrompt("router_system", defaultPrompts[1].content, defaultPrompts[1].desc);
             spdlog::warn("已自愈 router_system 默认值中的双花括号残留");
         }
@@ -209,19 +205,11 @@ reply 的场景：
         spdlog::info("提示词已更新: {}", key);
     }
 
-    std::string PromptService::getExecutorSystemPrompt() {
-        return getPrompt("executor_system");
-    }
+    std::string PromptService::getExecutorSystemPrompt() { return getPrompt("executor_system"); }
 
-    std::string PromptService::getExecutorPrivateSystemPrompt() {
-        return getPrompt("executor_private_system");
-    }
+    std::string PromptService::getExecutorPrivateSystemPrompt() { return getPrompt("executor_private_system"); }
 
-    std::string PromptService::getRouterSystemPrompt() {
-        return getPrompt("router_system");
-    }
+    std::string PromptService::getRouterSystemPrompt() { return getPrompt("router_system"); }
 
-    std::string PromptService::getRouterPrivateSystemPrompt() {
-        return getPrompt("router_private_system");
-    }
+    std::string PromptService::getRouterPrivateSystemPrompt() { return getPrompt("router_private_system"); }
 }

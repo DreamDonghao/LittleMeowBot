@@ -1,45 +1,45 @@
 /// @file ExecutorAgent.cpp
 /// @brief Executor Agent - 实现
 
-#include <agent/ExecutorAgent.hpp>
 #include <agent/AgentToolManager.hpp>
-#include <api/ApiClient.hpp>
-#include <spdlog/spdlog.h>
-#include <service/ToolRegistry.hpp>
-#include <service/PromptService.hpp>
-#include <fmt/core.h>
-#include <chrono>
-#include <memory>
-#include <regex>
-#include <string>
-#include <deque>
-#include <ranges>
+#include <agent/ExecutorAgent.hpp>
 #include <algorithm>
-#include <drogon/HttpAppFramework.h>
+#include <service/LlmClient.hpp>
+#include <chrono>
 #include <config/Config.hpp>
+#include <drogon/HttpAppFramework.h>
+#include <fmt/core.h>
+#include <memory>
+#include <service/ChatRecordManager.hpp>
+#include <model/QQMessage.hpp>
+#include <ranges>
+#include <regex>
+#include <service/PromptService.hpp>
+#include <service/ToolRegistry.hpp>
+#include <spdlog/spdlog.h>
+#include <storage/AffinityStore.hpp>
+#include <string>
 #include <util/HttpUtil.hpp>
 #include <util/Logger.hpp>
-#include <model/QQMessage.hpp>
-#include <model/ChatRecordManager.hpp>
-#include <storage/AffinityStore.hpp>
-#include <util/tool.h>
+#include <util/CommonUtil.hpp>
 
 namespace insoulforge {
     namespace {
         /// @brief 获取系统提示词（私聊与群聊使用各自的人设提示词）
         std::string getSystemPrompt(const RouterDecision &decision) {
-            std::string prompt = decision.isPrivate
-                                     ? PromptService::getExecutorPrivateSystemPrompt()
-                                     : PromptService::getExecutorSystemPrompt();
+            std::string prompt = decision.isPrivate ? PromptService::getExecutorPrivateSystemPrompt()
+                                                    : PromptService::getExecutorSystemPrompt();
 
             if (decision.isPrivate) {
-                prompt += fmt::format(
-                    "\n\n【回复要求】\n"
-                    "- 字数限制: {} 字\n"
-                    "- 要有自己的判断，不要别人说什么就做什么\n"
-                    "- 这是私聊，直接回复即可，不要@对方或引用回复\n"
-                    "- 【重要】表情/图片的CQ码必须通过工具获取(send_sticker/send_face/send_image)。先调工具，拿到结果后把返回的[CQ:image...]或[CQ:face...]原样拼接到reply的content中。禁止自己编造假CQ标签，工具返回什么就复制什么\n",
-                    decision.maxLength);
+                prompt += fmt::format("\n\n【回复要求】\n"
+                                      "- 字数限制: {} 字\n"
+                                      "- 要有自己的判断，不要别人说什么就做什么\n"
+                                      "- 这是私聊，直接回复即可，不要@对方或引用回复\n"
+                                      "- "
+                                      "【重要】表情/图片的CQ码必须通过工具获取(send_sticker/send_face/"
+                                      "send_image)。先调工具，拿到结果后把返回的[CQ:image...]或[CQ:face...]"
+                                      "原样拼接到reply的content中。禁止自己编造假CQ标签，工具返回什么就复制什么\n",
+                  decision.maxLength);
 
                 if (decision.isPriority) {
                     prompt += "\n【重要】这是紧急问题，必须回复！";
@@ -48,14 +48,16 @@ namespace insoulforge {
                 return prompt;
             }
 
-            prompt += fmt::format(
-                "\n\n【回复要求】\n"
-                "- 字数限制: {} 字\n"
-                "- 要有自己的判断，不要别人说什么就做什么\n"
-                "- @人格式: @[QQ:123456]\n"
-                "- 禁言要核实实际情况再决定\n"
-                "- 【重要】表情/图片的CQ码必须通过工具获取(send_sticker/send_face/send_image)。先调工具，拿到结果后把返回的[CQ:image...]或[CQ:face...]原样拼接到reply的content中。禁止自己编造假CQ标签，工具返回什么就复制什么\n",
-                decision.maxLength);
+            prompt += fmt::format("\n\n【回复要求】\n"
+                                  "- 字数限制: {} 字\n"
+                                  "- 要有自己的判断，不要别人说什么就做什么\n"
+                                  "- @人格式: @[QQ:123456]\n"
+                                  "- 禁言要核实实际情况再决定\n"
+                                  "- "
+                                  "【重要】表情/图片的CQ码必须通过工具获取(send_sticker/send_face/"
+                                  "send_image)。先调工具，拿到结果后把返回的[CQ:image...]或[CQ:face...]"
+                                  "原样拼接到reply的content中。禁止自己编造假CQ标签，工具返回什么就复制什么\n",
+              decision.maxLength);
 
             if (decision.isPriority) {
                 prompt += "\n【重要】这是@提及或紧急问题，必须回复！";
@@ -68,19 +70,18 @@ namespace insoulforge {
         std::string getThinkingSystemPrompt(int maxLength) {
             std::string prompt = PromptService::getExecutorSystemPrompt();
 
-            prompt += fmt::format(
-                "\n\n【思考任务】\n"
-                "分析用户请求，给出回复思路。\n\n"
-                "【分析要点】\n"
-                "- 用户想要什么\n"
-                "- 解决方案或回复思路\n"
-                "- 回复语气和长度（{}字左右）\n"
-                "- 需要引用回复时记下 message_id\n\n"
-                "【输出要求】\n"
-                "- 直接输出分析和建议的回复内容\n"
-                "- 不使用 markdown 代码块\n"
-                "- 不输出工具调用格式",
-                maxLength);
+            prompt += fmt::format("\n\n【思考任务】\n"
+                                  "分析用户请求，给出回复思路。\n\n"
+                                  "【分析要点】\n"
+                                  "- 用户想要什么\n"
+                                  "- 解决方案或回复思路\n"
+                                  "- 回复语气和长度（{}字左右）\n"
+                                  "- 需要引用回复时记下 message_id\n\n"
+                                  "【输出要求】\n"
+                                  "- 直接输出分析和建议的回复内容\n"
+                                  "- 不使用 markdown 代码块\n"
+                                  "- 不输出工具调用格式",
+              maxLength);
 
             return prompt;
         }
@@ -95,10 +96,8 @@ namespace insoulforge {
         }
 
         /// @brief 执行思考模型（不带 tools）
-        drogon::Task<std::optional<std::string> > executeThinking(
-            Json::Value messages,
-            int maxLength,
-            uint64_t sessionId) {
+        drogon::Task<std::optional<std::string>> executeThinking(
+          Json::Value messages, int maxLength, uint64_t sessionId) {
             const auto &config = Config::instance();
 
             // 替换 system prompt
@@ -119,14 +118,13 @@ namespace insoulforge {
             body["messages"] = thinkingMessages;
             body["temperature"] = config.executorThinkingParams.temperature;
             body["max_tokens"] = config.executorThinkingParams.maxTokens;
-            body["top_p"] = 0.9;
+            body["top_p"] = config.executorThinkingParams.topP;
             if (!config.executorThinking.reasoningEffort.empty()) {
                 body["reasoning_effort"] = config.executorThinking.reasoningEffort;
             }
 
             const auto resp = co_await HttpUtil::send("[Executor]", config.executorThinking.baseUrl,
-                                                      config.executorThinking.path, drogon::Post, body,
-                                                      config.executorThinking.apiKey, 90.0, sessionId);
+              config.executorThinking.path, drogon::Post, body, config.executorThinking.apiKey, 90.0, sessionId);
             if (!resp) {
                 co_return std::nullopt;
             }
@@ -134,12 +132,12 @@ namespace insoulforge {
             const auto json = (*resp)->getJsonObject();
             if ((*resp)->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
                 const std::string respBody = std::string((*resp)->getBody()).substr(0, 500);
-                Logger::session(sessionId).error("[Executor] 思考模型失败: status={} body={}",
-                                                 static_cast<int>((*resp)->getStatusCode()), respBody);
+                Logger::session(sessionId).error(
+                  "[Executor] 思考模型失败: status={} body={}", static_cast<int>((*resp)->getStatusCode()), respBody);
                 co_return std::nullopt;
             }
 
-            ApiClient::logUsage(*json, config.executorThinking.model, "executorThinking", sessionId);
+            LlmClient::logUsage(*json, config.executorThinking.model, "executorThinking", sessionId);
 
             const auto &message = (*json)["choices"][0]["message"];
             std::string content;
@@ -161,8 +159,8 @@ namespace insoulforge {
             Json::Value parsed;
             const Json::CharReaderBuilder readerBuilder;
             std::string errs;
-            if (const std::unique_ptr<Json::CharReader> reader(readerBuilder.newCharReader()); !reader->parse(
-                content.data(), content.data() + content.size(), &parsed, &errs) || !parsed.isObject()) {
+            if (const std::unique_ptr<Json::CharReader> reader(readerBuilder.newCharReader());
+              !reader->parse(content.data(), content.data() + content.size(), &parsed, &errs) || !parsed.isObject()) {
                 return {};
             }
             return parsed;
@@ -184,7 +182,8 @@ namespace insoulforge {
                 }
                 ++count;
             }
-            if (i >= text.size()) return text;
+            if (i >= text.size())
+                return text;
             return text.substr(0, i) + "…";
         }
 
@@ -202,7 +201,8 @@ namespace insoulforge {
         /// @brief 注入发送者当前好感度（读时注入，保证 LLM 看到的永远是最新值）
         /// @details qq 非数字（机器人记录的 "self"）跳过；映射中不存在的用户按 0（中立）注入
         Json::Value injectAffinity(Json::Value content, const std::unordered_map<uint64_t, int> &affinityMap) {
-            if (!content.isMember("sender")) return content;
+            if (!content.isMember("sender"))
+                return content;
             if (const uint64_t qq = parseUInt64(content["sender"]["qq"].asString()); qq > 0) {
                 const auto it = affinityMap.find(qq);
                 content["sender"]["affinity"] = it != affinityMap.end() ? it->second : 0;
@@ -254,9 +254,7 @@ namespace insoulforge {
 
         /// @brief 构建 Executor Prompt
         drogon::Task<Json::Value> buildPrompt(
-            const ChatRecordManager &chatRecords,
-            const MemoryManager &memory,
-            const RouterDecision &decision) {
+          const ChatRecordManager &chatRecords, const MemoryManager &memory, const RouterDecision &decision) {
             Json::Value messages;
 
             // System Prompt
@@ -271,9 +269,8 @@ namespace insoulforge {
                 userContent += fmt::format("【短期记忆】\n{}\n\n结合记忆处理下面的对话。\n\n", shortMemory);
             }
             userContent += buildChatContextText(chatRecords);
-            userContent += fmt::format(
-                "\n\n【回复要求】\n语气: {}\n字数限制: {} 字\n原因: {}",
-                decision.tone, decision.maxLength, decision.reason);
+            userContent += fmt::format("\n\n【回复要求】\n语气: {}\n字数限制: {} 字\n原因: {}", decision.tone,
+              decision.maxLength, decision.reason);
 
             Json::Value userMsg;
             userMsg["role"] = "user";
@@ -284,9 +281,8 @@ namespace insoulforge {
         }
 
         /// @brief Agent 模式执行（带 tools）
-        drogon::Task<std::optional<ReplyDecision> >
-        executeWithAgent(Json::Value messages, const LLMApiConfig &apiConfig, const LLMModelParams &params,
-                         uint64_t sessionId) {
+        drogon::Task<std::optional<ReplyDecision>> executeWithAgent(
+          Json::Value messages, const LLMApiConfig &apiConfig, const LLMModelParams &params, uint64_t sessionId) {
             auto &registry = ToolRegistry::instance();
             Json::Value tools = registry.getAllTools();
 
@@ -311,8 +307,8 @@ namespace insoulforge {
                     body["reasoning_effort"] = apiConfig.reasoningEffort;
                 }
 
-                const auto resp = co_await HttpUtil::send("[Executor]", apiConfig.baseUrl, apiConfig.path,
-                                                          drogon::Post, body, apiConfig.apiKey, 90.0, sessionId);
+                const auto resp = co_await HttpUtil::send("[Executor]", apiConfig.baseUrl, apiConfig.path, drogon::Post,
+                  body, apiConfig.apiKey, 90.0, sessionId);
                 if (!resp) {
                     if (iter < 3) {
                         Logger::session(sessionId).warn("[Executor] 网络异常重试...");
@@ -339,7 +335,7 @@ namespace insoulforge {
                     co_return std::nullopt;
                 }
 
-                ApiClient::logUsage(*json, apiConfig.model, "executor", sessionId);
+                LlmClient::logUsage(*json, apiConfig.model, "executor", sessionId);
 
                 const auto &message = (*json)["choices"][0]["message"];
                 ReplyDecision decision;
@@ -351,9 +347,7 @@ namespace insoulforge {
                     // 构建 assistant 消息
                     Json::Value assistantMsg;
                     assistantMsg["role"] = "assistant";
-                    assistantMsg["content"] = message.isMember("content")
-                                                  ? message["content"].asString()
-                                                  : "";
+                    assistantMsg["content"] = message.isMember("content") ? message["content"].asString() : "";
 
                     Json::Value toolCallsArray(Json::arrayValue);
                     for (const auto &tc: message["tool_calls"]) {
@@ -383,8 +377,7 @@ namespace insoulforge {
                             Json::Reader().parse(argsStr, args);
                             if (args.isMember("content")) {
                                 decision.shouldReply = true;
-                                decision.content = finalizeContent(
-                                    args["content"].asString(), accumulatedCQCodes);
+                                decision.content = finalizeContent(args["content"].asString(), accumulatedCQCodes);
                                 hasDecision = true;
                             }
                         } else if (name == "reply_with_quote") {
@@ -392,10 +385,8 @@ namespace insoulforge {
                             Json::Reader().parse(argsStr, args);
                             if (args.isMember("content") && args.isMember("message_id")) {
                                 decision.shouldReply = true;
-                                decision.content = "[CQ:reply,id=" +
-                                                   args["message_id"].asString() + "]" +
-                                                   finalizeContent(args["content"].asString(),
-                                                                   accumulatedCQCodes);
+                                decision.content = "[CQ:reply,id=" + args["message_id"].asString() + "]" +
+                                                   finalizeContent(args["content"].asString(), accumulatedCQCodes);
                                 hasDecision = true;
                             }
                         } else {
@@ -441,8 +432,8 @@ namespace insoulforge {
         }
 
         /// @brief 思考模式执行（两阶段：思考 → 执行）
-        drogon::Task<std::optional<ReplyDecision> > executeWithThinking(
-            Json::Value messages, const uint64_t sessionId, const int maxLength) {
+        drogon::Task<std::optional<ReplyDecision>> executeWithThinking(
+          Json::Value messages, const uint64_t sessionId, const int maxLength) {
             const auto &config = Config::instance();
 
             Logger::session(sessionId).info("[Executor] 思考模式 - Step 1: 分析");
@@ -452,13 +443,11 @@ namespace insoulforge {
 
             if (!thinkingResult || thinkingResult->empty()) {
                 Logger::session(sessionId).warn("[Executor] 思考模型返回空，fallback");
-                co_return co_await executeWithAgent(
-                    messages, config.executor, config.executorParams, sessionId);
+                co_return co_await executeWithAgent(messages, config.executor, config.executorParams, sessionId);
             }
 
-            Logger::session(sessionId).debug("[Executor] 思考结果: {}...",
-                                             thinkingResult->substr(
-                                                 0, std::min<size_t>(100, thinkingResult->length())));
+            Logger::session(sessionId).debug(
+              "[Executor] 思考结果: {}...", thinkingResult->substr(0, std::min<size_t>(100, thinkingResult->length())));
 
             // Step 2: 注入思考结果，执行工具调用
             Logger::session(sessionId).info("[Executor] 思考模式 - Step 2: 执行");
@@ -473,10 +462,9 @@ namespace insoulforge {
             execMsg["content"] = "根据以上分析，调用工具发送回复。";
             messages.append(execMsg);
 
-            co_return co_await executeWithAgent(
-                messages, config.executor, config.executorParams, sessionId);
+            co_return co_await executeWithAgent(messages, config.executor, config.executorParams, sessionId);
         }
-    }
+    } // namespace
 
     /// @brief 清理模型输出的污染内容（think标签、tool_call标签、DSML标签等）
     std::string cleanReplyContent(const std::string &text) {
@@ -492,7 +480,7 @@ namespace insoulforge {
 
         // 移除 DSML 工具调用块（Qwen 系列模型的格式，兼容全角竖线｜）
         static const std::regex dsmlInvoke(
-            R"(<[|｜]*DSML[|｜]+invoke[^>]*>[\s\S]*?<\/[|｜]*DSML[|｜]+invoke>)", std::regex::icase);
+          R"(<[|｜]*DSML[|｜]+invoke[^>]*>[\s\S]*?<\/[|｜]*DSML[|｜]+invoke>)", std::regex::icase);
         result = std::regex_replace(result, dsmlInvoke, "");
 
         // 移除残留的 DSML 标签（tool_calls、parameter 等）
@@ -504,8 +492,7 @@ namespace insoulforge {
         result = std::regex_replace(result, thinkTag, "");
 
         // 移除 function(...) 调用残留
-        static const std::regex funcCall(
-            R"((reply_with_quote|reply|no_reply)\s*\([^)]*\))");
+        static const std::regex funcCall(R"((reply_with_quote|reply|no_reply)\s*\([^)]*\))");
         result = std::regex_replace(result, funcCall, "");
 
         // 去除首尾空白
@@ -523,13 +510,11 @@ namespace insoulforge {
     }
 
 
-    drogon::Task<std::optional<ReplyDecision> > execute(
-        const ChatRecordManager &chatRecords,
-        const MemoryManager &memory,
-        const RouterDecision &decision) {
-        Logger::session(chatRecords.getSessionId()).info("[Executor] 开始执行 | thinking={} | priority={} | maxLength={}",
-                                                         decision.enableThinking, decision.isPriority,
-                                                         decision.maxLength);
+    drogon::Task<std::optional<ReplyDecision>> execute(
+      const ChatRecordManager &chatRecords, const MemoryManager &memory, const RouterDecision &decision) {
+        Logger::session(chatRecords.getSessionId())
+          .info("[Executor] 开始执行 | thinking={} | priority={} | maxLength={}", decision.enableThinking,
+            decision.isPriority, decision.maxLength);
 
         const auto &config = Config::instance();
         const Json::Value messages = co_await buildPrompt(chatRecords, memory, decision);
@@ -539,7 +524,7 @@ namespace insoulforge {
             co_return co_await executeWithThinking(messages, chatRecords.getSessionId(), decision.maxLength);
         }
         // 普通模式：单次执行
-        co_return co_await executeWithAgent(messages, config.executor, config.executorParams,
-                                            chatRecords.getSessionId());
+        co_return co_await executeWithAgent(
+          messages, config.executor, config.executorParams, chatRecords.getSessionId());
     }
-}
+} // namespace insoulforge

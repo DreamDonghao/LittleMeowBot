@@ -1,12 +1,12 @@
 /// @file OneBotClient.cpp
 /// @brief OneBot HTTP API 客户端 - 实现
 
-#include <service/OneBotClient.hpp>
 #include <config/Config.hpp>
+#include <service/OneBotClient.hpp>
+#include <spdlog/spdlog.h>
 #include <util/HttpUtil.hpp>
 #include <util/Logger.hpp>
-#include <util/tool.h>
-#include <spdlog/spdlog.h>
+#include <util/CommonUtil.hpp>
 
 namespace insoulforge::OneBotClient {
     namespace {
@@ -17,37 +17,36 @@ namespace insoulforge::OneBotClient {
         /// @param sessionId 会话 ID（用于会话日志，可空）
         /// @param timeout 超时秒数
         /// @return 响应 JSON（含 status/retcode/data）；HTTP 非 200 或 status != ok 时返回 nullopt（已记日志）
-        [[nodiscard]] drogon::Task<std::optional<Json::Value> > callApi(
-            std::string_view tag, const std::string &api, const Json::Value &params,
-            std::optional<uint64_t> sessionId = std::nullopt, double timeout = 30.0) {
+        [[nodiscard]] drogon::Task<std::optional<Json::Value>> callApi(std::string_view tag, const std::string &api,
+          const Json::Value &params, std::optional<uint64_t> sessionId = std::nullopt, double timeout = 30.0) {
             const auto &config = Config::instance();
-            const auto resp = co_await HttpUtil::send(tag, config.qqHttpHost, "/" + api,
-                                                      drogon::Post, params, config.accessToken, timeout, sessionId);
+            const auto resp = co_await HttpUtil::send(
+              tag, config.qqHttpHost, "/" + api, drogon::Post, params, config.accessToken, timeout, sessionId);
             if (!resp) {
                 co_return std::nullopt;
             }
             const auto json = (*resp)->getJsonObject();
             if ((*resp)->getStatusCode() != drogon::k200OK || !json) {
-                Logger::session(sessionId.value_or(0)).error("{} OneBot API {} 请求失败: http_status={}",
-                                                           tag, api, static_cast<int>((*resp)->getStatusCode()));
+                Logger::session(sessionId.value_or(0))
+                  .error(
+                    "{} OneBot API {} 请求失败: http_status={}", tag, api, static_cast<int>((*resp)->getStatusCode()));
                 co_return std::nullopt;
             }
             if (json->get("status", "failed").asString() != "ok") {
-                Logger::session(sessionId.value_or(0)).error("{} OneBot API {} 失败: status={}, retcode={}",
-                                                           tag, api, json->get("status", "").asString(),
-                                                           json->get("retcode", -1).asInt());
+                Logger::session(sessionId.value_or(0))
+                  .error("{} OneBot API {} 失败: status={}, retcode={}", tag, api, json->get("status", "").asString(),
+                    json->get("retcode", -1).asInt());
                 co_return std::nullopt;
             }
             co_return *json;
         }
 
-    }
+    } // namespace
 
     namespace {
         /// @brief 发送消息的公共实现（群聊/私聊共用，仅 API 名与目标字段不同）
-        drogon::Task<std::optional<uint64_t> > sendMessage(
-            const std::string &api, const std::string &targetKey, const Json::UInt64 targetId,
-            const std::string &message, const std::optional<uint64_t> sessionId) {
+        drogon::Task<std::optional<uint64_t>> sendMessage(const std::string &api, const std::string &targetKey,
+          const Json::UInt64 targetId, const std::string &message, const std::optional<uint64_t> sessionId) {
             Json::Value params;
             params[targetKey] = targetId;
             params["message"] = message;
@@ -55,21 +54,20 @@ namespace insoulforge::OneBotClient {
 
             const auto resp = co_await callApi("[Msg]", api, params, sessionId);
             if (!resp) {
-                Logger::session(sessionId.value_or(0)).error("发送消息错误: msgLen={}, preview={}",
-                                               message.size(), message.substr(0, 200));
+                Logger::session(sessionId.value_or(0))
+                  .error("发送消息错误: msgLen={}, preview={}", message.size(), message.substr(0, 200));
                 co_return std::nullopt;
             }
             co_return jsonToUInt64((*resp)["data"]["message_id"]);
         }
-    }
+    } // namespace
 
-    drogon::Task<std::optional<uint64_t> > sendGroupMsg(
-        const uint64_t groupId, const std::string &message, const std::optional<uint64_t> sessionId) {
+    drogon::Task<std::optional<uint64_t>> sendGroupMsg(const uint64_t groupId, const std::string &message) {
         co_return co_await sendMessage("send_group_msg", "group_id", groupId, message, groupId);
     }
 
-    drogon::Task<std::optional<uint64_t> > sendPrivateMsg(
-        const uint64_t userId, const std::string &message, const std::optional<uint64_t> sessionId) {
+    drogon::Task<std::optional<uint64_t>> sendPrivateMsg(
+      const uint64_t userId, const std::string &message, const std::optional<uint64_t> sessionId) {
         co_return co_await sendMessage("send_private_msg", "user_id", userId, message, sessionId);
     }
 
@@ -95,8 +93,7 @@ namespace insoulforge::OneBotClient {
         co_return resp.value_or(Json::Value(Json::nullValue));
     }
 
-    drogon::Task<Json::Value> getStrangerInfo(
-        const uint64_t userId, const std::optional<uint64_t> sessionId) {
+    drogon::Task<Json::Value> getStrangerInfo(const uint64_t userId, const std::optional<uint64_t> sessionId) {
         Json::Value params;
         params["user_id"] = userId;
 
@@ -129,8 +126,8 @@ namespace insoulforge::OneBotClient {
         co_return true;
     }
 
-    drogon::Task<std::optional<std::string> > getImage(
-        const std::string &file, const std::optional<uint64_t> sessionId) {
+    drogon::Task<std::optional<std::string>> getImage(
+      const std::string &file, const std::optional<uint64_t> sessionId) {
         Json::Value params;
         params["file"] = file;
 
@@ -141,8 +138,8 @@ namespace insoulforge::OneBotClient {
         co_return (*resp)["data"]["file"].asString();
     }
 
-    drogon::Task<std::optional<std::string> > downloadFile(
-        const std::string &url, const std::optional<uint64_t> sessionId) {
+    drogon::Task<std::optional<std::string>> downloadFile(
+      const std::string &url, const std::optional<uint64_t> sessionId) {
         Json::Value params;
         params["url"] = url;
 
@@ -165,9 +162,8 @@ namespace insoulforge::OneBotClient {
         co_return true;
     }
 
-    drogon::Task<bool> setCustomFaceDesc(
-        const std::string &emojiId, const std::string &resId, const std::string &md5,
-        const std::string &desc, const std::optional<uint64_t> sessionId) {
+    drogon::Task<bool> setCustomFaceDesc(const std::string &emojiId, const std::string &resId, const std::string &md5,
+      const std::string &desc, const std::optional<uint64_t> sessionId) {
         Json::Value params;
         params["emoji_id"] = emojiId;
         params["res_id"] = resId;

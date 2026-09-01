@@ -87,10 +87,12 @@ onMounted(loadAdmins)
       <div style="display: flex; gap: 12px; align-items: flex-end;">
         <div class="form-group" style="flex: 1; max-width: 300px; margin: 0;">
           <label class="form-label" style="margin-bottom: 4px;">QQ号</label>
-          <input v-model.number="newAdminQQ" class="form-input" placeholder="输入QQ号" style="height: 36px; padding: 0 8px; font-size: 13px;"
+          <input v-model.number="newAdminQQ" class="form-input" placeholder="输入QQ号"
+                 style="height: 36px; padding: 0 8px; font-size: 13px;"
                  type="number">
         </div>
-        <button :disabled="saving" class="btn btn-success" style="height: 36px; line-height: 36px; padding: 0 16px;" @click="addAdmin">
+        <button :disabled="saving" class="btn btn-success" style="height: 36px; line-height: 36px; padding: 0 16px;"
+                @click="addAdmin">
           {{ saving ? '添加中...' : '添加管理员' }}
         </button>
       </div>

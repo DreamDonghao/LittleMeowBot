@@ -3,8 +3,8 @@
 
 #include <ranges>
 #include <service/WebSocketManager.hpp>
-#include <util/tool.h>
 #include <spdlog/spdlog.h>
+#include <util/CommonUtil.hpp>
 
 namespace insoulforge {
     WebSocketManager &WebSocketManager::instance() {
@@ -13,13 +13,13 @@ namespace insoulforge {
     }
 
     void WebSocketManager::addConnection(const drogon::WebSocketConnectionPtr &conn) {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::lock_guard lock(m_mutex);
         m_connections.insert(conn);
         spdlog::info("WebSocket连接已建立，当前连接数: {}", m_connections.size());
     }
 
     void WebSocketManager::removeConnection(const drogon::WebSocketConnectionPtr &conn) {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::lock_guard lock(m_mutex);
         m_connections.erase(conn);
         // 清理订阅关系
         for (auto &subscribers: m_subscriptions | std::views::values) {
@@ -29,7 +29,7 @@ namespace insoulforge {
     }
 
     void WebSocketManager::subscribeSession(const drogon::WebSocketConnectionPtr &conn, uint64_t sessionId) {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::lock_guard lock(m_mutex);
         m_subscriptions[sessionId].insert(conn);
         spdlog::info("WebSocket订阅会话: {}", sessionId);
     }
@@ -78,14 +78,14 @@ namespace insoulforge {
         }
     }
 
-    void WebSocketManager::broadcastEvent(const std::string &type, const Json::Value &data) {
+    void WebSocketManager::broadcastEvent(const std::string &type, const Json::Value &data) const {
         std::lock_guard lock(m_mutex);
 
         Json::Value msg;
         msg["type"] = type;
         msg["data"] = data;
 
-        Json::StreamWriterBuilder builder;
+        const Json::StreamWriterBuilder builder;
         const std::string jsonStr = Json::writeString(builder, msg);
 
         for (const auto &conn: m_connections) {

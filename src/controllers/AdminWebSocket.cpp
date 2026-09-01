@@ -1,6 +1,6 @@
 #include <controllers/AdminWebSocket.hpp>
 #include <spdlog/spdlog.h>
-#include <util/tool.h>
+#include <util/CommonUtil.hpp>
 
 using namespace insoulforge;
 using namespace drogon;
@@ -18,10 +18,7 @@ void AdminWebSocket::handleNewConnection(const HttpRequestPtr &req, const WebSoc
 }
 
 void AdminWebSocket::handleNewMessage(
-    const WebSocketConnectionPtr &conn,
-    std::string &&message,
-    const WebSocketMessageType &type
-) {
+  const WebSocketConnectionPtr &conn, std::string &&message, const WebSocketMessageType &type) {
     if (type != WebSocketMessageType::Text) {
         return;
     }

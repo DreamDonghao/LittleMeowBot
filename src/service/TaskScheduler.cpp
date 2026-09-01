@@ -3,16 +3,16 @@
 /// @author donghao
 /// @date 2026-08-27
 
-#include <service/TaskScheduler.hpp>
 #include <config/Config.hpp>
-#include <model/QQMessage.hpp>
-#include <util/HttpUtil.hpp>
-#include <util/Logger.hpp>
 #include <drogon/drogon.h>
-#include <spdlog/spdlog.h>
 #include <iomanip>
+#include <model/QQMessage.hpp>
+#include <service/TaskScheduler.hpp>
+#include <spdlog/spdlog.h>
 #include <sstream>
 #include <storage/TaskStore.hpp>
+#include <util/HttpUtil.hpp>
+#include <util/Logger.hpp>
 
 namespace insoulforge {
     namespace {
@@ -26,11 +26,8 @@ namespace insoulforge {
         /// @brief 合成系统消息的发送者昵称与正文前缀
         constexpr std::string_view kSystemTaskLabel = "系统定时任务";
 
-        /// @brief 提醒内容长度上限
-        constexpr size_t kMaxContentLen = 500;
-
         std::string formatUnixTime(const int64_t unixSec) {
-            const std::time_t t = static_cast<std::time_t>(unixSec);
+            const auto t = static_cast<std::time_t>(unixSec);
             std::tm tm{};
             localtime_r(&t, &tm);
             std::ostringstream oss;
@@ -41,11 +38,9 @@ namespace insoulforge {
         std::string buildText(const TaskStore::ScheduledTask &task, const bool delayed) {
             // 正文必须是对机器人下达的指令而非对用户的陈述，
             // content 是备忘而非现成回复，具体怎么说由到点时的 AI 结合上下文自行决定
-            std::string text =
-                fmt::format("【{}】{}，你在 {} 设定的定时任务到点了。你留下的备忘：「{}」。"
-                            "请结合会话上下文自行决定如何完成这件事并作出回应",
-                            kSystemTaskLabel, Config::instance().botName, formatUnixTime(task.remindTime),
-                            task.content);
+            std::string text = fmt::format("【{}】{}，你在 {} 设定的定时任务到点了。你留下的备忘：「{}」。"
+                                           "请结合会话上下文自行决定如何完成这件事并作出回应",
+              kSystemTaskLabel, Config::instance().botName, formatUnixTime(task.remindTime), task.content);
             if (delayed) {
                 text += "（已超过原定时刻送达，因程序当时未运行）";
             }
@@ -62,18 +57,18 @@ namespace insoulforge {
 
             Json::Value body;
             body["post_type"] = "message";
-            body["self_id"] = static_cast<Json::UInt64>(config.selfQQNumber);
+            body["self_id"] = config.selfQQNumber;
             body["time"] = static_cast<Json::Int64>(std::time(nullptr));
             body["message_id"] = fmt::to_string(msgId);
             body["raw_message"] = text;
-            body["sender"]["user_id"] = static_cast<Json::UInt64>(QQMessage::kSystemAccountId);
+            body["sender"]["user_id"] = QQMessage::kSystemAccountId;
             body["sender"]["nickname"] = std::string(kSystemTaskLabel);
             if (task.sessionType == "private") {
                 body["message_type"] = "private";
-                body["user_id"] = static_cast<Json::UInt64>(task.targetId);
+                body["user_id"] = task.targetId;
             } else {
                 body["message_type"] = "group";
-                body["group_id"] = static_cast<Json::UInt64>(task.targetId);
+                body["group_id"] = task.targetId;
             }
             Json::Value item;
             item["type"] = "text";
@@ -128,26 +123,24 @@ namespace insoulforge {
         m_cv.notify_all();
 
         spdlog::info("[Scheduler] 已创建定时任务 #{}: {}({}) 于 {}", id,
-                     entry.task.sessionType == "private" ? "私聊" : "群聊",
-                     entry.task.targetId, formatUnixTime(entry.task.remindTime));
+          entry.task.sessionType == "private" ? "私聊" : "群聊", entry.task.targetId,
+          formatUnixTime(entry.task.remindTime));
         return id;
     }
 
     void TaskScheduler::restorePendingTasks() {
-        const auto tasks = TaskStore::instance().getPendingScheduledTasks();
+        auto tasks = TaskStore::instance().getPendingScheduledTasks();
         size_t overdue = 0;
         {
             std::lock_guard lock(m_mutex);
             const std::time_t now =
-                std::chrono::duration_cast<std::chrono::seconds>(
-                    std::chrono::system_clock::now().time_since_epoch())
-                    .count();
+              std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
+                .count();
             for (auto &task: tasks) {
                 Entry entry;
                 entry.task = std::move(task);
                 // 已过期的任务钳制到当前时刻：恢复后立即补发，而不是按过期时间连发
-                entry.fireTime = std::max<std::time_t>(
-                    entry.task.remindTime - kFireLead.count(), now);
+                entry.fireTime = std::max<std::time_t>(entry.task.remindTime - kFireLead.count(), now);
                 if (entry.task.remindTime <= now) {
                     overdue++;
                 }
@@ -180,26 +173,23 @@ namespace insoulforge {
                 TaskStore::ScheduledTask task = std::move(const_cast<Entry &>(m_heap.top()).task);
                 m_heap.pop();
                 lock.unlock();
-                drogon::async_run([task = std::move(task)]() -> drogon::Task<> {
-                    co_await trigger(task);
-                });
+                drogon::async_run([task = std::move(task)]() -> drogon::Task<> { co_await trigger(task); });
                 lock.lock();
             }
         }
     }
 
     drogon::Task<> TaskScheduler::trigger(TaskStore::ScheduledTask task) {
-        const uint64_t logSessionId = task.sessionType == "private"
-                                          ? task.targetId | QQMessage::kPrivateSessionFlag
-                                          : task.targetId;
+        const uint64_t logSessionId =
+          task.sessionType == "private" ? task.targetId | QQMessage::kPrivateSessionFlag : task.targetId;
 
         const bool delayed = std::time(nullptr) > task.remindTime;
-        Logger::session(logSessionId).info("[Scheduler] 触发定时任务 #{} ({}{})", task.id,
-                                           delayed ? "延时，" : "", task.content.substr(0, 50));
+        Logger::session(logSessionId)
+          .info("[Scheduler] 触发定时任务 #{} ({}{})", task.id, delayed ? "延时，" : "", task.content.substr(0, 50));
 
         const auto body = buildSystemEvent(task, delayed);
-        const auto resp = co_await HttpUtil::send("[Scheduler]", kSelfBaseUrl, "/", drogon::Post,
-                                                  body, "", 10.0, logSessionId);
+        const auto resp =
+          co_await HttpUtil::send("[Scheduler]", kSelfBaseUrl, "/", drogon::Post, body, "", 10.0, logSessionId);
         if (!resp || (*resp)->getStatusCode() != drogon::k200OK) {
             // HTTP 异常细节由 HttpUtil 记录；无论成败都标记完成，防止反复重发
             spdlog::error("[Scheduler] 定时任务 #{} 注入失败（任务仍标记为已完成）", task.id);
@@ -220,8 +210,7 @@ namespace insoulforge {
         std::ranges::replace(text, 'T', ' ');
 
         static constexpr std::array formats{
-            "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M"
-        };
+          "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M"};
         for (const char *format: formats) {
             std::tm tm{};
             tm.tm_isdst = -1;
@@ -232,8 +221,8 @@ namespace insoulforge {
             }
             // get_time 对超范围数值不一定置错位，显式校验字段合法性
             if (tm.tm_mon < 0 || tm.tm_mon > 11 || tm.tm_mday < 1 || tm.tm_mday > 31 //
-                || tm.tm_hour < 0 || tm.tm_hour > 23 || tm.tm_min < 0 || tm.tm_min > 59
-                || tm.tm_sec < 0 || tm.tm_sec > 60) {
+                || tm.tm_hour < 0 || tm.tm_hour > 23 || tm.tm_min < 0 || tm.tm_min > 59 || tm.tm_sec < 0 ||
+                tm.tm_sec > 60) {
                 return std::nullopt;
             }
             const std::time_t result = mktime(&tm);

@@ -18,25 +18,25 @@ namespace insoulforge {
         //                      LLM 配置
         // ============================================================
 
-        Json::Value getLLMConfig(const std::string &name) const;
+        [[nodiscard]] Json::Value getLLMConfig(const std::string &name) const;
 
         void saveLLMConfig(const std::string &name, const Json::Value &config) const;
 
-        Json::Value getAllLLMConfigs() const;
+        [[nodiscard]] Json::Value getAllLLMConfigs() const;
 
         // ============================================================
         //              知识库 / QQ Bot / 记忆 配置（settings 存储）
         // ============================================================
 
-        Json::Value getKBConfig() const;
+        [[nodiscard]] Json::Value getKBConfig() const;
 
         void saveKBConfig(const Json::Value &config) const;
 
-        Json::Value getQQConfig() const;
+        [[nodiscard]] Json::Value getQQConfig() const;
 
         void saveQQConfig(const Json::Value &config) const;
 
-        Json::Value getMemoryConfig() const;
+        [[nodiscard]] Json::Value getMemoryConfig() const;
 
         void saveMemoryConfig(const Json::Value &config) const;
 

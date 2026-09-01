@@ -22,34 +22,34 @@ namespace insoulforge {
     public:
         static SessionStore &instance();
 
-        SessionConfig getSessionConfig(uint64_t sessionId) const;
+        [[nodiscard]] SessionConfig getSessionConfig(uint64_t sessionId) const;
 
         void saveSessionConfig(uint64_t sessionId, const SessionConfig &config) const;
 
         void incrementMessageCount(uint64_t sessionId, size_t charCount) const;
 
-        bool hasSessionConfig(uint64_t sessionId) const;
+        [[nodiscard]] bool hasSessionConfig(uint64_t sessionId) const;
 
-        bool isSessionEnabled(uint64_t sessionId) const;
+        [[nodiscard]] bool isSessionEnabled(uint64_t sessionId) const;
 
         void enableSession(uint64_t sessionId) const;
 
         void disableSession(uint64_t sessionId) const;
 
-        std::vector<uint64_t> getEnabledGroups() const;
+        [[nodiscard]] std::vector<uint64_t> getEnabledGroups() const;
 
         /// @brief 获取所有有聊天记录的群（用于聊天记录页面）
-        std::vector<std::tuple<uint64_t, std::string, int> > getSessionsWithChatRecords() const;
+        [[nodiscard]] std::vector<std::tuple<uint64_t, std::string, int>> getSessionsWithChatRecords() const;
 
         /// @brief 获取所有群（包括已禁用的）
-        std::vector<std::tuple<uint64_t, std::string, bool, int> > getAllSessionsWithStatus() const;
+        [[nodiscard]] std::vector<std::tuple<uint64_t, std::string, bool, int>> getAllSessionsWithStatus() const;
 
         /// @brief 切换群启用状态
         void toggleSessionStatus(uint64_t sessionId) const;
 
         void updateSessionName(uint64_t sessionId, const std::string &name) const;
 
-        std::string getSessionName(uint64_t sessionId) const;
+        [[nodiscard]] std::string getSessionName(uint64_t sessionId) const;
 
     private:
         SessionStore() = default;

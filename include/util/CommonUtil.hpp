@@ -1,4 +1,4 @@
-/// @file tool.h
+/// @file CommonUtil.hpp
 /// @brief 通用工具函数
 /// @author donghao
 /// @date 2026-04-02
@@ -8,10 +8,10 @@
 ///          - 无符号整数解析：parseUInt64()
 
 #pragma once
-#include <drogon/drogon.h>
-#include <spdlog/spdlog.h>
 #include <charconv>
+#include <drogon/drogon.h>
 #include <optional>
+#include <spdlog/spdlog.h>
 #include <string_view>
 
 [[nodiscard]] inline Json::Value parseJson(const std::string &jsonStr) {
@@ -40,9 +40,11 @@
     const auto *begin = s.data();
     const auto *end = s.data() + s.size();
     // 跳过前导空白（与 stoull 行为一致）
-    while (begin < end && (*begin == ' ' || *begin == '\t')) ++begin;
+    while (begin < end && (*begin == ' ' || *begin == '\t'))
+        ++begin;
     const auto [ptr, ec] = std::from_chars(begin, end, value);
-    if (ec != std::errc{} || ptr != end) return std::nullopt;
+    if (ec != std::errc{} || ptr != end)
+        return std::nullopt;
     return value;
 }
 
@@ -59,8 +61,10 @@
 /// @param fallback 无法转换时返回的值
 /// @return 数值；字符串按十进制解析，缺失/空/null/负数/浮点一律返回 fallback
 [[nodiscard]] inline uint64_t jsonToUInt64(const Json::Value &v, uint64_t fallback = 0) {
-    if (v.isString()) return parseUInt64(v.asString(), fallback);
-    if (!v.isNull() && v.isConvertibleTo(Json::uintValue)) return v.asUInt64();
+    if (v.isString())
+        return parseUInt64(v.asString(), fallback);
+    if (!v.isNull() && v.isConvertibleTo(Json::uintValue))
+        return v.asUInt64();
     return fallback;
 }
 

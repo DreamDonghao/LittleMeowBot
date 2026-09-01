@@ -3,12 +3,12 @@
 /// @author donghao
 /// @date 2026-08-30
 
+#include <algorithm>
+#include <ranges>
+#include <spdlog/spdlog.h>
 #include <storage/ChatRecordStore.hpp>
 #include <storage/Database.hpp>
 #include <storage/Statement.hpp>
-#include <spdlog/spdlog.h>
-#include <algorithm>
-#include <ranges>
 
 namespace insoulforge {
     ChatRecordStore &ChatRecordStore::instance() {
@@ -16,11 +16,11 @@ namespace insoulforge {
         return store;
     }
 
-    void ChatRecordStore::addChatRecord(const uint64_t sessionId, const std::string &role,
-                                        const std::string &content) const {
-        auto &db = Database::instance();
+    void ChatRecordStore::addChatRecord(
+      const uint64_t sessionId, const std::string &role, const std::string &content) const {
+        const auto &db = Database::instance();
         std::unique_lock lock(db.mutex());
-        Statement stmt(db.handle(), "INSERT INTO chat_records (group_id, role, content) VALUES (?, ?, ?)");
+        const Statement stmt(db.handle(), "INSERT INTO chat_records (group_id, role, content) VALUES (?, ?, ?)");
         stmt.bind(1, sessionId);
         stmt.bind(2, role);
         stmt.bind(3, content);
@@ -28,11 +28,12 @@ namespace insoulforge {
     }
 
     std::vector<Json::Value> ChatRecordStore::getChatRecords(const uint64_t sessionId, const int limit) const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::shared_lock lock(db.mutex());
         std::vector<Json::Value> records;
 
-        Statement stmt(db.handle(), "SELECT role, content FROM chat_records WHERE group_id = ? ORDER BY id DESC LIMIT ?");
+        const Statement stmt(
+          db.handle(), "SELECT role, content FROM chat_records WHERE group_id = ? ORDER BY id DESC LIMIT ?");
         stmt.bind(1, sessionId);
         stmt.bind(2, limit);
 
@@ -48,12 +49,12 @@ namespace insoulforge {
     }
 
     std::vector<Json::Value> ChatRecordStore::getChatRecordsWithIds(const uint64_t sessionId, const int limit) const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::shared_lock lock(db.mutex());
         std::vector<Json::Value> records;
 
-        Statement stmt(db.handle(),
-                       "SELECT id, role, content FROM chat_records WHERE group_id = ? ORDER BY id DESC LIMIT ?");
+        const Statement stmt(
+          db.handle(), "SELECT id, role, content FROM chat_records WHERE group_id = ? ORDER BY id DESC LIMIT ?");
         stmt.bind(1, sessionId);
         stmt.bind(2, limit);
 
@@ -69,14 +70,13 @@ namespace insoulforge {
     }
 
     std::vector<Json::Value> ChatRecordStore::getChatRecordsSince(
-        const uint64_t sessionId, const uint64_t watermarkId, const int limit) const {
-        auto &db = Database::instance();
+      const uint64_t sessionId, const uint64_t watermarkId, const int limit) const {
+        const auto &db = Database::instance();
         std::shared_lock lock(db.mutex());
         std::vector<Json::Value> records;
 
-        Statement stmt(
-                    db.handle(),
-                    "SELECT id, role, content FROM chat_records WHERE group_id = ? AND id > ? ORDER BY id DESC LIMIT ?");
+        const Statement stmt(db.handle(),
+          "SELECT id, role, content FROM chat_records WHERE group_id = ? AND id > ? ORDER BY id DESC LIMIT ?");
         stmt.bind(1, sessionId);
         stmt.bind(2, watermarkId);
         stmt.bind(3, limit <= 0 ? INT64_MAX : static_cast<int64_t>(limit));
@@ -95,35 +95,35 @@ namespace insoulforge {
     }
 
     size_t ChatRecordStore::getChatRecordCountSince(const uint64_t sessionId, const uint64_t watermarkId) const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::shared_lock lock(db.mutex());
-        Statement stmt(db.handle(), "SELECT COUNT(*) FROM chat_records WHERE group_id = ? AND id > ?");
+        const Statement stmt(db.handle(), "SELECT COUNT(*) FROM chat_records WHERE group_id = ? AND id > ?");
         stmt.bind(1, sessionId);
         stmt.bind(2, watermarkId);
         return stmt.step() ? stmt.getInt64(0) : 0;
     }
 
     void ChatRecordStore::updateChatRecord(const int recordId, const std::string &content) const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::unique_lock lock(db.mutex());
-        Statement stmt(db.handle(), "UPDATE chat_records SET content = ? WHERE id = ?");
+        const Statement stmt(db.handle(), "UPDATE chat_records SET content = ? WHERE id = ?");
         stmt.bind(1, content);
         stmt.bind(2, recordId);
         stmt.exec();
     }
 
     void ChatRecordStore::deleteChatRecord(const int recordId) const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::unique_lock lock(db.mutex());
-        Statement stmt(db.handle(), "DELETE FROM chat_records WHERE id = ?");
+        const Statement stmt(db.handle(), "DELETE FROM chat_records WHERE id = ?");
         stmt.bind(1, recordId);
         stmt.exec();
     }
 
     void ChatRecordStore::clearSessionChatRecords(const uint64_t sessionId) const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::unique_lock lock(db.mutex());
-        Statement stmt(db.handle(), "DELETE FROM chat_records WHERE group_id = ?");
+        const Statement stmt(db.handle(), "DELETE FROM chat_records WHERE group_id = ?");
         stmt.bind(1, sessionId);
         stmt.exec();
         spdlog::info("已清空群 {} 的聊天记录", sessionId);

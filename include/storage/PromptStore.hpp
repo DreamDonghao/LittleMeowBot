@@ -14,13 +14,13 @@ namespace insoulforge {
     public:
         static PromptStore &instance();
 
-        std::string getPrompt(const std::string &key, const std::string &defaultValue = "") const;
+        [[nodiscard]] std::string getPrompt(const std::string &key, const std::string &defaultValue = "") const;
 
         void setPrompt(const std::string &key, const std::string &content, const std::string &description = "");
 
-        bool hasPrompt(const std::string &key) const;
+        [[nodiscard]] bool hasPrompt(const std::string &key) const;
 
-        std::unordered_map<std::string, std::string> getAllPrompts() const;
+        [[nodiscard]] std::unordered_map<std::string, std::string> getAllPrompts() const;
 
     private:
         PromptStore() = default;

@@ -3,10 +3,10 @@
 
 #pragma once
 
-#include <spdlog/details/log_msg.h>
 #include <cstdint>
 #include <mutex>
 #include <optional>
+#include <spdlog/details/log_msg.h>
 #include <string>
 #include <vector>
 

@@ -1,10 +1,9 @@
 /// @file LogWebSocketManager.cpp
 /// @brief 运行日志 WebSocket 管理器 - 实现
 
-#include <service/LogWebSocketManager.hpp>
-#include <util/tool.h>
 #include <json/writer.h>
-#include <spdlog/spdlog.h>
+#include <service/LogWebSocketManager.hpp>
+#include <util/CommonUtil.hpp>
 #include <utility>
 
 namespace insoulforge {
@@ -24,8 +23,8 @@ namespace insoulforge {
         m_subscriptions.erase(conn);
     }
 
-    void LogWebSocketManager::updateSubscription(const drogon::WebSocketConnectionPtr &conn,
-                                                 LogSubscription subscription) {
+    void LogWebSocketManager::updateSubscription(
+      const drogon::WebSocketConnectionPtr &conn, LogSubscription subscription) {
         std::lock_guard lock(m_mutex);
         m_subscriptions[conn] = std::move(subscription);
     }
@@ -71,10 +70,10 @@ namespace insoulforge {
         if (subscription.level.has_value() && log.get("level", "").asString() != *subscription.level) {
             return false;
         }
-        if (!subscription.keyword.empty() && log.get("message", "").asString().find(subscription.keyword) ==
-            std::string::npos) {
+        if (!subscription.keyword.empty() &&
+            log.get("message", "").asString().find(subscription.keyword) == std::string::npos) {
             return false;
         }
         return true;
     }
-}
+} // namespace insoulforge

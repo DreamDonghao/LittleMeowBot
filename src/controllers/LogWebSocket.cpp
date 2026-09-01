@@ -1,17 +1,15 @@
 /// @file LogWebSocket.cpp
 /// @brief 运行日志 WebSocket 控制器 - 实现
 
-#include <sstream>
 #include <controllers/LogWebSocket.hpp>
 #include <service/LogWebSocketManager.hpp>
 #include <spdlog/spdlog.h>
-#include <util/tool.h>
+#include <sstream>
+#include <util/CommonUtil.hpp>
 
 namespace insoulforge {
     void LogWebSocket::handleNewConnection(
-        const drogon::HttpRequestPtr &req,
-        const drogon::WebSocketConnectionPtr &conn
-    ) {
+      const drogon::HttpRequestPtr &req, const drogon::WebSocketConnectionPtr &conn) {
         LogWebSocketManager::instance().addConnection(conn);
         Json::Value welcome;
         welcome["type"] = "connected";
@@ -21,10 +19,7 @@ namespace insoulforge {
     }
 
     void LogWebSocket::handleNewMessage(
-        const drogon::WebSocketConnectionPtr &conn,
-        std::string &&message,
-        const drogon::WebSocketMessageType &type
-    ) {
+      const drogon::WebSocketConnectionPtr &conn, std::string &&message, const drogon::WebSocketMessageType &type) {
         if (type != drogon::WebSocketMessageType::Text) {
             return;
         }
@@ -40,8 +35,8 @@ namespace insoulforge {
         if (msg.get("action", "") == "subscribe") {
             // 线上 JSON 字段沿用 "groupId"（内部语义为 sessionId）
             LogSubscription sub;
-            sub.all = !msg.isMember("groupId") || msg["groupId"].isNull()
-                      || (msg["groupId"].isString() && msg["groupId"].asString() == "all");
+            sub.all = !msg.isMember("groupId") || msg["groupId"].isNull() ||
+                      (msg["groupId"].isString() && msg["groupId"].asString() == "all");
             if (msg.isMember("groupId") && msg["groupId"].isString() && msg["groupId"].asString() == "system") {
                 sub.all = false;
                 sub.systemOnly = true;
@@ -63,4 +58,4 @@ namespace insoulforge {
     void LogWebSocket::handleConnectionClosed(const drogon::WebSocketConnectionPtr &conn) {
         LogWebSocketManager::instance().removeConnection(conn);
     }
-}
+} // namespace insoulforge

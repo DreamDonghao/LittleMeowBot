@@ -1,24 +1,24 @@
 /// @file CommandHandler.cpp
 /// @brief 命令处理器 - 实现
 
-#include <handler/CommandHandler.hpp>
 #include <agent/AgentToolManager.hpp>
-#include <service/OneBotClient.hpp>
-#include <model/QQMessage.hpp>
-#include <spdlog/spdlog.h>
 #include <fmt/core.h>
+#include <controllers/CommandHandler.hpp>
+#include <model/QQMessage.hpp>
+#include <service/SessionConfigManager.hpp>
+#include <service/OneBotClient.hpp>
+#include <spdlog/spdlog.h>
 #include <sstream>
-#include <vector>
-#include <model/SessionConfigManager.hpp>
-#include <util/tool.h>
-#include <util/HttpUtil.hpp>
-#include <storage/SessionStore.hpp>
 #include <storage/AdminStore.hpp>
+#include <storage/SessionStore.hpp>
+#include <util/CommonUtil.hpp>
+#include <vector>
 
 namespace insoulforge {
     bool isCommand(const QQMessage &message) {
         // 群聊命令需要 @ 机器人；私聊消息本身就是对机器人说的，无需 @
-        if (!message.atMe() && !message.isPrivate()) return false;
+        if (!message.atMe() && !message.isPrivate())
+            return false;
         std::string rawMsg = message.getRawMessage();
 
         size_t pos = 0;
@@ -27,8 +27,7 @@ namespace insoulforge {
                 pos++;
             }
             if (pos < rawMsg.length() && rawMsg[pos] == '[') {
-                if (const size_t end = rawMsg.find(']', pos);
-                    end != std::string::npos) {
+                if (const size_t end = rawMsg.find(']', pos); end != std::string::npos) {
                     pos = end + 1;
                     continue;
                 }
@@ -39,9 +38,7 @@ namespace insoulforge {
         return pos < rawMsg.length() && rawMsg[pos] == '/';
     }
 
-    drogon::Task<std::string> handleCommand(
-        const QQMessage &message,
-        ChatRecordManager &chatRecords) {
+    drogon::Task<std::string> handleCommand(const QQMessage &message) {
         std::string rawMsg = message.getRawMessage();
         uint64_t sessionId = message.getSessionId(); ///< 会话 ID（群聊=群号；私聊=用户QQ号|私聊标志位）
         uint64_t senderQQ = message.getSenderQQNumber();
@@ -56,8 +53,7 @@ namespace insoulforge {
                 pos++;
             }
             if (pos < rawMsg.length() && rawMsg[pos] == '[') {
-                if (size_t end = rawMsg.find(']', pos);
-                    end != std::string::npos) {
+                if (size_t end = rawMsg.find(']', pos); end != std::string::npos) {
                     pos = end + 1;
                     continue;
                 }
@@ -77,35 +73,30 @@ namespace insoulforge {
 
         if (cmd == "/help" || cmd == "/帮助") {
             response = "可用命令:\n"
-                    "【会话管理】\n"
-                    "/enable [会话ID] - 启用当前会话（群聊传群号，私聊可不带参数）\n"
-                    "/disable [会话ID] - 禁用当前会话（私聊可不带参数）\n"
-                    "/groups - 查看启用的会话列表\n"
-                    "/status - 查看当前会话状态\n"
-                    "【管理员】\n"
-                    "/admins - 查看管理员列表\n"
-                    "/addadmin <QQ号> - 添加管理员\n"
-                    "/deladmin <QQ号> - 移除管理员\n"
-                    "【表情管理】\n"
-                    "/delemoji <名称> - 删除表情包\n"
-                    "/listemoji - 查看表情包列表\n"
-                    "【其他】\n"
-                    "/help - 显示帮助\n"
-                    "/about - 关于本项目\n\n"
-                    "注意: 管理命令仅限管理员使用";
+                       "【会话管理】\n"
+                       "/enable [会话ID] - 启用当前会话（群聊传群号，私聊可不带参数）\n"
+                       "/disable [会话ID] - 禁用当前会话（私聊可不带参数）\n"
+                       "/groups - 查看启用的会话列表\n"
+                       "/status - 查看当前会话状态\n"
+                       "【管理员】\n"
+                       "/admins - 查看管理员列表\n"
+                       "/addadmin <QQ号> - 添加管理员\n"
+                       "/deladmin <QQ号> - 移除管理员\n"
+                       "【表情管理】\n"
+                       "/delemoji <名称> - 删除表情包\n"
+                       "/listemoji - 查看表情包列表\n"
+                       "【其他】\n"
+                       "/help - 显示帮助\n"
+                       "/about - 关于本项目\n\n"
+                       "注意: 管理命令仅限管理员使用";
         } else if (cmd == "/status" || cmd == "/状态") {
             bool enabled = SessionStore::instance().isSessionEnabled(sessionId);
             auto [allMesCount, allCharCount] = SessionConfigManager::getConfig(sessionId);
-            response = fmt::format(
-                "会话 {} 状态:\n"
-                "- 启用: {}\n"
-                "- 消息数: {}\n"
-                "- 字符数: {}",
-                sessionId,
-                enabled ? "是" : "否",
-                allMesCount,
-                allCharCount
-            );
+            response = fmt::format("会话 {} 状态:\n"
+                                   "- 启用: {}\n"
+                                   "- 消息数: {}\n"
+                                   "- 字符数: {}",
+              sessionId, enabled ? "是" : "否", allMesCount, allCharCount);
         } else if (cmd == "/admins" || cmd == "/管理员") {
             auto admins = adminStore.getAdmins();
             response = "管理员列表:\n";
@@ -117,10 +108,10 @@ namespace insoulforge {
             }
         } else if (cmd == "/about" || cmd == "/关于") {
             response = "InSoulForge\n"
-                    "基于 Agent 架构，支持自定义角色、长期记忆、多工具调用\n\n"
-                    "项目地址: https://github.com/DreamDonghao/insoulforge\n"
-                    "作者: DreamDonghao\n"
-                    "许可证: AGPL-3.0 (未经允许禁止商用)";
+                       "基于 Agent 架构，支持自定义角色、长期记忆、多工具调用\n\n"
+                       "项目地址: https://github.com/DreamDonghao/insoulforge\n"
+                       "作者: DreamDonghao\n"
+                       "许可证: AGPL-3.0 (未经允许禁止商用)";
         } else if (!hasPermission) {
             response = fmt::format("权限不足，你({})不是管理员", senderQQ);
         } else if (cmd == "/enable" || cmd == "/启用") {
@@ -207,4 +198,4 @@ namespace insoulforge {
 
         co_return response;
     }
-}
+} // namespace insoulforge

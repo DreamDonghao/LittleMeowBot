@@ -3,10 +3,10 @@
 /// @author donghao
 /// @date 2026-08-30
 
+#include <spdlog/spdlog.h>
 #include <storage/ConfigStore.hpp>
 #include <storage/Database.hpp>
 #include <storage/Statement.hpp>
-#include <spdlog/spdlog.h>
 
 namespace insoulforge {
     ConfigStore &ConfigStore::instance() {
@@ -15,13 +15,12 @@ namespace insoulforge {
     }
 
     Json::Value ConfigStore::getLLMConfig(const std::string &name) const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::shared_lock lock(db.mutex());
         Json::Value config;
 
-        Statement stmt(
-                    db.handle(),
-                    "SELECT api_key, base_url, path, model, max_tokens, temperature, top_p, reasoning_effort FROM llm_config WHERE name = ?");
+        const Statement stmt(db.handle(), "SELECT api_key, base_url, path, model, max_tokens, temperature, top_p, "
+                                          "reasoning_effort FROM llm_config WHERE name = ?");
         stmt.bind(1, name);
 
         if (stmt.step()) {
@@ -38,12 +37,12 @@ namespace insoulforge {
     }
 
     void ConfigStore::saveLLMConfig(const std::string &name, const Json::Value &config) const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::unique_lock lock(db.mutex());
 
-        Statement stmt(
-                    db.handle(),
-                    "INSERT OR REPLACE INTO llm_config (name, api_key, base_url, path, model, max_tokens, temperature, top_p, reasoning_effort) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        const Statement stmt(db.handle(),
+          "INSERT OR REPLACE INTO llm_config (name, api_key, base_url, path, model, max_tokens, "
+          "temperature, top_p, reasoning_effort) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
         stmt.bind(1, name);
         stmt.bind(2, config["apiKey"].asString());
         stmt.bind(3, config["baseUrl"].asString());
@@ -57,13 +56,12 @@ namespace insoulforge {
     }
 
     Json::Value ConfigStore::getAllLLMConfigs() const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::shared_lock lock(db.mutex());
         Json::Value configs;
 
-        Statement stmt(
-                    db.handle(),
-                    "SELECT name, api_key, base_url, path, model, max_tokens, temperature, top_p, reasoning_effort FROM llm_config");
+        const Statement stmt(db.handle(), "SELECT name, api_key, base_url, path, model, max_tokens, temperature, "
+                                          "top_p, reasoning_effort FROM llm_config");
         while (stmt.step()) {
             Json::Value cfg;
             cfg["apiKey"] = stmt.getText(1);
@@ -133,20 +131,40 @@ namespace insoulforge {
             double temperature, topP;
         };
 
-        constexpr DefaultConfig defaults[] = {
-            {"router", "", "http://127.0.0.1:3001", "/v1/chat/completions", "deepseek-chat", 100, 0.3, 0.9},
-            {"executor", "", "http://127.0.0.1:3001", "/v1/chat/completions", "deepseek-chat", 150, 0.7, 0.9},
-            {
-                "executorThinking", "", "http://127.0.0.1:3001", "/v1/chat/completions", "deepseek-reasoner", 512,
-                0.7, 0.9
-            },
-            {
-                "image", "", "https://dashscope.aliyuncs.com", "/compatible-mode/v1/chat/completions",
-                "qwen-vl-plus", 1024, 0.7, 0.9
-            }
-        };
+        constexpr DefaultConfig defaults[] = {{.name = "router",
+                                                .apiKey = "",
+                                                .baseUrl = "http://127.0.0.1:3001",
+                                                .path = "/v1/chat/completions",
+                                                .model = "deepseek-chat",
+                                                .maxTokens = 100,
+                                                .temperature = 0.3,
+                                                .topP = 0.9},
+          {.name = "executor",
+            .apiKey = "",
+            .baseUrl = "http://127.0.0.1:3001",
+            .path = "/v1/chat/completions",
+            .model = "deepseek-chat",
+            .maxTokens = 150,
+            .temperature = 0.7,
+            .topP = 0.9},
+          {.name = "executorThinking",
+            .apiKey = "",
+            .baseUrl = "http://127.0.0.1:3001",
+            .path = "/v1/chat/completions",
+            .model = "deepseek-reasoner",
+            .maxTokens = 512,
+            .temperature = 0.7,
+            .topP = 0.9},
+          {.name = "image",
+            .apiKey = "",
+            .baseUrl = "https://dashscope.aliyuncs.com",
+            .path = "/compatible-mode/v1/chat/completions",
+            .model = "qwen-vl-plus",
+            .maxTokens = 1024,
+            .temperature = 0.7,
+            .topP = 0.9}};
 
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::unique_lock lock(db.mutex());
 
         for (const auto &[name, apiKey, baseUrl, path, model, maxTokens, temperature, topP]: defaults) {
@@ -156,9 +174,8 @@ namespace insoulforge {
                 continue; // 已存在，跳过
             }
 
-            Statement stmt(
-                        db.handle(),
-                        "INSERT INTO llm_config (name, api_key, base_url, path, model, max_tokens, temperature, top_p) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            const Statement stmt(db.handle(), "INSERT INTO llm_config (name, api_key, base_url, path, model, "
+                                              "max_tokens, temperature, top_p) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
             stmt.bind(1, name);
             stmt.bind(2, apiKey);
             stmt.bind(3, baseUrl);
@@ -173,11 +190,11 @@ namespace insoulforge {
     }
 
     Json::Value ConfigStore::loadConfigJson(const std::string &key, const Json::Value &defaults) const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::shared_lock lock(db.mutex());
 
         Json::Value config = defaults;
-        Statement stmt(db.handle(), "SELECT value FROM settings WHERE key = ?");
+        const Statement stmt(db.handle(), "SELECT value FROM settings WHERE key = ?");
         stmt.bind(1, key);
         if (stmt.step()) {
             Json::Value parsed;
@@ -185,8 +202,7 @@ namespace insoulforge {
             Json::CharReader *reader = builder.newCharReader();
             const std::string payload = stmt.getText(0);
             std::string errs;
-            if (reader->parse(payload.data(), payload.data() + payload.size(), &parsed, &errs) &&
-                parsed.isObject()) {
+            if (reader->parse(payload.data(), payload.data() + payload.size(), &parsed, &errs) && parsed.isObject()) {
                 // 以存储值覆盖默认值
                 for (const auto &name: defaults.getMemberNames()) {
                     if (parsed.isMember(name)) {
@@ -202,14 +218,14 @@ namespace insoulforge {
     }
 
     void ConfigStore::saveConfigJson(const std::string &key, const Json::Value &config) const {
-        auto &db = Database::instance();
+        const auto &db = Database::instance();
         std::unique_lock lock(db.mutex());
 
         Json::StreamWriterBuilder builder;
         builder["indentation"] = "";
         const std::string payload = Json::writeString(builder, config);
 
-        Statement stmt(db.handle(), "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)");
+        const Statement stmt(db.handle(), "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)");
         stmt.bind(1, key);
         stmt.bind(2, payload);
         stmt.exec();

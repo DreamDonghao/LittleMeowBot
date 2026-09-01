@@ -1,10 +1,10 @@
 /// @file RAGFlowClient.cpp
 /// @brief RAGFlow 知识库检索客户端 - 实现
 
+#include <config/Config.hpp>
+#include <fmt/core.h>
 #include <service/RAGFlowClient.hpp>
 #include <spdlog/spdlog.h>
-#include <fmt/core.h>
-#include <config/Config.hpp>
 #include <util/HttpUtil.hpp>
 #include <util/Logger.hpp>
 
@@ -13,14 +13,11 @@ namespace insoulforge {
         /// @brief 解析检索结果
         /// @param json RAGFlow API 返回的 JSON
         /// @return 格式化后的检索结果文本
-        [[nodiscard]] std::string parseSearchResult(
-            const Json::Value &json, std::optional<uint64_t> sessionId);
-    }
+        [[nodiscard]] std::string parseSearchResult(const Json::Value &json, std::optional<uint64_t> sessionId);
+    } // namespace
 
-    drogon::Task<std::optional<std::string> > RAGFlowClient::searchKnowledge(
-        const std::string &question,
-        int topK,
-        std::optional<uint64_t> sessionId) {
+    drogon::Task<std::optional<std::string>> RAGFlowClient::searchKnowledge(
+      const std::string &question, int topK, std::optional<uint64_t> sessionId) {
         const auto &kbConfig = Config::instance().knowledgeBase;
 
         // 检查是否启用 RAGFlow
@@ -43,19 +40,18 @@ namespace insoulforge {
         body["question"] = question;
         body["top_k"] = topK;
 
-        const auto resp = co_await HttpUtil::send("[RAGFlow]", baseUrl, "/api/v1/retrieval",
-                                                  drogon::Post, body, apiKey, 30.0, sessionId);
+        const auto resp = co_await HttpUtil::send(
+          "[RAGFlow]", baseUrl, "/api/v1/retrieval", drogon::Post, body, apiKey, 30.0, sessionId);
         if (!resp) {
             co_return std::nullopt;
         }
 
         if ((*resp)->getStatusCode() != drogon::k200OK) {
             if (sessionId) {
-                Logger::session(*sessionId).error("[RAGFlow] 知识库检索失败: status={}",
-                                              static_cast<int>((*resp)->getStatusCode()));
+                Logger::session(*sessionId)
+                  .error("[RAGFlow] 知识库检索失败: status={}", static_cast<int>((*resp)->getStatusCode()));
             } else {
-                spdlog::error("[RAGFlow] 知识库检索失败: status={}",
-                              static_cast<int>((*resp)->getStatusCode()));
+                spdlog::error("[RAGFlow] 知识库检索失败: status={}", static_cast<int>((*resp)->getStatusCode()));
             }
             co_return std::nullopt;
         }
@@ -78,10 +74,8 @@ namespace insoulforge {
         co_return result;
     }
 
-    drogon::Task<std::optional<std::string> > RAGFlowClient::searchMemory(
-        const std::string &question,
-        int topK,
-        std::optional<uint64_t> sessionId) {
+    drogon::Task<std::optional<std::string>> RAGFlowClient::searchMemory(
+      const std::string &question, int topK, std::optional<uint64_t> sessionId) {
         const auto &kbConfig = Config::instance().knowledgeBase;
 
         // 检查是否启用 RAGFlow
@@ -104,19 +98,18 @@ namespace insoulforge {
         body["question"] = question;
         body["top_k"] = topK;
 
-        const auto resp = co_await HttpUtil::send("[RAGFlow]", baseUrl, "/api/v1/retrieval",
-                                                  drogon::Post, body, apiKey, 30.0, sessionId);
+        const auto resp = co_await HttpUtil::send(
+          "[RAGFlow]", baseUrl, "/api/v1/retrieval", drogon::Post, body, apiKey, 30.0, sessionId);
         if (!resp) {
             co_return std::nullopt;
         }
 
         if ((*resp)->getStatusCode() != drogon::k200OK) {
             if (sessionId) {
-                Logger::session(*sessionId).error("[RAGFlow] 记忆库请求失败: status={}",
-                                              static_cast<int>((*resp)->getStatusCode()));
+                Logger::session(*sessionId)
+                  .error("[RAGFlow] 记忆库请求失败: status={}", static_cast<int>((*resp)->getStatusCode()));
             } else {
-                spdlog::error("[RAGFlow] 记忆库请求失败: status={}",
-                              static_cast<int>((*resp)->getStatusCode()));
+                spdlog::error("[RAGFlow] 记忆库请求失败: status={}", static_cast<int>((*resp)->getStatusCode()));
             }
             co_return std::nullopt;
         }
@@ -129,8 +122,7 @@ namespace insoulforge {
         co_return parseSearchResult(*json, sessionId);
     }
 
-    drogon::Task<bool> RAGFlowClient::addMemory(
-        const std::string &content, std::optional<uint64_t> sessionId) {
+    drogon::Task<bool> RAGFlowClient::addMemory(const std::string &content, std::optional<uint64_t> sessionId) {
         const auto &kbConfig = Config::instance().knowledgeBase;
 
         // 检查是否启用 RAGFlow
@@ -158,19 +150,17 @@ namespace insoulforge {
         body["content"] = content;
 
         const auto resp = co_await HttpUtil::send("[RAGFlow]", baseUrl,
-                                                  fmt::format("/api/v1/datasets/{}/documents/{}/chunks",
-                                                              memoryDatasetId, memoryDocumentId),
-                                                  drogon::Post, body, apiKey, 30.0, sessionId);
+          fmt::format("/api/v1/datasets/{}/documents/{}/chunks", memoryDatasetId, memoryDocumentId), drogon::Post, body,
+          apiKey, 30.0, sessionId);
         if (!resp) {
             co_return false;
         }
         if ((*resp)->getStatusCode() != drogon::k200OK) {
             if (sessionId) {
-                Logger::session(*sessionId).error("[RAGFlow] 添加记忆失败: status={}",
-                                              static_cast<int>((*resp)->getStatusCode()));
+                Logger::session(*sessionId)
+                  .error("[RAGFlow] 添加记忆失败: status={}", static_cast<int>((*resp)->getStatusCode()));
             } else {
-                spdlog::error("[RAGFlow] 添加记忆失败: status={}",
-                              static_cast<int>((*resp)->getStatusCode()));
+                spdlog::error("[RAGFlow] 添加记忆失败: status={}", static_cast<int>((*resp)->getStatusCode()));
             }
             co_return false;
         }
@@ -217,13 +207,15 @@ namespace insoulforge {
             int count = 0;
 
             for (const auto &chunk: chunks) {
-                if (count >= 3) break;
+                if (count >= 3)
+                    break;
 
                 if (chunk.isMember("content")) {
                     std::string content = chunk["content"].asString();
 
                     if (chunk.isMember("similarity")) {
-                        if (const float similarity = chunk["similarity"].asFloat(); similarity < 0.3f) continue;
+                        if (const float similarity = chunk["similarity"].asFloat(); similarity < 0.3f)
+                            continue;
                     }
 
                     result += content + "\n";
@@ -233,5 +225,5 @@ namespace insoulforge {
 
             return result;
         }
-    }
+    } // namespace
 }

@@ -20,7 +20,7 @@ namespace insoulforge {
         ~ProcessQQMessages() override = default;
 
         METHOD_LIST_BEGIN
-            ADD_METHOD_TO(ProcessQQMessages::receiveMessages, "/", drogon::Post);
+        ADD_METHOD_TO(ProcessQQMessages::receiveMessages, "/", drogon::Post);
         METHOD_LIST_END
 
         /// @brief 接收并处理 QQ 消息
@@ -34,7 +34,6 @@ namespace insoulforge {
         ///          5. 调用 Agent 系统生成回复
         ///          6. 触发记忆生成（如果达到阈值）
         static drogon::Task<> receiveMessages(
-            drogon::HttpRequestPtr req,
-            std::function<void(const drogon::HttpResponsePtr &)> callback);
+          drogon::HttpRequestPtr req, std::function<void(const drogon::HttpResponsePtr &)> callback);
     };
 } // namespace insoulforge

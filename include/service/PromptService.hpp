@@ -41,5 +41,5 @@ namespace insoulforge {
         /// @brief 获取 Router 系统提示词（私聊）
         /// @return Router 私聊消息路由决策提示词
         [[nodiscard]] std::string getRouterPrivateSystemPrompt();
-    }
+    } // namespace PromptService
 }

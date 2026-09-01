@@ -1,11 +1,12 @@
 /// @file HttpTrace.cpp
 /// @brief HTTP 请求完整内容内存缓存 - 实现
 
-#include <util/HttpTrace.hpp>
 #include <chrono>
 #include <ctime>
 #include <iomanip>
+#include <ranges>
 #include <sstream>
+#include <util/HttpTrace.hpp>
 
 namespace insoulforge {
     namespace {
@@ -56,10 +57,12 @@ namespace insoulforge {
         std::lock_guard lock(m_mutex);
         // id 按插入序递增，倒序遍历到边界即可停止；返回新的在前
         std::vector<HttpTraceEntry> result;
-        for (auto it = m_entries.rbegin(); it != m_entries.rend(); ++it) {
-            if (it->id <= afterId) break;
-            result.push_back(*it);
-            if (result.size() >= limit) break;
+        for (const auto &entry: m_entries | std::views::reverse) {
+            if (entry.id <= afterId)
+                break;
+            result.push_back(entry);
+            if (result.size() >= limit)
+                break;
         }
         return result;
     }

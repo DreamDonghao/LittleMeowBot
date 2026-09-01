@@ -5,12 +5,11 @@
 ///          - ReplyDecision: Executor Agent 的回复结果
 
 #pragma once
-#include <json/value.h>
-#include <string>
 #include <array>
-#include <string_view>
 #include <fmt/core.h>
 #include <format>
+#include <string>
+#include <string_view>
 
 namespace insoulforge {
     /// @brief Router Agent 决策结果（合并了规划功能）
@@ -42,24 +41,24 @@ namespace insoulforge {
         bool shouldReply = false;
         std::string content;
     };
-}
+} // namespace insoulforge
 
 // fmt::formatter 特化
 template<>
 struct fmt::formatter<insoulforge::RouterDecision::Action> : formatter<string_view> {
     template<typename FormatContext>
     auto format(insoulforge::RouterDecision::Action a, FormatContext &ctx) const {
-        return formatter<string_view>::format(
-            insoulforge::RouterDecision::actionToString(a), ctx);
+        return formatter<string_view>::format(insoulforge::RouterDecision::actionToString(a), ctx);
     }
 };
 
 // std::formatter 特化
 template<>
-struct std::formatter<insoulforge::RouterDecision::Action> : std::formatter<std::string_view> {
+// 标准 C++20 定制点：为用户类型特化 std::formatter（cert-dcl58-cpp 误报，显式豁免）
+struct std::formatter<insoulforge::RouterDecision::Action>
+    : std::formatter<std::string_view> { // NOLINT(cert-dcl58-cpp)
     template<typename FormatContext>
     auto format(const insoulforge::RouterDecision::Action a, FormatContext &ctx) const {
-        return std::formatter<std::string_view>::format(
-            insoulforge::RouterDecision::actionToString(a), ctx);
+        return std::formatter<std::string_view>::format(insoulforge::RouterDecision::actionToString(a), ctx);
     }
 };

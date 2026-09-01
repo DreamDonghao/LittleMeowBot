@@ -1,14 +1,14 @@
 /// @file QQMessage.cpp
 /// @brief QQ 消息模型 - 实现
 
-#include <model/QQMessage.hpp>
-#include <api/ApiClient.hpp>
-#include <util/tool.h>
-#include <util/HttpUtil.hpp>
-#include <spdlog/spdlog.h>
-#include <fstream>
+#include <service/LlmClient.hpp>
 #include <config/Config.hpp>
+#include <fstream>
+#include <model/QQMessage.hpp>
+#include <spdlog/spdlog.h>
+#include <util/HttpUtil.hpp>
 #include <util/Logger.hpp>
+#include <util/CommonUtil.hpp>
 #include <utility>
 
 namespace insoulforge {
@@ -18,23 +18,23 @@ namespace insoulforge {
             Json::Value body;
             body["model"] = config.image.model;
             body["messages"] = parseJson(fmt::format(
-                R"([{{"role":"user","content":[
+              R"([{{"role":"user","content":[
                     {{"type":"image_url","image_url":{{"url":"{}"}}}},
                     {{"type":"text","text":"用不到150字描述这张图片"}}
-            ]}}])", imageUrl));
+            ]}}])",
+              imageUrl));
             body["temperature"] = 0.7;
             body["max_tokens"] = 300;
             body["top_p"] = 0.92;
 
-            const auto resp = co_await HttpUtil::send("[Image]", config.image.baseUrl, config.image.path,
-                                                      drogon::Post, body, config.image.apiKey, 90.0,
-                                                      groupId);
+            const auto resp = co_await HttpUtil::send("[Image]", config.image.baseUrl, config.image.path, drogon::Post,
+              body, config.image.apiKey, 90.0, groupId);
             if (!resp) {
                 co_return "无法识别图片";
             }
             if ((*resp)->getStatusCode() != drogon::k200OK) {
-                Logger::session(groupId).error("[Image] 图像描述请求失败: status={}",
-                                             static_cast<int>((*resp)->getStatusCode()));
+                Logger::session(groupId).error(
+                  "[Image] 图像描述请求失败: status={}", static_cast<int>((*resp)->getStatusCode()));
                 co_return "无法识别图片";
             }
             const auto json = (*resp)->getJsonObject();
@@ -45,14 +45,13 @@ namespace insoulforge {
             const auto &choices = (*json)["choices"];
             const auto &content = choices[0]["message"]["content"].asString();
 
-            ApiClient::logUsage(*json, config.image.model, "image", groupId);
+            LlmClient::logUsage(*json, config.image.model, "image", groupId);
 
             co_return content;
         }
-    }
+    } // namespace
 
-    QQMessage::QQMessage(Json::Value qqMessageJson)
-        : m_qqMessageJson(std::move(qqMessageJson)) {
+    QQMessage::QQMessage(Json::Value qqMessageJson) : m_qqMessageJson(std::move(qqMessageJson)) {
         const Json::UInt64 qqNumber = getSenderQQNumber();
         const Json::UInt64 selfQQ = getSelfQQNumber();
         if (m_customQQNameMap.contains(qqNumber)) {
@@ -60,7 +59,7 @@ namespace insoulforge {
         } else {
             std::string name = getSenderQQName();
             if (const std::string &botName = Config::instance().botName;
-                name.find(botName) != std::string::npos && qqNumber != selfQQ) {
+              name.find(botName) != std::string::npos && qqNumber != selfQQ) {
                 name += "(昵称也为" + botName + "，但不是我)";
             }
             m_QQNameMap[qqNumber] = name;
@@ -87,13 +86,12 @@ namespace insoulforge {
     bool QQMessage::isPrivate() const { return m_qqMessageJson["message_type"].asString() == "private"; }
 
     uint64_t QQMessage::getSessionId() const {
-        if (isPrivate()) return getUserId() | kPrivateSessionFlag;
+        if (isPrivate())
+            return getUserId() | kPrivateSessionFlag;
         return getGroupId();
     }
 
-    Json::UInt64 QQMessage::getUserId() const {
-        return jsonToUInt64(m_qqMessageJson["user_id"], getSenderQQNumber());
-    }
+    Json::UInt64 QQMessage::getUserId() const { return jsonToUInt64(m_qqMessageJson["user_id"], getSenderQQNumber()); }
 
     Json::UInt64 QQMessage::getSelfQQNumber() const { return jsonToUInt64(m_qqMessageJson["self_id"]); }
 
@@ -121,8 +119,8 @@ namespace insoulforge {
             } else if (item["type"] == "face") {
                 textContent += item["data"]["raw"]["faceText"].asString();
             } else if (item["type"] == "image") {
-                textContent += "[图片：" + co_await getImageDescribe(
-                    item["data"]["url"].asString(), getSessionId()) + "]";
+                textContent +=
+                  "[图片：" + co_await getImageDescribe(item["data"]["url"].asString(), getSessionId()) + "]";
                 Json::Value imgInfo;
                 imgInfo["file"] = item["data"].get("file", "").asString();
                 imgInfo["url"] = item["data"].get("url", "").asString();
@@ -178,4 +176,4 @@ namespace insoulforge {
         }
         return nameToQQ;
     }
-}
+} // namespace insoulforge

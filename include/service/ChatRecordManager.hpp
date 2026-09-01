@@ -6,8 +6,8 @@
 ///          支持用户消息和 AI 回复的记录与检索。
 
 #pragma once
-#include <json/value.h>
 #include <deque>
+#include <json/value.h>
 
 namespace insoulforge {
     /// @brief 聊天记录管理类
@@ -38,4 +38,4 @@ namespace insoulforge {
     private:
         uint64_t m_sessionId; ///< 群号
     };
-}
+} // namespace insoulforge

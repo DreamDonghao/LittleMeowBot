@@ -1,17 +1,16 @@
 /// @file LogBuffer.cpp
 /// @brief 运行日志内存缓冲区与查询服务 - 实现
 
-#include <util/LogBuffer.hpp>
-#include <service/LogWebSocketManager.hpp>
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
-#include <fstream>
 #include <fmt/chrono.h>
 #include <fmt/format.h>
+#include <fstream>
 #include <regex>
+#include <service/LogWebSocketManager.hpp>
 #include <spdlog/details/log_msg.h>
-#include <spdlog/fmt/fmt.h>
+#include <util/LogBuffer.hpp>
 
 namespace insoulforge {
     namespace {
@@ -19,12 +18,11 @@ namespace insoulforge {
         // 与 QQMessage::kPrivateSessionFlag 保持一致（util 层不反向依赖 model）
         constexpr uint64_t kPrivateSessionFlag = 1ULL << 63;
         const std::regex kSessionPatterns[] = {
-            std::regex(R"((?:群|sessionId|group_id)[ =:：]+([0-9]{1,20}))", std::regex::icase),
-            std::regex(R"(群([0-9]{1,20}))")
-        };
+          std::regex(R"((?:群|sessionId|group_id)[ =:：]+([0-9]{1,20}))", std::regex::icase),
+          std::regex(R"(群([0-9]{1,20}))")};
         // 私聊日志前缀（Logger 对私聊会话输出 [private_id=QQ]），QQ 号需还原为带标志位的会话 ID
         const std::regex kPrivatePattern(R"(private_id[ =:：]+([0-9]{1,11}))");
-    }
+    } // namespace
 
     LogBuffer &LogBuffer::instance() {
         static LogBuffer buffer;
@@ -34,8 +32,8 @@ namespace insoulforge {
     void LogBuffer::loadFromDirectory(const std::string &directory) {
         std::vector<LogEntry> loaded;
         for (int index = 5; index >= 0; --index) {
-            const auto path = std::filesystem::path(directory)
-                              / (index == 0 ? "bot.log" : fmt::format("bot.log.{}", index));
+            const auto path =
+              std::filesystem::path(directory) / (index == 0 ? "bot.log" : fmt::format("bot.log.{}", index));
             std::ifstream file(path);
             if (!file) {
                 continue;
@@ -63,8 +61,10 @@ namespace insoulforge {
         entry.timestamp = formatTimestamp(message.time);
         const auto level = spdlog::level::to_string_view(message.level);
         entry.level = std::string(level.data(), level.size());
-        if (entry.level == "warning") entry.level = "warn";
-        if (entry.level == "err") entry.level = "error";
+        if (entry.level == "warning")
+            entry.level = "warn";
+        if (entry.level == "err")
+            entry.level = "error";
         entry.message = std::string(message.payload.data(), message.payload.size());
         entry.sessionId = extractSessionId(entry.message);
 
@@ -75,14 +75,13 @@ namespace insoulforge {
             if (m_entries.size() >= kMaxEntries) {
                 m_entries.erase(m_entries.begin());
             }
-            evt["id"] = static_cast<Json::UInt64>(entry.id);
+            evt["id"] = entry.id;
             evt["timestamp"] = entry.timestamp;
             evt["level"] = entry.level;
             evt["message"] = entry.message;
             // 会话 ID 可能带私聊标志位（超过 JS 安全整数范围），序列化为字符串
-            evt["groupId"] = entry.sessionId.has_value()
-                                 ? Json::Value(std::to_string(*entry.sessionId))
-                                 : Json::Value(Json::nullValue);
+            evt["groupId"] = entry.sessionId.has_value() ? Json::Value(std::to_string(*entry.sessionId))
+                                                         : Json::Value(Json::nullValue);
             m_entries.push_back(entry);
         }
         LogWebSocketManager::instance().pushLog(evt);
@@ -110,14 +109,12 @@ namespace insoulforge {
         size_t start = 0;
         size_t end = matched.size();
         if (query.afterId > 0) {
-            start = std::distance(matched.begin(), std::ranges::find_if(matched, [&](const auto *entry) {
-                return entry->id > query.afterId;
-            }));
+            start = std::distance(matched.begin(),
+              std::ranges::find_if(matched, [&](const auto *entry) { return entry->id > query.afterId; }));
             end = std::min(start + query.limit, matched.size());
         } else if (query.beforeId.has_value()) {
-            end = std::distance(matched.begin(), std::ranges::find_if(matched, [&](const auto *entry) {
-                return entry->id >= *query.beforeId;
-            }));
+            end = std::distance(matched.begin(),
+              std::ranges::find_if(matched, [&](const auto *entry) { return entry->id >= *query.beforeId; }));
             if (end > query.limit) {
                 start = end - query.limit;
             }
@@ -146,8 +143,8 @@ namespace insoulforge {
 
     std::optional<LogEntry> LogBuffer::parseLine(const std::string &line) {
         static const std::regex pattern(
-            R"(^\[([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3})\] \[([a-z]+)\] (.*)$)",
-            std::regex::icase);
+          R"(^\[([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3})\] \[([a-z]+)\] (.*)$)",
+          std::regex::icase);
         std::smatch match;
         if (!std::regex_match(line, match, pattern)) {
             return std::nullopt;
@@ -190,8 +187,8 @@ namespace insoulforge {
 #else
         localtime_r(&time, &localTime);
 #endif
-        const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                      timestamp.time_since_epoch()).count() % 1000;
+        const auto milliseconds =
+          std::chrono::duration_cast<std::chrono::milliseconds>(timestamp.time_since_epoch()).count() % 1000;
         return fmt::format("{:%Y-%m-%d %H:%M:%S}.{:03d}", localTime, milliseconds);
     }
 
@@ -207,4 +204,4 @@ namespace insoulforge {
         }
         return query.keyword.empty() || entry.message.find(query.keyword) != std::string::npos;
     }
-}
+} // namespace insoulforge

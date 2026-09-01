@@ -6,8 +6,8 @@
 ///          各领域的数据访问由 storage/ 下的 Store 类承担
 
 #pragma once
-#include <sqlite3.h>
 #include <shared_mutex>
+#include <sqlite3.h>
 #include <string>
 
 namespace insoulforge {

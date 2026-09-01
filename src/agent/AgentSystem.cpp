@@ -4,14 +4,14 @@
 ///          Router: 判断是否回复 + 规划策略
 ///          Executor: 执行回复
 
-#include <chrono>
-#include <drogon/HttpAppFramework.h>
-#include <spdlog/spdlog.h>
 #include <agent/AgentSystem.hpp>
+#include <agent/AgentToolManager.hpp>
 #include <agent/ExecutorAgent.hpp>
 #include <agent/RouterAgent.hpp>
-#include <agent/AgentToolManager.hpp>
+#include <chrono>
+#include <drogon/HttpAppFramework.h>
 #include <service/PromptService.hpp>
+#include <spdlog/spdlog.h>
 #include <util/Logger.hpp>
 
 namespace insoulforge {
@@ -20,13 +20,9 @@ namespace insoulforge {
         return system;
     }
 
-    bool AgentSystem::isRunning() const noexcept {
-        return m_running.load(std::memory_order_acquire);
-    }
+    bool AgentSystem::isRunning() const noexcept { return m_running.load(std::memory_order_acquire); }
 
-    void AgentSystem::setRunning(const bool running) noexcept {
-        m_running.store(running, std::memory_order_release);
-    }
+    void AgentSystem::setRunning(const bool running) noexcept { m_running.store(running, std::memory_order_release); }
 
     void AgentSystem::initialize() {
         AgentToolManager::registerAllTools();
@@ -35,10 +31,8 @@ namespace insoulforge {
         m_initialized = true;
     }
 
-    drogon::Task<std::optional<std::string> > AgentSystem::process(
-        const ChatRecordManager &chatRecords,
-        const MemoryManager &memory,
-        const QQMessage &message) {
+    drogon::Task<std::optional<std::string>> AgentSystem::process(
+      const ChatRecordManager &chatRecords, const MemoryManager &memory, const QQMessage &message) {
         if (!isRunning()) {
             co_return std::nullopt;
         }
@@ -81,7 +75,7 @@ namespace insoulforge {
         decision.isPrivate = message.isPrivate();
 
         Logger::session(sessionId).info("[Router] 结果: {} | shouldReply={} | thinking={} | maxLength={}",
-                                      decision.action, decision.shouldReply, decision.enableThinking, decision.maxLength);
+          decision.action, decision.shouldReply, decision.enableThinking, decision.maxLength);
 
         // 检查处理代际是否被 @消息取消
         if (!isCurrentGeneration(sessionId, generation)) {
@@ -142,4 +136,4 @@ namespace insoulforge {
         std::lock_guard lock(m_processingMutex);
         m_processingSessions.erase(sessionId);
     }
-}
+} // namespace insoulforge

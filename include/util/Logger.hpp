@@ -14,31 +14,30 @@
 namespace insoulforge {
     class SessionLogger {
     public:
-        explicit SessionLogger(uint64_t sessionId) : m_sessionId(sessionId) {
-        }
+        explicit SessionLogger(uint64_t sessionId) : m_sessionId(sessionId) {}
 
         template<typename... Args>
-        void trace(fmt::format_string<Args...> format, Args &&... args) const {
+        void trace(fmt::format_string<Args...> format, Args &&...args) const {
             write(spdlog::level::trace, format, std::forward<Args>(args)...);
         }
 
         template<typename... Args>
-        void debug(fmt::format_string<Args...> format, Args &&... args) const {
+        void debug(fmt::format_string<Args...> format, Args &&...args) const {
             write(spdlog::level::debug, format, std::forward<Args>(args)...);
         }
 
         template<typename... Args>
-        void info(fmt::format_string<Args...> format, Args &&... args) const {
+        void info(fmt::format_string<Args...> format, Args &&...args) const {
             write(spdlog::level::info, format, std::forward<Args>(args)...);
         }
 
         template<typename... Args>
-        void warn(fmt::format_string<Args...> format, Args &&... args) const {
+        void warn(fmt::format_string<Args...> format, Args &&...args) const {
             write(spdlog::level::warn, format, std::forward<Args>(args)...);
         }
 
         template<typename... Args>
-        void error(fmt::format_string<Args...> format, Args &&... args) const {
+        void error(fmt::format_string<Args...> format, Args &&...args) const {
             write(spdlog::level::err, format, std::forward<Args>(args)...);
         }
 
@@ -47,14 +46,13 @@ namespace insoulforge {
         static constexpr uint64_t kPrivateSessionFlag = 1ULL << 63;
 
         template<typename... Args>
-        void write(spdlog::level::level_enum level, fmt::format_string<Args...> format, Args &&... args) const {
+        void write(spdlog::level::level_enum level, fmt::format_string<Args...> format, Args &&...args) const {
             // 私聊会话用可读的 QQ 号展示；LogBuffer 按 private_id 前缀还原为完整会话 ID
             if (m_sessionId & kPrivateSessionFlag) {
                 spdlog::log(level, "[private_id={}] {}", m_sessionId & ~kPrivateSessionFlag,
-                           fmt::format(format, std::forward<Args>(args)...));
+                  fmt::format(format, std::forward<Args>(args)...));
             } else {
-                spdlog::log(level, "[group_id={}] {}", m_sessionId,
-                           fmt::format(format, std::forward<Args>(args)...));
+                spdlog::log(level, "[group_id={}] {}", m_sessionId, fmt::format(format, std::forward<Args>(args)...));
             }
         }
 

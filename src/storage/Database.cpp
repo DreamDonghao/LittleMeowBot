@@ -3,11 +3,11 @@
 /// @author donghao
 /// @date 2026-04-02
 
+#include <filesystem>
+#include <spdlog/spdlog.h>
+#include <storage/ConfigStore.hpp>
 #include <storage/Database.hpp>
 #include <storage/SchemaMigrator.hpp>
-#include <storage/ConfigStore.hpp>
-#include <spdlog/spdlog.h>
-#include <filesystem>
 
 namespace insoulforge {
     Database &Database::instance() {
@@ -15,9 +15,7 @@ namespace insoulforge {
         return db;
     }
 
-    Database::~Database() {
-        close();
-    }
+    Database::~Database() { close(); }
 
     void Database::initialize(const std::string &dbPath) {
         // 创建数据目录

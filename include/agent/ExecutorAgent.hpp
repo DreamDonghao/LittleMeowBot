@@ -6,11 +6,11 @@
 ///          - 使用 Agent 模式让 LLM 生成最终回复
 
 #pragma once
-#include <optional>
 #include <agent/AgentTypes.hpp>
 #include <drogon/utils/coroutine.h>
-#include <model/ChatRecordManager.hpp>
-#include <model/MemoryManager.hpp>
+#include <service/ChatRecordManager.hpp>
+#include <service/MemoryManager.hpp>
+#include <optional>
 
 namespace insoulforge {
     /// @brief Executor Agent - 执行回复生成
@@ -25,8 +25,6 @@ namespace insoulforge {
     /// @param memory 记忆管理器
     /// @param decision Router 的决策结果（包含回复策略）
     /// @return 回复内容
-    [[nodiscard]] drogon::Task<std::optional<ReplyDecision> > execute(
-        const ChatRecordManager &chatRecords,
-        const MemoryManager &memory,
-        const RouterDecision &decision);
-}
+    [[nodiscard]] drogon::Task<std::optional<ReplyDecision>> execute(
+      const ChatRecordManager &chatRecords, const MemoryManager &memory, const RouterDecision &decision);
+} // namespace insoulforge

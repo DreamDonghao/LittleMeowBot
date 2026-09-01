@@ -1,16 +1,16 @@
 /// @file MessageService.cpp
 /// @brief QQ 消息服务 - 实现
 
-#include <service/MessageService.hpp>
-#include <service/OneBotClient.hpp>
-#include <util/tool.h>
-#include <fmt/core.h>
-#include <regex>
 #include <algorithm>
 #include <config/Config.hpp>
+#include <fmt/core.h>
+#include <regex>
+#include <service/MessageService.hpp>
+#include <service/OneBotClient.hpp>
 #include <service/WebSocketManager.hpp>
-#include <util/Logger.hpp>
 #include <storage/SessionStore.hpp>
+#include <util/Logger.hpp>
+#include <util/CommonUtil.hpp>
 
 namespace insoulforge {
     std::string MessageService::convertAtToCQCode(const std::string &text) {
@@ -24,18 +24,18 @@ namespace insoulforge {
         auto nameToQQ = QQMessage::getNameToQQMap();
 
         // 按昵称长度降序排序，避免短昵称先匹配
-        std::vector<std::pair<std::string, uint64_t> > sortedNames(nameToQQ.begin(), nameToQQ.end());
-        std::sort(sortedNames.begin(), sortedNames.end(),
-                  [](const auto &a, const auto &b) { return a.first.length() > b.first.length(); });
+        std::vector<std::pair<std::string, uint64_t>> sortedNames(nameToQQ.begin(), nameToQQ.end());
+        std::ranges::sort(
+          sortedNames, [](const auto &a, const auto &b) { return a.first.length() > b.first.length(); });
 
         for (const auto &[name, qq]: sortedNames) {
-            std::string atPattern = "@" + name;
+            const std::string mention = "@" + name;
             size_t pos = 0;
-            while ((pos = result.find(atPattern, pos)) != std::string::npos) {
-                size_t endPos = pos + atPattern.length();
-                bool isComplete = (endPos >= result.length() ||
-                                   (!std::isalnum(static_cast<unsigned char>(result[endPos])) &&
-                                    result[endPos] != '_' && result[endPos] != '-'));
+            while ((pos = result.find(mention, pos)) != std::string::npos) {
+                size_t endPos = pos + mention.length();
+                bool isComplete =
+                  endPos >= result.length() || (!std::isalnum(static_cast<unsigned char>(result[endPos])) &&
+                                                 result[endPos] != '_' && result[endPos] != '-');
 
                 if (isComplete) {
                     // 检查是否已经是CQ码的一部分（避免重复转换）
@@ -44,7 +44,7 @@ namespace insoulforge {
                         continue;
                     }
                     std::string cqCode = fmt::format("[CQ:at,qq={}]", qq);
-                    result.replace(pos, atPattern.length(), cqCode);
+                    result.replace(pos, mention.length(), cqCode);
                     pos += cqCode.length();
                 } else {
                     pos = endPos;
@@ -61,12 +61,9 @@ namespace insoulforge {
         /// @param processedMessage 已完成 CQ 码转换的消息内容
         /// @param sessionId 会话 ID
         /// @param channelName 日志中的渠道名（"群消息"/"私聊消息"）
-        drogon::Task<> afterSendMessage(
-            drogon::Task<std::optional<uint64_t> > sendTask,
-            const ChatRecordManager &chatRecords,
-            const std::string &processedMessage,
-            const uint64_t sessionId,
-            std::string_view channelName) {
+        drogon::Task<> afterSendMessage(drogon::Task<std::optional<uint64_t>> sendTask,
+          const ChatRecordManager &chatRecords, const std::string &processedMessage, const uint64_t sessionId,
+          std::string_view channelName) {
             const auto messageId = co_await std::move(sendTask);
             if (!messageId) {
                 co_return;
@@ -75,7 +72,7 @@ namespace insoulforge {
             const auto &config = Config::instance();
 
             // 获取当前时间
-            std::string timeStr = currentDateTime();
+            const std::string timeStr = currentDateTime();
 
             // 构造JSON格式的消息
             Json::Value msgJson;
@@ -89,7 +86,7 @@ namespace insoulforge {
             Json::StreamWriterBuilder writerBuilder;
             writerBuilder["indentation"] = "";
             writerBuilder["emitUTF8"] = true;
-            std::string formattedMsg = Json::writeString(writerBuilder, msgJson);
+            const std::string formattedMsg = Json::writeString(writerBuilder, msgJson);
 
             // 更新聊天记录（保存JSON格式）
             chatRecords.addAssistantRecord(formattedMsg);
@@ -97,29 +94,25 @@ namespace insoulforge {
             // WebSocket推送（推送原始文本）
             WebSocketManager::instance().pushMessage(sessionId, "assistant", processedMessage);
 
-            Logger::session(sessionId).info("成功发送{}: {} (message_id={})",
-                                          channelName, processedMessage, *messageId);
+            Logger::session(sessionId).info(
+              "成功发送{}: {} (message_id={})", channelName, processedMessage, *messageId);
         }
-    }
+    } // namespace
 
     drogon::Task<> MessageService::sendGroupMsg(
-        Json::UInt64 groupId,
-        const std::string &message,
-        const ChatRecordManager &chatRecords) {
+      Json::UInt64 groupId, const std::string &message, const ChatRecordManager &chatRecords) {
         // 转换 @[QQ:xxx] 为 CQ 码
-        std::string processedMessage = convertAtToCQCode(message);
-        co_await afterSendMessage(OneBotClient::sendGroupMsg(groupId, processedMessage, groupId),
-                                  chatRecords, processedMessage, groupId, "群消息");
+        const std::string processedMessage = convertAtToCQCode(message);
+        co_await afterSendMessage(
+          OneBotClient::sendGroupMsg(groupId, processedMessage), chatRecords, processedMessage, groupId, "群消息");
     }
 
     drogon::Task<> MessageService::sendPrivateMsg(
-        Json::UInt64 userId,
-        const std::string &message,
-        const ChatRecordManager &chatRecords) {
-        std::string processedMessage = convertAtToCQCode(message);
+      Json::UInt64 userId, const std::string &message, const ChatRecordManager &chatRecords) {
+        const std::string processedMessage = convertAtToCQCode(message);
         co_await afterSendMessage(
-            OneBotClient::sendPrivateMsg(userId, processedMessage, userId | QQMessage::kPrivateSessionFlag),
-            chatRecords, processedMessage, userId | QQMessage::kPrivateSessionFlag, "私聊消息");
+          OneBotClient::sendPrivateMsg(userId, processedMessage, userId | QQMessage::kPrivateSessionFlag), chatRecords,
+          processedMessage, userId | QQMessage::kPrivateSessionFlag, "私聊消息");
     }
 
     drogon::Task<std::string> MessageService::fetchAndUpdateSessionName(Json::UInt64 sessionId) {
@@ -142,4 +135,4 @@ namespace insoulforge {
 
         co_return name;
     }
-}
+} // namespace insoulforge

@@ -1,20 +1,19 @@
-/// @file ApiClient.cpp
+/// @file LlmClient.cpp
 /// @brief API 客户端 - 实现
 
-#include <api/ApiClient.hpp>
-#include <spdlog/spdlog.h>
+#include <service/LlmClient.hpp>
 #include <config/Config.hpp>
 #include <service/WebSocketManager.hpp>
+#include <spdlog/spdlog.h>
+#include <storage/UsageStore.hpp>
 #include <util/HttpUtil.hpp>
 #include <util/Logger.hpp>
-#include <storage/UsageStore.hpp>
 
 namespace insoulforge {
     namespace {
         /// @brief 构建模型请求体
-        Json::Value buildModelReq(const Json::Value &messages, const std::string &model, double temperature,
-                                  double top_p,
-                                  int max_tokens) {
+        Json::Value buildModelReq(
+          const Json::Value &messages, const std::string &model, double temperature, double top_p, int max_tokens) {
             Json::Value body;
             body["model"] = model;
             body["temperature"] = temperature;
@@ -25,20 +24,12 @@ namespace insoulforge {
         }
 
         /// @brief 通用 API 请求函数
-        drogon::Task<std::optional<std::string> > requestStr(
-            const Json::Value &messages,
-            const std::string &base_url,
-            const std::string &path,
-            const std::string &api_key,
-            const std::string &model,
-            double temperature,
-            double top_p,
-            int max_tokens,
-            const std::string &role,
-            std::optional<uint64_t> sessionId) {
+        drogon::Task<std::optional<std::string>> requestStr(const Json::Value &messages, const std::string &base_url,
+          const std::string &path, const std::string &api_key, const std::string &model, double temperature,
+          double top_p, int max_tokens, const std::string &role, std::optional<uint64_t> sessionId) {
             const Json::Value body = buildModelReq(messages, model, temperature, top_p, max_tokens);
-            const auto resp = co_await HttpUtil::send("[LLM]", base_url, path, drogon::Post, body, api_key, 90.0,
-                                                      sessionId);
+            const auto resp =
+              co_await HttpUtil::send("[LLM]", base_url, path, drogon::Post, body, api_key, 90.0, sessionId);
             if (!resp) {
                 co_return std::nullopt;
             }
@@ -46,15 +37,15 @@ namespace insoulforge {
 
             if ((*resp)->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
                 if (sessionId) {
-                    Logger::session(*sessionId).error("[LLM] 请求出错: status={}",
-                                                  static_cast<int>((*resp)->getStatusCode()));
+                    Logger::session(*sessionId)
+                      .error("[LLM] 请求出错: status={}", static_cast<int>((*resp)->getStatusCode()));
                 } else {
                     spdlog::error("[LLM] 请求出错: status={}", static_cast<int>((*resp)->getStatusCode()));
                 }
                 co_return std::nullopt;
             }
 
-            ApiClient::logUsage(*json, model, role, sessionId);
+            LlmClient::logUsage(*json, model, role, sessionId);
 
             const auto &choices = (*json)["choices"];
             if (!choices.isArray() || choices.empty()) {
@@ -68,33 +59,20 @@ namespace insoulforge {
 
             co_return choices[0]["message"]["content"].asString();
         }
-    }
+    } // namespace
 
-    drogon::Task<std::optional<std::string> > ApiClient::requestLLM(
-        const Json::Value &messages,
-        const double temperature,
-        const double top_p,
-        const int max_tokens,
-        const std::string &role,
-        const std::optional<uint64_t> sessionId) {
+    drogon::Task<std::optional<std::string>> LlmClient::requestLLM(const Json::Value &messages,
+      const double temperature, const double top_p, const int max_tokens, const std::string &role,
+      const std::optional<uint64_t> sessionId) {
         const auto &config = Config::instance();
-        co_return co_await requestStr(
-            messages,
-            config.executor.baseUrl,
-            config.executor.path,
-            config.executor.apiKey,
-            config.executor.model,
-            temperature,
-            top_p,
-            max_tokens,
-            role,
-            sessionId
-        );
+        co_return co_await requestStr(messages, config.executor.baseUrl, config.executor.path, config.executor.apiKey,
+          config.executor.model, temperature, top_p, max_tokens, role, sessionId);
     }
 
-    void ApiClient::logUsage(const Json::Value &responseJson, const std::string &model, const std::string &role,
-                             const std::optional<uint64_t> sessionId) {
-        if (!responseJson.isMember("usage")) return;
+    void LlmClient::logUsage(const Json::Value &responseJson, const std::string &model, const std::string &role,
+      const std::optional<uint64_t> sessionId) {
+        if (!responseJson.isMember("usage"))
+            return;
         const auto &usage = responseJson["usage"];
         int promptTokens = usage.get("prompt_tokens", 0).asInt();
         int completionTokens = usage.get("completion_tokens", 0).asInt();
@@ -115,17 +93,17 @@ namespace insoulforge {
             }
         }
 
-        const auto log = sessionId.has_value() ? std::optional<SessionLogger>(Logger::session(*sessionId)) : std::nullopt;
+        const auto log = sessionId.has_value() ? std::optional(Logger::session(*sessionId)) : std::nullopt;
         if (promptTokens > 0) {
             float hitRate = static_cast<float>(cachedTokens) / static_cast<float>(promptTokens) * 100.0f;
             if (log) {
-                log->info(
-                    "[Cache] role={} | model={} | prompt={} | completion={} | total={} | cached={} | hit_rate={:.1f}%",
-                    role, model, promptTokens, completionTokens, totalTokens, cachedTokens, hitRate);
+                log->info("[Cache] role={} | model={} | prompt={} | completion={} | total={} | cached={} | "
+                          "hit_rate={:.1f}%",
+                  role, model, promptTokens, completionTokens, totalTokens, cachedTokens, hitRate);
             } else {
-                spdlog::info(
-                    "[Cache] role={} | model={} | prompt={} | completion={} | total={} | cached={} | hit_rate={:.1f}%",
-                    role, model, promptTokens, completionTokens, totalTokens, cachedTokens, hitRate);
+                spdlog::info("[Cache] role={} | model={} | prompt={} | completion={} | total={} | cached={} | "
+                             "hit_rate={:.1f}%",
+                  role, model, promptTokens, completionTokens, totalTokens, cachedTokens, hitRate);
             }
         } else if (totalTokens > 0) {
             // 网关偶尔不返回 prompt 分解，用 total - completion 兜底，避免用量统计缺 prompt 数据
@@ -134,25 +112,24 @@ namespace insoulforge {
             compactWriter["indentation"] = "";
             const auto usageText = Json::writeString(compactWriter, usage);
             if (log) {
-                log->info(
-                    "[Cache] role={} | model={} | prompt={} (no breakdown) | completion={} | total={} | cached=N/A | hit_rate=N/A | usage={}",
-                    role, model, promptTokens, completionTokens, totalTokens, usageText);
+                log->info("[Cache] role={} | model={} | prompt={} (no breakdown) | completion={} | total={} | "
+                          "cached=N/A | hit_rate=N/A | usage={}",
+                  role, model, promptTokens, completionTokens, totalTokens, usageText);
             } else {
-                spdlog::info(
-                    "[Cache] role={} | model={} | prompt={} (no breakdown) | completion={} | total={} | cached=N/A | hit_rate=N/A | usage={}",
-                    role, model, promptTokens, completionTokens, totalTokens, usageText);
+                spdlog::info("[Cache] role={} | model={} | prompt={} (no breakdown) | completion={} | total={} | "
+                             "cached=N/A | hit_rate=N/A | usage={}",
+                  role, model, promptTokens, completionTokens, totalTokens, usageText);
             }
         }
 
-        UsageStore::instance().addUsageRecord(
-            role, model, promptTokens, completionTokens, totalTokens, cachedTokens);
+        UsageStore::instance().addUsageRecord(role, model, promptTokens, completionTokens, totalTokens, cachedTokens);
 
         Json::Value evt;
         evt["role"] = role;
         evt["model"] = model;
         if (sessionId.has_value()) {
-            evt["groupId"] = static_cast<Json::UInt64>(*sessionId);
+            evt["groupId"] = *sessionId;
         }
         WebSocketManager::instance().broadcastEvent("usage_updated", evt);
     }
-}
+} // namespace insoulforge

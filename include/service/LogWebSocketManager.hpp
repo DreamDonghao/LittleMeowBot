@@ -43,4 +43,4 @@ namespace insoulforge {
         std::unordered_set<drogon::WebSocketConnectionPtr> m_connections;
         std::unordered_map<drogon::WebSocketConnectionPtr, LogSubscription> m_subscriptions;
     };
-}
+} // namespace insoulforge

@@ -383,9 +383,10 @@ onUnmounted(restoreWebSocket)
           <div class="form-group" style="flex: 1; max-width: 300px; margin: 0;">
             <label class="form-label" style="margin-bottom: 4px;">{{ addType === 'private' ? 'QQ号' : '群号' }}</label>
             <input v-model.number="newGroupId" :placeholder="addType === 'private' ? '输入QQ号' : '输入群号'"
-                   class="form-input" type="number" style="height: 36px; padding: 0 8px; font-size: 13px;">
+                   class="form-input" style="height: 36px; padding: 0 8px; font-size: 13px;" type="number">
           </div>
-          <button :disabled="saving" class="btn btn-success" style="height: 36px; line-height: 36px; padding: 0 16px;" @click="addGroup">
+          <button :disabled="saving" class="btn btn-success" style="height: 36px; line-height: 36px; padding: 0 16px;"
+                  @click="addGroup">
             {{ saving ? '添加中...' : '添加' }}
           </button>
         </div>
@@ -404,11 +405,14 @@ onUnmounted(restoreWebSocket)
           <div style="display: flex; gap: 8px; align-items: center;">
             <div class="filter-tabs">
               <button :class="{ active: typeFilter === 'all' }" class="filter-tab"
-                      @click="typeFilter = 'all'">全部</button>
+                      @click="typeFilter = 'all'">全部
+              </button>
               <button :class="{ active: typeFilter === 'group' }" class="filter-tab"
-                      @click="typeFilter = 'group'">群聊</button>
+                      @click="typeFilter = 'group'">群聊
+              </button>
               <button :class="{ active: typeFilter === 'private' }" class="filter-tab"
-                      @click="typeFilter = 'private'">私聊</button>
+                      @click="typeFilter = 'private'">私聊
+              </button>
             </div>
             <span style="color: var(--text-secondary); font-size: 13px;">共 {{ filteredGroups.length }} 个会话</span>
             <button class="btn btn-secondary btn-sm" @click="refreshAllGroupNames">刷新会话名称</button>

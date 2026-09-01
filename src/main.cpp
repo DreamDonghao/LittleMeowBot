@@ -10,18 +10,18 @@
 ///          - HTTP 服务启动：监听 7778 端口，提供管理界面和 API
 ///          支持通过输入 "quit" 命令优雅退出
 
+#include <agent/AgentSystem.hpp>
+#include <config/Config.hpp>
+#include <drogon/drogon.h>
 #include <iostream>
 #include <iterator>
-#include <drogon/drogon.h>
-#include <spdlog/spdlog.h>
-#include <util/Logger.hpp>
-#include <storage/Database.hpp>
-#include <storage/SessionStore.hpp>
-#include <storage/AdminStore.hpp>
-#include <config/Config.hpp>
-#include <agent/AgentSystem.hpp>
 #include <model/QQMessage.hpp>
 #include <service/TaskScheduler.hpp>
+#include <spdlog/spdlog.h>
+#include <storage/AdminStore.hpp>
+#include <storage/Database.hpp>
+#include <storage/SessionStore.hpp>
+#include <util/Logger.hpp>
 
 int main() {
     using namespace insoulforge;
@@ -44,14 +44,14 @@ int main() {
         TaskScheduler::instance().start();
 
         spdlog::info("系统初始化完成 - 启用群: {}, 管理员: {}", std::ssize(SessionStore::instance().getEnabledGroups()),
-                     std::ssize(AdminStore::instance().getAdmins()));
+          std::ssize(AdminStore::instance().getAdmins()));
 
         // 启动服务
         // 启动控制台命令线程
         std::jthread commandThread([]() {
             std::string command;
             while (std::cin >> command) {
-                if (command == "quit") {
+                if (command == "exit") {
                     drogon::app().quit();
                     return;
                 }
