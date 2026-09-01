@@ -143,6 +143,7 @@ namespace insoulforge {
         remind_time INTEGER NOT NULL,
         content TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'done', 'cancelled')),
+        is_daily INTEGER NOT NULL DEFAULT 0 CHECK(is_daily IN (0, 1)),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ))",
           R"(CREATE TABLE IF NOT EXISTS settings (
@@ -190,6 +191,7 @@ namespace insoulforge {
           &migrateV1ToV2, // kb_config/memory_config/qq_config 并入 settings
           &migrateV2ToV3, // 新增 group_affinity 好感度表
           &migrateV3ToV4, // scheduled_tasks 状态扩展（新增 cancelled）
+          &migrateV4ToV5, // scheduled_tasks 新增 is_daily（每日重复任务）
         };
 
         for (int v = version; v < kLatestVersion; ++v) {
@@ -395,5 +397,12 @@ namespace insoulforge {
         execSQL(db, "DROP TABLE scheduled_tasks");
         execSQL(db, "ALTER TABLE scheduled_tasks_new RENAME TO scheduled_tasks");
         execSQL(db, "CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_status ON scheduled_tasks(status, remind_time)");
+    }
+
+    void SchemaMigrator::migrateV4ToV5(sqlite3 *db) {
+        spdlog::info("执行迁移: scheduled_tasks 新增 is_daily（每日重复任务）");
+        // 只加一列，ALTER TABLE 即可，无需像 v4 那样重建表
+        ensureColumn(
+          db, "scheduled_tasks", "is_daily", "is_daily INTEGER NOT NULL DEFAULT 0 CHECK(is_daily IN (0, 1))");
     }
 } // namespace insoulforge

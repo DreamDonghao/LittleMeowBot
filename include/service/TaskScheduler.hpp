@@ -6,6 +6,7 @@
 ///          - 任务先落库（用户请求的原始时间为准），再入堆参与调度
 ///          - 到点前提前 kFireLead 触发（补偿一次回复的生成耗时），把任务包装成
 ///            OneBot 格式消息 POST 回消息接收接口，走正常 Router/Executor 管线生成回复
+///          - 每日任务（isDaily）触发后不结束，自动推进到次日同一时刻重新入堆，直到被取消
 ///          - 重启时从数据库恢复全部 pending 任务；已过期的任务照常触发并标注延时
 #pragma once
 
@@ -34,7 +35,7 @@ namespace insoulforge {
         void stop();
 
         /// @brief 创建定时任务（先落库再入堆）
-        /// @param task 任务内容（sessionType/targetId/remindTime/content 需已填充）
+        /// @param task 任务内容（sessionType/targetId/remindTime/content/isDaily 需已填充）
         /// @return 任务 ID；数据库写入失败抛出异常
         int64_t schedule(TaskStore::ScheduledTask task);
 
@@ -63,10 +64,13 @@ namespace insoulforge {
 
         void runLoop();
 
+        /// @brief 任务入堆并唤醒调度线程
+        void pushEntry(Entry entry);
+
         /// @brief 加载数据库中全部 pending 任务入堆
         void restorePendingTasks();
 
-        /// @brief 把任务合成 OneBot 消息注入接收接口并标记完成（在 drogon 循环上执行）
+        /// @brief 把任务合成 OneBot 消息注入接收接口；一次性任务标记完成，每日任务重排到次日（在 drogon 循环上执行）
         static drogon::Task<> trigger(TaskStore::ScheduledTask task);
 
         std::priority_queue<Entry, std::vector<Entry>, std::greater<>> m_heap;

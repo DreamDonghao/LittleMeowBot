@@ -9,8 +9,8 @@
 #include <service/OneBotClient.hpp>
 #include <service/WebSocketManager.hpp>
 #include <storage/SessionStore.hpp>
-#include <util/Logger.hpp>
 #include <util/CommonUtil.hpp>
+#include <util/Logger.hpp>
 
 namespace insoulforge {
     std::string MessageService::convertAtToCQCode(const std::string &text) {

@@ -11,11 +11,11 @@
 #pragma once
 #include <atomic>
 #include <drogon/utils/coroutine.h>
-#include <service/ChatRecordManager.hpp>
-#include <service/MemoryManager.hpp>
 #include <model/QQMessage.hpp>
 #include <mutex>
 #include <optional>
+#include <service/ChatRecordManager.hpp>
+#include <service/MemoryManager.hpp>
 #include <string>
 #include <unordered_map>
 

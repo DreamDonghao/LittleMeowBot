@@ -56,7 +56,7 @@ namespace insoulforge {
         /// @return {sessionType("group"|"private"), targetId(群号或未加标志位的 QQ 号)}
         [[nodiscard]] static std::pair<std::string, uint64_t> parseSessionTarget(const uint64_t sessionId) {
             return {isPrivateSession(sessionId) ? "private" : "group",
-                    isPrivateSession(sessionId) ? sessionId & ~kPrivateSessionFlag : sessionId};
+              isPrivateSession(sessionId) ? sessionId & ~kPrivateSessionFlag : sessionId};
         }
 
         /// @brief 是否私聊消息

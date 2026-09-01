@@ -4,9 +4,9 @@
 #include <config/Config.hpp>
 #include <service/OneBotClient.hpp>
 #include <spdlog/spdlog.h>
+#include <util/CommonUtil.hpp>
 #include <util/HttpUtil.hpp>
 #include <util/Logger.hpp>
-#include <util/CommonUtil.hpp>
 
 namespace insoulforge::OneBotClient {
     namespace {

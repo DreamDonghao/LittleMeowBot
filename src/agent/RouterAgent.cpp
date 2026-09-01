@@ -3,14 +3,14 @@
 
 #include <agent/RouterAgent.hpp>
 #include <algorithm>
-#include <service/LlmClient.hpp>
 #include <cctype>
 #include <config/Config.hpp>
 #include <fmt/core.h>
-#include <service/ChatRecordManager.hpp>
 #include <model/QQMessage.hpp>
 #include <ranges>
 #include <regex>
+#include <service/ChatRecordManager.hpp>
+#include <service/LlmClient.hpp>
 #include <service/PromptService.hpp>
 #include <spdlog/spdlog.h>
 #include <string>

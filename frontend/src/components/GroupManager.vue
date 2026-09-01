@@ -681,6 +681,7 @@ onUnmounted(restoreWebSocket)
               <td>#{{ task.id }}</td>
               <td>
                 {{ fmtTaskTime(task.remindTime) }}
+                <span v-if="task.daily" class="task-daily">每日</span>
                 <div class="task-relative">{{ fmtTaskRelative(task.remindTime) }}</div>
               </td>
               <td class="task-content">{{ task.content }}</td>
@@ -1088,6 +1089,16 @@ onUnmounted(restoreWebSocket)
 }
 
 /* 定时任务 */
+.task-daily {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  background: var(--bg-secondary);
+  color: var(--primary);
+}
+
 .task-relative {
   font-size: 12px;
   color: var(--primary);

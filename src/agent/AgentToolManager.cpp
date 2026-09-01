@@ -19,9 +19,9 @@
 #include <mutex>
 #include <random>
 #include <set>
+#include <util/CommonUtil.hpp>
 #include <util/HttpUtil.hpp>
 #include <util/Logger.hpp>
-#include <util/CommonUtil.hpp>
 
 #include <service/OneBotClient.hpp>
 #include <service/RAGFlowClient.hpp>
@@ -31,18 +31,6 @@
 #include <storage/ToolStore.hpp>
 
 namespace insoulforge {
-    namespace {
-        /// @brief unix 秒格式化为本地时间 YYYY-MM-DD HH:MM:SS
-        std::string formatUnixTime(const int64_t unixSec) {
-            const std::time_t t = unixSec;
-            std::tm tm{};
-            localtime_r(&t, &tm);
-            char buffer[32];
-            strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &tm);
-            return buffer;
-        }
-    } // namespace
-
     void AgentToolManager::registerAllTools() {
         auto &registry = ToolRegistry::instance();
 
@@ -536,6 +524,10 @@ namespace insoulforge {
                       "qq）、要做什么事、"
                       "以及创建时对话里的相关背景。到点后你会看到这段备忘并结合当时的聊天上下文自行组织回复",
             Config::instance().botName);
+        scheduleParams["properties"]["daily"]["type"] = "boolean";
+        scheduleParams["properties"]["daily"]["description"] =
+          "可选，默认 false。当用户要求每天固定时间重复提醒时传 true（如'每天早上8点叫我起床'），"
+          "此时 time 填下一次触发的完整日期时间，之后每天同一时刻自动触发";
         scheduleParams["required"].append("time");
         scheduleParams["required"].append("content");
         registry.registerTool(
@@ -570,17 +562,22 @@ namespace insoulforge {
                     co_return std::string("会话上下文缺失，无法确定提醒目标");
                 const bool isPrivateSession = QQMessage::isPrivateSession(sessionId);
                 const auto [sessionType, targetId] = QQMessage::parseSessionTarget(sessionId);
+                const bool isDaily = args.isMember("daily") && args["daily"].asBool();
 
                 TaskStore::ScheduledTask task;
                 task.sessionType = sessionType;
                 task.targetId = targetId;
                 task.remindTime = *remindTime;
                 task.content = content;
+                task.isDaily = isDaily;
 
                 try {
                     const int64_t id = TaskScheduler::instance().schedule(std::move(task));
-                    co_return fmt::format(
-                      "定时任务 #{} 已创建，将于 {} 在{}触发提醒", id, formatUnixTime(*remindTime),
+                    if (isDaily) {
+                        co_return fmt::format("每日定时任务 #{} 已创建，每天 {} 在{}触发提醒", id,
+                          formatTimeOfDay(*remindTime), isPrivateSession ? "私聊" : "本群");
+                    }
+                    co_return fmt::format("定时任务 #{} 已创建，将于 {} 在{}触发提醒", id, formatUnixTime(*remindTime),
                       isPrivateSession ? "私聊" : "本群");
                 } catch (const std::exception &e) {
                     spdlog::error("[Scheduler] 创建定时任务入库失败: {}", e.what());
@@ -600,15 +597,20 @@ namespace insoulforge {
                 if (sessionId == 0)
                     co_return std::string("会话上下文缺失，无法查询定时任务");
                 const auto [sessionType, targetId] = QQMessage::parseSessionTarget(sessionId);
-                const auto tasks =
-                  TaskStore::instance().getPendingScheduledTasksByTarget(sessionType, targetId);
+                const auto tasks = TaskStore::instance().getPendingScheduledTasksByTarget(sessionType, targetId);
                 if (tasks.empty()) {
                     co_return std::string("当前会话没有待触发的定时任务");
                 }
 
                 std::string out = fmt::format("当前会话共有 {} 个待触发定时任务：\n", tasks.size());
                 for (const auto &task: tasks) {
-                    out += fmt::format("- 任务#{}：{} 「{}」\n", task.id, formatUnixTime(task.remindTime), task.content);
+                    if (task.isDaily) {
+                        out += fmt::format("- 任务#{}：每天 {} 「{}」（每日重复）\n", task.id,
+                          formatTimeOfDay(task.remindTime), task.content);
+                    } else {
+                        out +=
+                          fmt::format("- 任务#{}：{} 「{}」\n", task.id, formatUnixTime(task.remindTime), task.content);
+                    }
                 }
                 out += "如需取消某个任务，调用 cancel_scheduled_task 并传入任务编号（#后的数字）";
                 co_return out;
@@ -624,7 +626,7 @@ namespace insoulforge {
         cancelTaskParams["required"].append("task_id");
         registry.registerTool(
           {.name = "cancel_scheduled_task",
-            .description = "取消尚未触发的定时任务。当用户要求取消之前的提醒/定时任务时使用；"
+            .description = "取消尚未触发的定时任务（含每日重复任务）。当用户要求取消之前的提醒/定时任务时使用；"
                            "如不知道任务编号，先用 list_scheduled_tasks 查询。",
             .parameters = cancelTaskParams,
             .handler = [](const Json::Value &args) -> drogon::Task<std::string> {

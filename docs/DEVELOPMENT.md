@@ -216,8 +216,15 @@ registry.registerTool(
   "description": "工具描述",
   "parameters": {
     "type": "object",
-    "properties": { "param1": { "type": "string", "description": "参数说明" } },
-    "required": ["param1"]
+    "properties": {
+      "param1": {
+        "type": "string",
+        "description": "参数说明"
+      }
+    },
+    "required": [
+      "param1"
+    ]
   },
   "scriptContent": "import json\nimport sys\nwith open(sys.argv[1]) as f:\n    args = json.load(f)\nprint(args['param1'])",
   "readme": "# 工具说明\n作者、用法、联系方式等"
@@ -245,8 +252,8 @@ registry.registerTool(
 
 ## 调试
 
-- **日志**：`spdlog` 输出到控制台与 `logs/bot.log`，模块间通过 `util/Logger.hpp` 封装。排查消息流水线问题时先看日志中 Router
-  决策与 Executor 输出
+- **日志**：`spdlog` 输出到控制台与 `logs/bot.log`，模块间通过 `util/Logger.hpp` 封装。排查消息流水线问题时先看日志中
+  Router 决策与 Executor 输出
 - **协程**：所有异步 I/O 使用 `drogon::Task<T>` / `co_await`，注意 `co_await` 后对象生命周期（捕获 `shared_ptr` 而非裸指针）
 - **组内互斥**：`AgentSystem` 保证同一群的消息串行处理，新增消息处理逻辑时不要绕过该机制
 - **前端**：`npm run dev` + 浏览器 DevTools；后端日志会打印收到的 OneBot 原始 JSON

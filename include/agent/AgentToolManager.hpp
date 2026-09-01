@@ -10,9 +10,9 @@
 ///          - 自定义工具：从数据库加载用户定义的工具（支持Python/HTTP）
 
 #pragma once
-#include <service/LlmClient.hpp>
 #include <drogon/utils/coroutine.h>
 #include <optional>
+#include <service/LlmClient.hpp>
 #include <spdlog/spdlog.h>
 #include <string>
 

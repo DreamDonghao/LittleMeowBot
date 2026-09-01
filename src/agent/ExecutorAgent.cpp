@@ -4,24 +4,24 @@
 #include <agent/AgentToolManager.hpp>
 #include <agent/ExecutorAgent.hpp>
 #include <algorithm>
-#include <service/LlmClient.hpp>
 #include <chrono>
 #include <config/Config.hpp>
 #include <drogon/HttpAppFramework.h>
 #include <fmt/core.h>
 #include <memory>
-#include <service/ChatRecordManager.hpp>
 #include <model/QQMessage.hpp>
 #include <ranges>
 #include <regex>
+#include <service/ChatRecordManager.hpp>
+#include <service/LlmClient.hpp>
 #include <service/PromptService.hpp>
 #include <service/ToolRegistry.hpp>
 #include <spdlog/spdlog.h>
 #include <storage/AffinityStore.hpp>
 #include <string>
+#include <util/CommonUtil.hpp>
 #include <util/HttpUtil.hpp>
 #include <util/Logger.hpp>
-#include <util/CommonUtil.hpp>
 
 namespace insoulforge {
     namespace {

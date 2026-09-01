@@ -8,8 +8,8 @@
 #pragma once
 #include <agent/AgentTypes.hpp>
 #include <drogon/utils/coroutine.h>
-#include <service/ChatRecordManager.hpp>
 #include <model/QQMessage.hpp>
+#include <service/ChatRecordManager.hpp>
 
 namespace insoulforge {
     /// @brief 路由决策与规划

@@ -1,8 +1,8 @@
 /// @file LlmClient.cpp
 /// @brief API 客户端 - 实现
 
-#include <service/LlmClient.hpp>
 #include <config/Config.hpp>
+#include <service/LlmClient.hpp>
 #include <service/WebSocketManager.hpp>
 #include <spdlog/spdlog.h>
 #include <storage/UsageStore.hpp>

@@ -19,8 +19,8 @@ namespace insoulforge {
         /// @throws DbError 任一迁移步骤失败时抛出（已回滚）
         static void migrate(sqlite3 *db);
 
-    /// @brief 当前代码对应的最新 Schema 版本号
-    static constexpr int kLatestVersion = 4;
+        /// @brief 当前代码对应的最新 Schema 版本号
+        static constexpr int kLatestVersion = 5;
 
     private:
         SchemaMigrator() = default;
@@ -29,9 +29,11 @@ namespace insoulforge {
 
         static void migrateV1ToV2(sqlite3 *db);
 
-    static void migrateV2ToV3(sqlite3 *db);
+        static void migrateV2ToV3(sqlite3 *db);
 
-    static void migrateV3ToV4(sqlite3 *db);
+        static void migrateV3ToV4(sqlite3 *db);
+
+        static void migrateV4ToV5(sqlite3 *db);
 
         static int getUserVersion(sqlite3 *db);
 

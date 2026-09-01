@@ -1,14 +1,14 @@
 /// @file QQMessage.cpp
 /// @brief QQ 消息模型 - 实现
 
-#include <service/LlmClient.hpp>
 #include <config/Config.hpp>
 #include <fstream>
 #include <model/QQMessage.hpp>
+#include <service/LlmClient.hpp>
 #include <spdlog/spdlog.h>
+#include <util/CommonUtil.hpp>
 #include <util/HttpUtil.hpp>
 #include <util/Logger.hpp>
-#include <util/CommonUtil.hpp>
 #include <utility>
 
 namespace insoulforge {

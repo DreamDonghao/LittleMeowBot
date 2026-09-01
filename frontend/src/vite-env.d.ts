@@ -84,6 +84,8 @@ export interface ScheduledTask {
     /** 触发时间（unix 秒） */
     remindTime: number
     content: string
+    /** 是否每日重复任务 */
+    daily: boolean
 }
 
 export interface ApiResponse {

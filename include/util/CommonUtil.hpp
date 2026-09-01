@@ -4,11 +4,12 @@
 /// @date 2026-04-02
 /// @details 提供通用工具函数：
 ///          - JSON 解析：parseJson()
-///          - 时间获取：currentDateTime()
+///          - 时间获取与格式化：currentDateTime() / formatUnixTime() / formatTimeOfDay()
 ///          - 无符号整数解析：parseUInt64()
 
 #pragma once
 #include <charconv>
+#include <ctime>
 #include <drogon/drogon.h>
 #include <optional>
 #include <spdlog/spdlog.h>
@@ -71,17 +72,28 @@
 #include <chrono>
 #include <fmt/chrono.h>
 
+/// @brief time_t 转本地 std::tm（各平台的安全转换）
+inline std::tm localTime(const std::time_t t) {
+    std::tm tm{};
+#ifdef _WIN32
+    localtime_s(&tm, &t);
+#else
+    localtime_r(&t, &tm);
+#endif
+    return tm;
+}
+
 inline std::string currentDateTime() {
     using namespace std::chrono;
-    const auto now = system_clock::now();
-    const std::time_t t = system_clock::to_time_t(now);
-    std::tm tm{}; // 确保初始化为零
+    return fmt::format("{:%Y-%m-%d %H:%M:%S}", localTime(system_clock::to_time_t(system_clock::now())));
+}
 
-#ifdef _WIN32
-    localtime_s(&tm, &t); // Windows 安全版本，参数顺序 (tm*, const time_t*)
-#else
-    localtime_r(&t, &tm); // POSIX 标准版本，参数顺序 (const time_t*, tm*)
-#endif
+/// @brief unix 秒格式化为本地时间 YYYY-MM-DD HH:MM:SS
+[[nodiscard]] inline std::string formatUnixTime(const int64_t unixSec) {
+    return fmt::format("{:%Y-%m-%d %H:%M:%S}", localTime(static_cast<std::time_t>(unixSec)));
+}
 
-    return fmt::format("{:%Y-%m-%d %H:%M:%S}", tm);
+/// @brief unix 秒格式化为本地时间 HH:MM
+[[nodiscard]] inline std::string formatTimeOfDay(const int64_t unixSec) {
+    return fmt::format("{:%H:%M}", localTime(static_cast<std::time_t>(unixSec)));
 }

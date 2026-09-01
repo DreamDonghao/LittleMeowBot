@@ -14,8 +14,8 @@
 #include <storage/MemoryStore.hpp>
 #include <storage/SessionStore.hpp>
 #include <unordered_set>
-#include <util/Logger.hpp>
 #include <util/CommonUtil.hpp>
+#include <util/Logger.hpp>
 
 namespace insoulforge {
     namespace {

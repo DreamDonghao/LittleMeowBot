@@ -11,6 +11,7 @@
 #include <spdlog/spdlog.h>
 #include <sstream>
 #include <storage/TaskStore.hpp>
+#include <util/CommonUtil.hpp>
 #include <util/HttpUtil.hpp>
 #include <util/Logger.hpp>
 
@@ -26,21 +27,29 @@ namespace insoulforge {
         /// @brief 合成系统消息的发送者昵称与正文前缀
         constexpr std::string_view kSystemTaskLabel = "系统定时任务";
 
-        std::string formatUnixTime(const int64_t unixSec) {
-            const auto t = static_cast<std::time_t>(unixSec);
+        /// @brief 计算每日任务的下次触发时刻：自上次时刻起逐日推进到严格晚于当前
+        /// （mktime 归一化跨月/跨年，tm_isdst=-1 交给系统处理夏令时偏移）
+        std::time_t nextDailyFire(const std::time_t lastTime) {
+            const std::time_t now = std::time(nullptr);
             std::tm tm{};
-            localtime_r(&t, &tm);
-            std::ostringstream oss;
-            oss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
-            return oss.str();
+            localtime_r(&lastTime, &tm);
+            std::time_t next = lastTime;
+            do {
+                tm.tm_mday += 1;
+                tm.tm_isdst = -1;
+                next = mktime(&tm);
+            } while (next <= now);
+            return next;
         }
 
         std::string buildText(const TaskStore::ScheduledTask &task, const bool delayed) {
             // 正文必须是对机器人下达的指令而非对用户的陈述，
             // content 是备忘而非现成回复，具体怎么说由到点时的 AI 结合上下文自行决定
-            std::string text = fmt::format("【{}】{}，你在 {} 设定的定时任务到点了。你留下的备忘：「{}」。"
+            const std::string when = task.isDaily ? fmt::format("你设定的每日 {}", formatTimeOfDay(task.remindTime))
+                                                  : fmt::format("你在 {} 设定的", formatUnixTime(task.remindTime));
+            std::string text = fmt::format("【{}】{}，{}定时任务到点了。你留下的备忘：「{}」。"
                                            "请结合会话上下文自行决定如何完成这件事并作出回应",
-              kSystemTaskLabel, Config::instance().botName, formatUnixTime(task.remindTime), task.content);
+              kSystemTaskLabel, Config::instance().botName, when, task.content);
             if (delayed) {
                 text += "（已超过原定时刻送达，因程序当时未运行）";
             }
@@ -116,16 +125,20 @@ namespace insoulforge {
         entry.task.id = id;
         entry.fireTime = entry.task.remindTime - kFireLead.count();
 
+        spdlog::info("[Scheduler] 已创建{}定时任务 #{}: {}({}) 于 {}", entry.task.isDaily ? "每日" : "", id,
+          entry.task.sessionType == "private" ? "私聊" : "群聊", entry.task.targetId,
+          formatUnixTime(entry.task.remindTime));
+
+        pushEntry(std::move(entry));
+        return id;
+    }
+
+    void TaskScheduler::pushEntry(Entry entry) {
         {
             std::lock_guard lock(m_mutex);
             m_heap.push(std::move(entry));
         }
         m_cv.notify_all();
-
-        spdlog::info("[Scheduler] 已创建定时任务 #{}: {}({}) 于 {}", id,
-          entry.task.sessionType == "private" ? "私聊" : "群聊", entry.task.targetId,
-          formatUnixTime(entry.task.remindTime));
-        return id;
     }
 
     bool TaskScheduler::cancel(const int64_t id) {
@@ -202,19 +215,37 @@ namespace insoulforge {
 
         const bool delayed = std::time(nullptr) > task.remindTime;
         Logger::session(logSessionId)
-          .info("[Scheduler] 触发定时任务 #{} ({}{})", task.id, delayed ? "延时，" : "", task.content.substr(0, 50));
+          .info("[Scheduler] 触发{}定时任务 #{} ({}{})", task.isDaily ? "每日" : "", task.id, delayed ? "延时，" : "",
+            task.content.substr(0, 50));
 
         const auto body = buildSystemEvent(task, delayed);
         const auto resp =
           co_await HttpUtil::send("[Scheduler]", kSelfBaseUrl, "/", drogon::Post, body, "", 10.0, logSessionId);
         if (!resp || (*resp)->getStatusCode() != drogon::k200OK) {
-            // HTTP 异常细节由 HttpUtil 记录；无论成败都标记完成，防止反复重发
-            spdlog::error("[Scheduler] 定时任务 #{} 注入失败（任务仍标记为已完成）", task.id);
+            // HTTP 异常细节由 HttpUtil 记录；一次性任务无论成败都标记完成防止反复重发，每日任务次日自然重试
+            spdlog::error("[Scheduler] 定时任务 #{} 注入失败", task.id);
         } else {
             Logger::session(logSessionId).info("[Scheduler] 定时任务 #{} 已注入消息接口", task.id);
         }
 
-        TaskStore::instance().finishScheduledTask(task.id);
+        if (!task.isDaily) {
+            TaskStore::instance().finishScheduledTask(task.id);
+            co_return;
+        }
+
+        // 每日任务推进到下次触发重新入堆；更新以 pending 为条件，
+        // 触发途中被取消（cancelledIds 已登记）则不再重排
+        const std::time_t nextFire = nextDailyFire(task.remindTime);
+        if (!TaskStore::instance().rescheduleDailyTask(task.id, nextFire)) {
+            co_return;
+        }
+        Entry entry;
+        entry.task = std::move(task);
+        entry.task.remindTime = nextFire;
+        entry.fireTime = nextFire - kFireLead.count();
+        Logger::session(logSessionId)
+          .info("[Scheduler] 每日任务 #{} 已重排至下次触发：{}", entry.task.id, formatUnixTime(nextFire));
+        TaskScheduler::instance().pushEntry(std::move(entry));
     }
 
     std::optional<std::time_t> TaskScheduler::parseTimeString(const std::string &input) {

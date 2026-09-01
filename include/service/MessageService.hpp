@@ -9,9 +9,9 @@
 
 #pragma once
 #include <drogon/utils/coroutine.h>
-#include <service/ChatRecordManager.hpp>
 #include <model/QQMessage.hpp>
 #include <optional>
+#include <service/ChatRecordManager.hpp>
 #include <string>
 
 /// @brief 消息服务 - 封装 QQ 消息发送逻辑，对接 OneBot API

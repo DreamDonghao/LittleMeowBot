@@ -819,6 +819,7 @@ Task<> AdminController::getScheduledTasks(
         item["id"] = task.id;
         item["remindTime"] = task.remindTime;
         item["content"] = task.content;
+        item["daily"] = task.isDaily;
         list.append(item);
     }
 

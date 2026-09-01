@@ -8,9 +8,9 @@
 #pragma once
 #include <agent/AgentTypes.hpp>
 #include <drogon/utils/coroutine.h>
+#include <optional>
 #include <service/ChatRecordManager.hpp>
 #include <service/MemoryManager.hpp>
-#include <optional>
 
 namespace insoulforge {
     /// @brief Executor Agent - 执行回复生成
