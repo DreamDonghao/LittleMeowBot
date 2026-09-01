@@ -25,12 +25,8 @@ void AdminWebSocket::handleNewMessage(
 
     // 解析客户端消息
     Json::Value msg;
-    Json::CharReaderBuilder reader;
-    std::string errs;
-    std::istringstream stream(message);
-
-    if (!Json::parseFromStream(reader, stream, &msg, &errs)) {
-        spdlog::warn("WebSocket消息解析失败: {}", errs);
+    if (!tryParseJson(message, msg)) {
+        spdlog::warn("WebSocket消息解析失败");
         return;
     }
 

@@ -5,6 +5,7 @@
 #include <config/Config.hpp>
 #include <model/QQMessage.hpp>
 #include <mutex>
+#include <ranges>
 #include <service/LongTermMemory.hpp>
 #include <service/MemoryService.hpp>
 #include <spdlog/spdlog.h>
@@ -63,25 +64,6 @@ namespace insoulforge {
             bool m_acquired = false;
         };
 
-        /// @brief 去除首尾空白
-        std::string trim(const std::string &s) {
-            const size_t begin = s.find_first_not_of(" \t\r\n");
-            if (begin == std::string::npos)
-                return "";
-            const size_t end = s.find_last_not_of(" \t\r\n");
-            return s.substr(begin, end - begin + 1);
-        }
-
-        /// @brief 容忍模型输出 ```json 围栏等杂质：截取首尾大括号之间的内容
-        bool extractJsonObject(const std::string &text, std::string &payload) {
-            const size_t start = text.find('{');
-            const size_t end = text.rfind('}');
-            if (start == std::string::npos || end == std::string::npos || end <= start)
-                return false;
-            payload = text.substr(start, end - start + 1);
-            return true;
-        }
-
         /// @brief 按行拆分文本，跳过空行
         std::vector<std::string> splitLines(const std::string &text) {
             std::vector<std::string> lines;
@@ -108,6 +90,29 @@ namespace insoulforge {
             for (size_t i = 0; i < lines.size(); ++i)
                 text += std::to_string(i + 1) + ". " + lines[i] + '\n';
             return text.empty() ? "（空）" : text;
+        }
+
+        /// @brief LLM 响应文本 → JSON 对象（容忍模型输出 ```json 围栏等杂质）
+        /// @return nullopt 表示 API 失败或输出不是合法 JSON（调用方不得推进水位线），失败原因已按 tag 记日志
+        std::optional<Json::Value> parseLlmJson(
+          const std::optional<std::string> &result, const std::string &tag, const uint64_t sessionId) {
+            if (!result) {
+                Logger::session(sessionId).error("{}: API 请求失败", tag);
+                return std::nullopt;
+            }
+
+            std::string payload;
+            if (!tryExtractJsonObject(*result, payload)) {
+                Logger::session(sessionId).warn("{}: 响应中无 JSON: {}", tag, result->substr(0, 100));
+                return std::nullopt;
+            }
+
+            Json::Value parsed;
+            if (!tryParseJson(payload, parsed) || !parsed.isObject()) {
+                Logger::session(sessionId).warn("{}: JSON 解析失败，本批重试", tag);
+                return std::nullopt;
+            }
+            return parsed;
         }
 
         /// @brief 从聊天记录中提取新记忆，每条只包含一条完整信息
@@ -141,26 +146,19 @@ namespace insoulforge {
             item["content"] = "=== 群聊记录 ===\n" + chatRecords + "\n\n请输出提取结果 JSON：";
             messages.append(item);
 
-            const auto result = co_await LlmClient::requestLLM(messages, 0.4f, 0.9f, maxTokens, "memory", sessionId);
-            if (!result) {
-                Logger::session(sessionId).error("extractMemories: API 请求失败");
+            const auto parsed =
+              parseLlmJson(co_await LlmClient::requestLLM(messages, 0.4f, 0.9f, maxTokens, "memory", sessionId),
+                "记忆提取", sessionId);
+            if (!parsed) {
                 co_return std::nullopt;
             }
-
-            std::string payload;
-            if (!extractJsonObject(result.value(), payload)) {
-                Logger::session(sessionId).warn("记忆提取: 响应中无 JSON: {}", result->substr(0, 100));
-                co_return std::nullopt;
-            }
-
-            Json::Value parsed;
-            if (!Json::Reader().parse(payload, parsed) || !parsed.isObject() || !parsed["memories"].isArray()) {
-                Logger::session(sessionId).warn("记忆提取: JSON 解析失败，本批重试");
+            if (!(*parsed)["memories"].isArray()) {
+                Logger::session(sessionId).warn("记忆提取: 输出缺少 memories 数组，本批重试");
                 co_return std::nullopt;
             }
 
             std::vector<std::string> memories;
-            for (const auto &entry: parsed["memories"]) {
+            for (const auto &entry: (*parsed)["memories"]) {
                 if (std::string text = trim(entry.asString()); !text.empty())
                     memories.push_back(std::move(text));
             }
@@ -192,8 +190,8 @@ namespace insoulforge {
 
             std::vector<SimilarMemory> result;
             result.reserve(recalled.size());
-            for (auto &item: recalled)
-                result.push_back(item.second);
+            for (auto &item: recalled | std::views::values)
+                result.push_back(item);
             if (result.size() > kMaxRecalledEntries) {
                 std::ranges::sort(result, [](const auto &a, const auto &b) { return a.similarity > b.similarity; });
                 result.resize(kMaxRecalledEntries);
@@ -263,27 +261,19 @@ namespace insoulforge {
                               "\n请输出整理结果 JSON：";
             messages.append(item);
 
-            const auto result =
-              co_await LlmClient::requestLLM(messages, 0.3f, 0.9f, config.memoryExtractMaxTokens, "memory", sessionId);
-            if (!result) {
-                Logger::session(sessionId).error("reconcileMemory: API 请求失败");
+            const auto parsed = parseLlmJson(
+              co_await LlmClient::requestLLM(messages, 0.3f, 0.9f, config.memoryExtractMaxTokens, "memory", sessionId),
+              "记忆整理", sessionId);
+            if (!parsed) {
                 co_return std::nullopt;
             }
-
-            std::string payload;
-            if (!extractJsonObject(result.value(), payload)) {
-                Logger::session(sessionId).warn("记忆整理: 响应中无 JSON: {}", result->substr(0, 100));
-                co_return std::nullopt;
-            }
-
-            Json::Value parsed;
-            if (!Json::Reader().parse(payload, parsed) || !parsed.isObject() || !parsed["shortTerm"].isArray()) {
-                Logger::session(sessionId).warn("记忆整理: JSON 解析失败，本批重试");
+            if (!(*parsed)["shortTerm"].isArray()) {
+                Logger::session(sessionId).warn("记忆整理: 输出缺少 shortTerm 数组，本批重试");
                 co_return std::nullopt;
             }
 
             ReconcileResult reconcile;
-            for (const auto &entry: parsed["shortTerm"]) {
+            for (const auto &entry: (*parsed)["shortTerm"]) {
                 if (std::string text = trim(entry.asString()); !text.empty())
                     reconcile.shortTerm.push_back(std::move(text));
             }
@@ -294,8 +284,8 @@ namespace insoulforge {
                 reconcile.shortTerm.resize(maxShortTerm);
             }
 
-            if (longTermEnabled && parsed["longTerm"].isArray()) {
-                for (const auto &entry: parsed["longTerm"]) {
+            if (longTermEnabled && (*parsed)["longTerm"].isArray()) {
+                for (const auto &entry: (*parsed)["longTerm"]) {
                     if (!entry.isObject())
                         continue;
                     std::string content = trim(entry["content"].asString());
@@ -307,7 +297,7 @@ namespace insoulforge {
                         for (const auto &source: entry["sources"]) {
                             if (!source.isIntegral())
                                 continue;
-                            const auto id = static_cast<int64_t>(source.asInt64());
+                            const auto id = source.asInt64();
                             // 只接受真实召回过的 id，防止模型编造误删无关条目
                             if (std::ranges::any_of(recalled, [id](const auto &r) { return r.id == id; }))
                                 merged.sources.push_back(id);
@@ -336,18 +326,14 @@ namespace insoulforge {
         /// @brief 去除记录 content JSON 中的 images 字段（文件名/URL 对提取与评分无用，纯耗 token）
         /// @details 解析失败或非 JSON 内容原样保留（历史存量可能是纯文本），不做修改
         void stripRecordImages(std::vector<Json::Value> &records) {
-            Json::StreamWriterBuilder writerBuilder;
-            writerBuilder["indentation"] = "";
-            writerBuilder["emitUTF8"] = true;
-
             for (auto &record: records) {
                 Json::Value content;
-                if (!Json::Reader().parse(record["content"].asString(), content) || !content.isObject())
+                if (!tryParseJson(record["content"].asString(), content) || !content.isObject())
                     continue;
                 if (!content.isMember("images"))
                     continue;
                 content.removeMember("images");
-                record["content"] = Json::writeString(writerBuilder, content);
+                record["content"] = dumpJson(content);
             }
         }
 
@@ -384,30 +370,19 @@ namespace insoulforge {
               "=== 群聊记录 ===\n" + formatRecordsText(records, 0, limit) + "\n\n请输出好感度变化 JSON：";
             messages.append(item);
 
-            const auto result = co_await LlmClient::requestLLM(messages, 0.3f, 0.9f, 256, "affinity", sessionId);
-            if (!result) {
-                Logger::session(sessionId).warn("好感度评分: API 请求失败，本批跳过");
-                co_return;
-            }
-
-            std::string payload;
-            if (!extractJsonObject(result.value(), payload)) {
-                Logger::session(sessionId).warn("好感度评分: 响应中无 JSON，跳过: {}", result->substr(0, 100));
-                co_return;
-            }
-
-            Json::Value deltas;
-            if (!Json::Reader().parse(payload, deltas) || !deltas.isObject()) {
-                Logger::session(sessionId).warn("好感度评分: JSON 解析失败，跳过");
+            const auto deltas =
+              parseLlmJson(co_await LlmClient::requestLLM(messages, 0.3f, 0.9f, 256, "affinity", sessionId),
+                "好感度评分", sessionId);
+            if (!deltas) {
                 co_return;
             }
 
             int applied = 0;
-            for (const auto &qqStr: deltas.getMemberNames()) {
+            for (const auto &qqStr: deltas->getMemberNames()) {
                 const uint64_t qqNumber = parseUInt64(qqStr);
                 if (qqNumber == 0 || qqNumber == QQMessage::kSystemAccountId)
                     continue;
-                const Json::Value &deltaValue = deltas[qqStr];
+                const Json::Value &deltaValue = (*deltas)[qqStr];
                 if (!deltaValue.isIntegral())
                     continue;
                 if (const int delta = std::clamp(deltaValue.asInt(), -kMaxAffinityDelta, kMaxAffinityDelta);

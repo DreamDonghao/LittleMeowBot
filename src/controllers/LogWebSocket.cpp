@@ -4,7 +4,6 @@
 #include <controllers/LogWebSocket.hpp>
 #include <service/LogWebSocketManager.hpp>
 #include <spdlog/spdlog.h>
-#include <sstream>
 #include <util/CommonUtil.hpp>
 
 namespace insoulforge {
@@ -24,11 +23,8 @@ namespace insoulforge {
             return;
         }
         Json::Value msg;
-        Json::CharReaderBuilder reader;
-        std::string errs;
-        std::istringstream stream(message);
-        if (!Json::parseFromStream(reader, stream, &msg, &errs)) {
-            spdlog::warn("日志WebSocket消息解析失败: {}", errs);
+        if (!tryParseJson(message, msg)) {
+            spdlog::warn("日志WebSocket消息解析失败");
             return;
         }
 

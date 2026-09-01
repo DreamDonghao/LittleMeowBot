@@ -15,39 +15,38 @@ namespace insoulforge {
     namespace {
         drogon::Task<std::string> getImageDescribe(const std::string &imageUrl, const uint64_t groupId) {
             const auto &config = Config::instance();
-            Json::Value body;
-            body["model"] = config.image.model;
-            body["messages"] = parseJson(fmt::format(
-              R"([{{"role":"user","content":[
+            // 图像描述请求不发送 reasoning_effort（图像模型不支持，保持既有行为）
+            LLMApiConfig api = config.image;
+            api.reasoningEffort.clear();
+            constexpr LLMModelParams params{.maxTokens = 300, .temperature = 0.7, .topP = 0.92};
+            const Json::Value body = LlmClient::buildChatRequestBody(api, params,
+              parseJson(fmt::format(
+                R"([{{"role":"user","content":[
                     {{"type":"image_url","image_url":{{"url":"{}"}}}},
                     {{"type":"text","text":"用不到150字描述这张图片"}}
             ]}}])",
-              imageUrl));
-            body["temperature"] = 0.7;
-            body["max_tokens"] = 300;
-            body["top_p"] = 0.92;
+                imageUrl)));
 
             const auto resp = co_await HttpUtil::send("[Image]", config.image.baseUrl, config.image.path, drogon::Post,
               body, config.image.apiKey, 90.0, groupId);
             if (!resp) {
                 co_return "无法识别图片";
             }
-            if ((*resp)->getStatusCode() != drogon::k200OK) {
-                Logger::session(groupId).error(
-                  "[Image] 图像描述请求失败: status={}", static_cast<int>((*resp)->getStatusCode()));
-                co_return "无法识别图片";
-            }
-            const auto json = (*resp)->getJsonObject();
-            if (!json || !json->isMember("choices")) {
+
+            const auto json = LlmClient::validChatJson(*resp);
+            if (!json) {
+                if ((*resp)->getStatusCode() != drogon::k200OK) {
+                    Logger::session(groupId).error(
+                      "[Image] 图像描述请求失败: status={}", static_cast<int>((*resp)->getStatusCode()));
+                    co_return "无法识别图片";
+                }
                 Logger::session(groupId).error("[Image] 图像描述响应格式错误");
                 co_return "图片识别失败";
             }
-            const auto &choices = (*json)["choices"];
-            const auto &content = choices[0]["message"]["content"].asString();
 
             LlmClient::logUsage(*json, config.image.model, "image", groupId);
 
-            co_return content;
+            co_return (*json)["choices"][0]["message"]["content"].asString();
         }
     } // namespace
 
@@ -146,10 +145,7 @@ namespace insoulforge {
         }
 
         // 紧凑JSON输出（不转义Unicode）
-        Json::StreamWriterBuilder writerBuilder;
-        writerBuilder["indentation"] = "";
-        writerBuilder["emitUTF8"] = true;
-        m_formatMessage = Json::writeString(writerBuilder, msgJson);
+        m_formatMessage = dumpJson(msgJson);
         co_return;
     }
 

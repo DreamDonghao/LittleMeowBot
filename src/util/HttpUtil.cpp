@@ -1,12 +1,13 @@
 /// @file HttpUtil.cpp
 /// @brief HTTP 请求工具 - 实现
 
-#include <json/writer.h>
 #include <spdlog/spdlog.h>
 #include <string>
 #include <util/HttpTrace.hpp>
 #include <util/HttpUtil.hpp>
 #include <utility>
+
+#include <util/CommonUtil.hpp>
 
 namespace insoulforge::HttpUtil {
     namespace {
@@ -33,12 +34,7 @@ namespace insoulforge::HttpUtil {
             }
         }
 
-        std::string serializeBody(const Json::Value &body) {
-            Json::StreamWriterBuilder writer;
-            writer["indentation"] = "";
-            writer["emitUTF8"] = true;
-            return Json::writeString(writer, body);
-        }
+        std::string serializeBody(const Json::Value &body) { return dumpJson(body); }
 
         std::string truncate(std::string s, const size_t max) {
             if (s.size() <= max)

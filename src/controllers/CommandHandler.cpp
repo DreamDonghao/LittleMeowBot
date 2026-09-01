@@ -15,26 +15,32 @@
 #include <vector>
 
 namespace insoulforge {
+    namespace {
+        /// @brief 跳过消息开头的空白与 [CQ:xxx] 段，返回首个有效字符的下标
+        size_t skipToCommandText(std::string_view rawMsg) {
+            size_t pos = 0;
+            while (pos < rawMsg.length()) {
+                while (pos < rawMsg.length() && std::isspace(static_cast<unsigned char>(rawMsg[pos]))) {
+                    pos++;
+                }
+                if (pos < rawMsg.length() && rawMsg[pos] == '[') {
+                    if (const size_t end = rawMsg.find(']', pos); end != std::string::npos) {
+                        pos = end + 1;
+                        continue;
+                    }
+                }
+                break;
+            }
+            return pos;
+        }
+    } // namespace
+
     bool isCommand(const QQMessage &message) {
         // 群聊命令需要 @ 机器人；私聊消息本身就是对机器人说的，无需 @
         if (!message.atMe() && !message.isPrivate())
             return false;
-        std::string rawMsg = message.getRawMessage();
-
-        size_t pos = 0;
-        while (pos < rawMsg.length()) {
-            while (pos < rawMsg.length() && std::isspace(static_cast<unsigned char>(rawMsg[pos]))) {
-                pos++;
-            }
-            if (pos < rawMsg.length() && rawMsg[pos] == '[') {
-                if (const size_t end = rawMsg.find(']', pos); end != std::string::npos) {
-                    pos = end + 1;
-                    continue;
-                }
-            }
-            break;
-        }
-
+        const std::string rawMsg = message.getRawMessage();
+        const size_t pos = skipToCommandText(rawMsg);
         return pos < rawMsg.length() && rawMsg[pos] == '/';
     }
 
@@ -46,22 +52,8 @@ namespace insoulforge {
         bool hasPermission = AdminStore::isAdmin(senderQQ);
 
         std::string cmdStr;
-        size_t pos = 0;
-        while (pos < rawMsg.length()) {
-            while (pos < rawMsg.length() && std::isspace(static_cast<unsigned char>(rawMsg[pos]))) {
-                pos++;
-            }
-            if (pos < rawMsg.length() && rawMsg[pos] == '[') {
-                if (size_t end = rawMsg.find(']', pos); end != std::string::npos) {
-                    pos = end + 1;
-                    continue;
-                }
-            }
-            if (pos < rawMsg.length() && rawMsg[pos] == '/') {
-                cmdStr = rawMsg.substr(pos);
-                break;
-            }
-            break;
+        if (const size_t pos = skipToCommandText(rawMsg); pos < rawMsg.length() && rawMsg[pos] == '/') {
+            cmdStr = rawMsg.substr(pos);
         }
 
         std::istringstream iss(cmdStr);

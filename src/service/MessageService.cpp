@@ -83,10 +83,7 @@ namespace insoulforge {
             msgJson["text"] = processedMessage;
             msgJson["reply_to"] = Json::nullValue;
 
-            Json::StreamWriterBuilder writerBuilder;
-            writerBuilder["indentation"] = "";
-            writerBuilder["emitUTF8"] = true;
-            const std::string formattedMsg = Json::writeString(writerBuilder, msgJson);
+            const std::string formattedMsg = dumpJson(msgJson);
 
             // 更新聊天记录（保存JSON格式）
             chatRecords.addAssistantRecord(formattedMsg);

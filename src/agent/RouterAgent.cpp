@@ -14,6 +14,7 @@
 #include <service/PromptService.hpp>
 #include <spdlog/spdlog.h>
 #include <string>
+#include <util/CommonUtil.hpp>
 #include <util/HttpUtil.hpp>
 #include <util/Logger.hpp>
 
@@ -55,7 +56,7 @@ namespace insoulforge {
         /// @details content 为 formatMessage 生成的 JSON，message_id/reply_to/qq/时间戳/images URL 对路由决策无用
         [[nodiscard]] std::string compactContent(const std::string &content, const bool includeSender) {
             Json::Value root;
-            if (Json::Reader reader; reader.parse(content, root)) {
+            if (tryParseJson(content, root)) {
                 const std::string name = root["sender"]["name"].asString();
                 const std::string text = compressCQCodes(root["text"].asString());
                 if (includeSender && !name.empty())
@@ -119,17 +120,14 @@ namespace insoulforge {
         [[nodiscard]] std::optional<RouterDecision> parseResponse(
           const std::string &content, const uint64_t sessionId) {
             // 提取 JSON
-            size_t start = content.find('{');
-            size_t end = content.rfind('}');
-            if (start == std::string::npos || end == std::string::npos) {
+            std::string jsonStr;
+            if (!tryExtractJsonObject(content, jsonStr)) {
                 Logger::session(sessionId).error("[Router] 未找到JSON: {}", content);
                 return std::nullopt;
             }
 
-            std::string jsonStr = content.substr(start, end - start + 1);
-
             Json::Value root;
-            if (Json::Reader reader; !reader.parse(jsonStr, root)) {
+            if (!tryParseJson(jsonStr, root)) {
                 Logger::session(sessionId).error("[Router] JSON解析失败: {}", jsonStr);
                 return std::nullopt;
             }
@@ -185,15 +183,7 @@ namespace insoulforge {
 
             const Json::Value messages = buildPrompt(chatRecords, isPrivate);
 
-            Json::Value body;
-            body["model"] = config.router.model;
-            body["messages"] = messages;
-            body["temperature"] = config.routerParams.temperature;
-            body["max_tokens"] = config.routerParams.maxTokens;
-            body["top_p"] = config.routerParams.topP;
-            if (!config.router.reasoningEffort.empty()) {
-                body["reasoning_effort"] = config.router.reasoningEffort;
-            }
+            const Json::Value body = LlmClient::buildChatRequestBody(config.router, config.routerParams, messages);
 
             const auto resp = co_await HttpUtil::send("[Router]", config.router.baseUrl, config.router.path,
               drogon::Post, body, config.router.apiKey, 90.0, chatRecords.getSessionId());
@@ -201,8 +191,8 @@ namespace insoulforge {
                 co_return std::nullopt;
             }
 
-            const auto json = (*resp)->getJsonObject();
-            if ((*resp)->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
+            const auto json = LlmClient::validChatJson(*resp);
+            if (!json) {
                 Logger::session(chatRecords.getSessionId())
                   .error("[Router] LLM请求失败: status={}", static_cast<int>((*resp)->getStatusCode()));
                 co_return std::nullopt;

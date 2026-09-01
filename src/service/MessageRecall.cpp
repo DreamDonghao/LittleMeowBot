@@ -10,7 +10,6 @@
 #include <deque>
 #include <drogon/utils/coroutine.h>
 #include <json/json.h>
-#include <memory>
 #include <mutex>
 #include <service/ChatRecordManager.hpp>
 #include <service/LlmClient.hpp>
@@ -77,11 +76,7 @@ namespace insoulforge {
     void MessageRecall::onRecordAdded(
       const uint64_t sessionId, const std::string &contentJson, const bool isAssistant) {
         Json::Value content;
-        const Json::CharReaderBuilder builder;
-        const std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
-        std::string errs;
-        if (!reader->parse(contentJson.data(), contentJson.data() + contentJson.size(), &content, &errs) ||
-            !content.isObject())
+        if (!tryParseJson(contentJson, content) || !content.isObject())
             return;
         const uint64_t messageId = parseUInt64(content.get("message_id", "").asString());
         if (messageId == 0)

@@ -3,14 +3,19 @@
 /// @author donghao
 /// @date 2026-04-02
 /// @details 提供通用工具函数：
-///          - JSON 解析：parseJson()
+///          - JSON 解析：parseJson() / tryParseJson()
+///          - JSON 序列化：dumpJson()
+///          - LLM 输出净化：tryExtractJsonObject()
 ///          - 时间获取与格式化：currentDateTime() / formatUnixTime() / formatTimeOfDay()
 ///          - 无符号整数解析：parseUInt64()
+///          - 文本修剪：trim()
 
 #pragma once
+#include <cctype>
 #include <charconv>
 #include <ctime>
 #include <drogon/drogon.h>
+#include <json/writer.h>
 #include <optional>
 #include <spdlog/spdlog.h>
 #include <string_view>
@@ -31,6 +36,47 @@
         return Json::Value{};
     }
     return root;
+}
+
+/// @brief 尝试解析 JSON（非抛出、不打印日志）
+/// @param jsonStr 输入字符串
+/// @param root 输出的 JSON 值；解析失败时被置为 null
+/// @return 是否解析成功
+[[nodiscard]] inline bool tryParseJson(const std::string_view jsonStr, Json::Value &root) {
+    root = Json::Value{};
+    const Json::CharReaderBuilder builder;
+    const std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+    std::string errs;
+    return reader->parse(jsonStr.data(), jsonStr.data() + jsonStr.size(), &root, &errs);
+}
+
+/// @brief 序列化为紧凑 JSON（indentation=""，与聊天记录等既有存储格式一致）
+/// @param emitUtf8 是否原样输出非 ASCII 字符（false 时转义为 \\uXXXX）
+[[nodiscard]] inline std::string dumpJson(const Json::Value &value, const bool emitUtf8 = true) {
+    Json::StreamWriterBuilder builder;
+    builder["indentation"] = "";
+    builder["emitUTF8"] = emitUtf8;
+    return Json::writeString(builder, value);
+}
+
+/// @brief 容忍模型输出 ```json 围栏等杂质：截取首尾大括号之间的内容
+[[nodiscard]] inline bool tryExtractJsonObject(const std::string &text, std::string &payload) {
+    const size_t start = text.find('{');
+    const size_t end = text.rfind('}');
+    if (start == std::string::npos || end == std::string::npos || end <= start)
+        return false;
+    payload = text.substr(start, end - start + 1);
+    return true;
+}
+
+/// @brief 去除字符串首尾空白（isspace 语义）
+[[nodiscard]] inline std::string trim(std::string s) {
+    const auto isSpace = [](const unsigned char c) { return std::isspace(c) != 0; };
+    while (!s.empty() && isSpace(static_cast<unsigned char>(s.front())))
+        s.erase(s.begin());
+    while (!s.empty() && isSpace(static_cast<unsigned char>(s.back())))
+        s.pop_back();
+    return s;
 }
 
 /// @brief 尝试解析无符号整数（非抛出，替代 std::stoull）

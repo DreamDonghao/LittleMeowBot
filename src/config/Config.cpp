@@ -4,19 +4,10 @@
 #include <config/Config.hpp>
 #include <spdlog/spdlog.h>
 #include <storage/ConfigStore.hpp>
+#include <util/CommonUtil.hpp>
 
 namespace insoulforge {
     namespace {
-        /// @brief 去除配置值首尾空白，避免从后台复制粘贴时带入空格
-        std::string trim(std::string s) {
-            const auto isSpace = [](const unsigned char c) { return std::isspace(c); };
-            while (!s.empty() && isSpace(s.front()))
-                s.erase(s.begin());
-            while (!s.empty() && isSpace(s.back()))
-                s.pop_back();
-            return s;
-        }
-
         /// @brief 从数据库加载单个 LLM 配置
         /// @param name 配置名（router/executor/executorThinking/image）
         /// @param apiConfig 输出的 API 配置

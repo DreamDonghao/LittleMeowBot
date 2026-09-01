@@ -8,6 +8,26 @@
 #include <spdlog/spdlog.h>
 #include <storage/SessionStore.hpp>
 
+namespace {
+    /// @brief 构建单个工具的 OpenAI function calling 定义（缺省字段补齐为合法 schema）
+    Json::Value buildToolDef(const insoulforge::Tool &tool) {
+        Json::Value toolDef;
+        toolDef["type"] = "function";
+        toolDef["function"]["name"] = tool.name;
+        toolDef["function"]["description"] = tool.description;
+        Json::Value params = tool.parameters.isNull() ? Json::Value(Json::objectValue) : tool.parameters;
+        params["type"] = "object";
+        if (!params.isMember("properties")) {
+            params["properties"] = Json::Value(Json::objectValue);
+        }
+        if (!params.isMember("required")) {
+            params["required"] = Json::Value(Json::arrayValue);
+        }
+        toolDef["function"]["parameters"] = params;
+        return toolDef;
+    }
+} // namespace
+
 namespace insoulforge {
     ToolContext &currentToolContext() {
         thread_local ToolContext ctx;
@@ -37,64 +57,11 @@ namespace insoulforge {
     Json::Value ToolRegistry::getAllTools() const {
         Json::Value tools;
 
-        // 所有工具
-        for (const auto &tool: m_terminalTools | std::views::values) {
-            Json::Value toolDef;
-            toolDef["type"] = "function";
-            toolDef["function"]["name"] = tool.name;
-            toolDef["function"]["description"] = tool.description;
-            Json::Value params = tool.parameters.isNull() ? Json::Value(Json::objectValue) : tool.parameters;
-            if (!params.isNull()) {
-                params["type"] = "object";
-                if (!params.isMember("properties")) {
-                    params["properties"] = Json::Value(Json::objectValue);
-                }
-                if (!params.isMember("required")) {
-                    params["required"] = Json::Value(Json::arrayValue);
-                }
+        // 分类顺序固定（终端 → 信息 → 动作），类内按名称有序，保证 tools 数组跨重启稳定
+        for (const auto *categoryTools: {&m_terminalTools, &m_infoTools, &m_actionTools}) {
+            for (const auto &tool: *categoryTools | std::views::values) {
+                tools.append(buildToolDef(tool));
             }
-            toolDef["function"]["parameters"] = params;
-            tools.append(toolDef);
-        }
-
-        // 信息工具
-        for (const auto &tool: m_infoTools | std::views::values) {
-            Json::Value toolDef;
-            toolDef["type"] = "function";
-            toolDef["function"]["name"] = tool.name;
-            toolDef["function"]["description"] = tool.description;
-            Json::Value params = tool.parameters.isNull() ? Json::Value(Json::objectValue) : tool.parameters;
-            if (!params.isNull()) {
-                params["type"] = "object";
-                if (!params.isMember("properties")) {
-                    params["properties"] = Json::Value(Json::objectValue);
-                }
-                if (!params.isMember("required")) {
-                    params["required"] = Json::Value(Json::arrayValue);
-                }
-            }
-            toolDef["function"]["parameters"] = params;
-            tools.append(toolDef);
-        }
-
-        // 动作工具
-        for (const auto &tool: m_actionTools | std::views::values) {
-            Json::Value toolDef;
-            toolDef["type"] = "function";
-            toolDef["function"]["name"] = tool.name;
-            toolDef["function"]["description"] = tool.description;
-            Json::Value params = tool.parameters.isNull() ? Json::Value(Json::objectValue) : tool.parameters;
-            if (!params.isNull()) {
-                params["type"] = "object";
-                if (!params.isMember("properties")) {
-                    params["properties"] = Json::Value(Json::objectValue);
-                }
-                if (!params.isMember("required")) {
-                    params["required"] = Json::Value(Json::arrayValue);
-                }
-            }
-            toolDef["function"]["parameters"] = params;
-            tools.append(toolDef);
         }
 
         return tools;
@@ -109,15 +76,10 @@ namespace insoulforge {
             ctx.groupName = SessionStore::getSessionName(sessionId);
         }
 
-        // 查找所有分类
-        if (m_terminalTools.contains(name)) {
-            co_return co_await m_terminalTools.at(name).handler(args);
-        }
-        if (m_infoTools.contains(name)) {
-            co_return co_await m_infoTools.at(name).handler(args);
-        }
-        if (m_actionTools.contains(name)) {
-            co_return co_await m_actionTools.at(name).handler(args);
+        for (const auto *categoryTools: {&m_terminalTools, &m_infoTools, &m_actionTools}) {
+            if (const auto it = categoryTools->find(name); it != categoryTools->end()) {
+                co_return co_await it->second.handler(args);
+            }
         }
         co_return "工具未找到: " + name;
     }

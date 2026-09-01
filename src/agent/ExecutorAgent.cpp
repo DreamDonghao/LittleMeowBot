@@ -8,7 +8,6 @@
 #include <config/Config.hpp>
 #include <drogon/HttpAppFramework.h>
 #include <fmt/core.h>
-#include <memory>
 #include <model/QQMessage.hpp>
 #include <ranges>
 #include <regex>
@@ -20,6 +19,7 @@
 #include <spdlog/spdlog.h>
 #include <storage/AffinityStore.hpp>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <util/CommonUtil.hpp>
 #include <util/HttpUtil.hpp>
@@ -29,42 +29,29 @@
 
 namespace insoulforge {
     namespace {
-        /// @brief 获取系统提示词（私聊与群聊使用各自的人设提示词）
+        /// @brief 获取系统提示词（私聊与群聊使用各自的人设提示词，差异行按会话类型拼接）
         std::string getSystemPrompt(const RouterDecision &decision) {
             std::string prompt = decision.isPrivate ? PromptService::getExecutorPrivateSystemPrompt()
                                                     : PromptService::getExecutorSystemPrompt();
 
-            if (decision.isPrivate) {
-                prompt += fmt::format("\n\n【回复要求】\n"
-                                      "- 字数限制: {} 字\n"
-                                      "- 要有自己的判断，不要别人说什么就做什么\n"
-                                      "- 这是私聊，直接回复即可，不要@对方或引用回复\n"
-                                      "- "
-                                      "【重要】表情/图片的CQ码必须通过工具获取(send_sticker/send_face/"
-                                      "send_image)。先调工具，拿到结果后把返回的[CQ:image...]或[CQ:face...]"
-                                      "原样拼接到reply的content中。禁止自己编造假CQ标签，工具返回什么就复制什么\n",
-                  decision.maxLength);
-
-                if (decision.isPriority) {
-                    prompt += "\n【重要】这是紧急问题，必须回复！";
-                }
-
-                return prompt;
-            }
-
             prompt += fmt::format("\n\n【回复要求】\n"
                                   "- 字数限制: {} 字\n"
-                                  "- 要有自己的判断，不要别人说什么就做什么\n"
-                                  "- @人格式: @[QQ:123456]\n"
-                                  "- 禁言要核实实际情况再决定\n"
-                                  "- "
-                                  "【重要】表情/图片的CQ码必须通过工具获取(send_sticker/send_face/"
-                                  "send_image)。先调工具，拿到结果后把返回的[CQ:image...]或[CQ:face...]"
-                                  "原样拼接到reply的content中。禁止自己编造假CQ标签，工具返回什么就复制什么\n",
+                                  "- 要有自己的判断，不要别人说什么就做什么\n",
               decision.maxLength);
+            if (decision.isPrivate) {
+                prompt += "- 这是私聊，直接回复即可，不要@对方或引用回复\n";
+            } else {
+                prompt += "- @人格式: @[QQ:123456]\n"
+                          "- 禁言要核实实际情况再决定\n";
+            }
+            prompt += "- "
+                      "【重要】表情/图片的CQ码必须通过工具获取(send_sticker/send_face/"
+                      "send_image)。先调工具，拿到结果后把返回的[CQ:image...]或[CQ:face...]"
+                      "原样拼接到reply的content中。禁止自己编造假CQ标签，工具返回什么就复制什么\n";
 
             if (decision.isPriority) {
-                prompt += "\n【重要】这是@提及或紧急问题，必须回复！";
+                prompt += decision.isPrivate ? "\n【重要】这是紧急问题，必须回复！"
+                                             : "\n【重要】这是@提及或紧急问题，必须回复！";
             }
 
             return prompt;
@@ -117,15 +104,8 @@ namespace insoulforge {
 
             Logger::session(sessionId).debug("[Executor] 思考模型: {}", config.executorThinking.model);
 
-            Json::Value body;
-            body["model"] = config.executorThinking.model;
-            body["messages"] = thinkingMessages;
-            body["temperature"] = config.executorThinkingParams.temperature;
-            body["max_tokens"] = config.executorThinkingParams.maxTokens;
-            body["top_p"] = config.executorThinkingParams.topP;
-            if (!config.executorThinking.reasoningEffort.empty()) {
-                body["reasoning_effort"] = config.executorThinking.reasoningEffort;
-            }
+            const Json::Value body =
+              LlmClient::buildChatRequestBody(config.executorThinking, config.executorThinkingParams, thinkingMessages);
 
             const auto resp = co_await HttpUtil::send("[Executor]", config.executorThinking.baseUrl,
               config.executorThinking.path, drogon::Post, body, config.executorThinking.apiKey, 90.0, sessionId);
@@ -133,8 +113,8 @@ namespace insoulforge {
                 co_return std::nullopt;
             }
 
-            const auto json = (*resp)->getJsonObject();
-            if ((*resp)->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
+            const auto json = LlmClient::validChatJson(*resp);
+            if (!json) {
                 const std::string respBody = std::string((*resp)->getBody()).substr(0, 500);
                 Logger::session(sessionId).error(
                   "[Executor] 思考模型失败: status={} body={}", static_cast<int>((*resp)->getStatusCode()), respBody);
@@ -161,10 +141,7 @@ namespace insoulforge {
         Json::Value parseRecordContent(const Json::Value &record) {
             const std::string content = record["content"].asString();
             Json::Value parsed;
-            const Json::CharReaderBuilder readerBuilder;
-            std::string errs;
-            if (const std::unique_ptr<Json::CharReader> reader(readerBuilder.newCharReader());
-              !reader->parse(content.data(), content.data() + content.size(), &parsed, &errs) || !parsed.isObject()) {
+            if (!tryParseJson(content, parsed) || !parsed.isObject()) {
                 return {};
             }
             return parsed;
@@ -221,10 +198,7 @@ namespace insoulforge {
             for (const auto &record: records) {
                 array.append(transform(record));
             }
-            Json::StreamWriterBuilder writerBuilder;
-            writerBuilder["indentation"] = "";
-            writerBuilder["emitUTF8"] = true;
-            return Json::writeString(writerBuilder, array);
+            return dumpJson(array);
         }
 
         /// @brief 构建聊天记录上下文（窗口内，旧 → 新）：
@@ -328,16 +302,7 @@ namespace insoulforge {
             std::string accumulatedCQCodes; // 跨轮累积CQ码，reply时自动拼入
 
             for (int iter = 0; iter < 6; ++iter) {
-                Json::Value body;
-                body["model"] = apiConfig.model;
-                body["messages"] = messages;
-                body["tools"] = tools;
-                body["temperature"] = params.temperature;
-                body["max_tokens"] = params.maxTokens;
-                body["top_p"] = params.topP;
-                if (!apiConfig.reasoningEffort.empty()) {
-                    body["reasoning_effort"] = apiConfig.reasoningEffort;
-                }
+                const Json::Value body = LlmClient::buildChatRequestBody(apiConfig, params, messages, tools);
 
                 const auto resp = co_await HttpUtil::send("[Executor]", apiConfig.baseUrl, apiConfig.path, drogon::Post,
                   body, apiConfig.apiKey, 90.0, sessionId);
@@ -350,9 +315,8 @@ namespace insoulforge {
                     }
                     co_return std::nullopt;
                 }
-                const auto json = (*resp)->getJsonObject();
-
-                if ((*resp)->getStatusCode() != drogon::k200OK || !json || !json->isMember("choices")) {
+                const auto json = LlmClient::validChatJson(*resp);
+                if (!json) {
                     int status = static_cast<int>((*resp)->getStatusCode());
                     const std::string respBody = std::string((*resp)->getBody()).substr(0, 500);
                     Logger::session(sessionId).error("[Executor] LLM失败: status={} body={}", status, respBody);
@@ -406,7 +370,7 @@ namespace insoulforge {
                             hasDecision = true;
                         } else if (name == "reply") {
                             Json::Value args;
-                            Json::Reader().parse(argsStr, args);
+                            std::ignore = tryParseJson(argsStr, args);
                             if (args.isMember("content")) {
                                 decision.shouldReply = true;
                                 decision.content = finalizeContent(args["content"].asString(), accumulatedCQCodes);
@@ -414,7 +378,7 @@ namespace insoulforge {
                             }
                         } else if (name == "reply_with_quote") {
                             Json::Value args;
-                            Json::Reader().parse(argsStr, args);
+                            std::ignore = tryParseJson(argsStr, args);
                             if (args.isMember("content") && args.isMember("message_id")) {
                                 decision.shouldReply = true;
                                 decision.content = "[CQ:reply,id=" + args["message_id"].asString() + "]" +
@@ -424,7 +388,7 @@ namespace insoulforge {
                         } else {
                             // 其他工具
                             Json::Value args;
-                            Json::Reader().parse(argsStr, args);
+                            std::ignore = tryParseJson(argsStr, args);
 
                             std::string result = co_await registry.executeTool(name, args, sessionId);
                             Logger::session(sessionId).debug("[Executor] 工具结果: {}", result);
