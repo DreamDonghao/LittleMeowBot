@@ -11,10 +11,11 @@
 
 #include <drogon/utils/coroutine.h>
 #include <functional>
-#include <json/value.h>
 #include <map>
 #include <string>
 #include <vector>
+
+#include <util/JsonUtil.hpp>
 
 namespace insoulforge {
     /// @brief 工具执行上下文（线程局部存储）
@@ -27,12 +28,12 @@ namespace insoulforge {
     ToolContext &currentToolContext();
 
     /// @brief 异步工具处理器
-    using ToolHandler = std::function<drogon::Task<std::string>(const Json::Value &args)>;
+    using ToolHandler = std::function<drogon::Task<std::string>(const json &args)>;
 
     struct Tool {
         std::string name;
         std::string description;
-        Json::Value parameters; // JSON Schema
+        json parameters; // JSON Schema
         ToolHandler handler;
     };
 
@@ -52,11 +53,11 @@ namespace insoulforge {
         void registerTool(const Tool &tool, ToolCategory category);
 
         /// @brief 获取所有工具定义
-        [[nodiscard]] Json::Value getAllTools() const;
+        [[nodiscard]] json getAllTools() const;
 
         /// @brief 执行工具（异步）
         [[nodiscard]] drogon::Task<std::string> executeTool(
-          const std::string &name, const Json::Value &args, uint64_t sessionId = 0) const;
+          const std::string &name, const json &args, uint64_t sessionId = 0) const;
 
         /// @brief 检查工具是否存在
         [[nodiscard]] bool hasTool(const std::string &name) const;

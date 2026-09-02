@@ -16,6 +16,7 @@
 #include <storage/PromptStore.hpp>
 #include <storage/ToolStore.hpp>
 #include <util/CommonUtil.hpp>
+#include <util/JsonUtil.hpp>
 
 using namespace insoulforge;
 using namespace drogon;
@@ -24,20 +25,20 @@ using namespace drogon;
 
 Task<> AdminController::getLLMConfigs(HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     const auto configs = ConfigStore::getAllLLMConfigs();
-    callback(HttpResponse::newHttpJsonResponse(configs));
+    callback(jsonResponse(configs));
     co_return;
 }
 
 Task<> AdminController::saveLLMConfig(
   const HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
-    const auto json = req->getJsonObject();
-    if (!json || !json->isMember("name")) {
-        callback(HttpResponse::newHttpJsonResponse(AdminResponse::errorJson("缺少name字段")));
+    const auto body = parseJsonBody(req);
+    if (!body || !body->contains("name")) {
+        callback(jsonResponse(AdminResponse::errorJson("缺少name字段")));
         co_return;
     }
 
-    const std::string name = (*json)["name"].asString();
-    ConfigStore::saveLLMConfig(name, *json);
+    const std::string name = getStr(*body, "name");
+    ConfigStore::saveLLMConfig(name, *body);
 
     // 更新内存中的配置
     struct ConfigTarget {
@@ -60,19 +61,19 @@ Task<> AdminController::saveLLMConfig(
 
     if (const auto it = std::ranges::find(targets, name, &ConfigTarget::name); it != targets.end()) {
         auto &api = *it->api;
-        api.apiKey = json->get("apiKey", "").asString();
-        api.baseUrl = json->get("baseUrl", "").asString();
-        api.path = json->get("path", "").asString();
-        api.model = json->get("model", "").asString();
-        api.reasoningEffort = json->get("reasoningEffort", "").asString();
+        api.apiKey = getStr(*body, "apiKey");
+        api.baseUrl = getStr(*body, "baseUrl");
+        api.path = getStr(*body, "path");
+        api.model = getStr(*body, "model");
+        api.reasoningEffort = getStr(*body, "reasoningEffort");
         if (it->params) {
-            it->params->maxTokens = json->get("maxTokens", it->defaultMaxTokens).asInt();
-            it->params->temperature = json->get("temperature", 0.7f).asFloat();
-            it->params->topP = json->get("topP", 0.9f).asFloat();
+            it->params->maxTokens = getInt(*body, "maxTokens", it->defaultMaxTokens);
+            it->params->temperature = getDouble(*body, "temperature", 0.7);
+            it->params->topP = getDouble(*body, "topP", 0.9);
         }
     }
 
-    callback(HttpResponse::newHttpJsonResponse(AdminResponse::okJson("LLM配置已保存")));
+    callback(jsonResponse(AdminResponse::okJson("LLM配置已保存")));
     co_return;
 }
 
@@ -81,29 +82,29 @@ Task<> AdminController::saveLLMConfig(
 Task<> AdminController::getPrompts(HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     const auto prompts = PromptStore::getAllPrompts();
 
-    Json::Value result;
+    json result;
     for (const auto &[key, content]: prompts) {
         result[key] = content;
     }
-    callback(HttpResponse::newHttpJsonResponse(result));
+    callback(jsonResponse(result));
     co_return;
 }
 
 Task<> AdminController::savePrompt(HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
-    auto json = req->getJsonObject();
-    if (!json || !json->isMember("key") || !json->isMember("content")) {
-        callback(HttpResponse::newHttpJsonResponse(AdminResponse::errorJson("缺少key或content字段")));
+    auto body = parseJsonBody(req);
+    if (!body || !body->contains("key") || !body->contains("content")) {
+        callback(jsonResponse(AdminResponse::errorJson("缺少key或content字段")));
         co_return;
     }
 
-    std::string key = (*json)["key"].asString();
-    std::string content = (*json)["content"].asString();
-    std::string description = json->isMember("description") ? (*json)["description"].asString() : "";
+    std::string key = getStr(*body, "key");
+    std::string content = getStr(*body, "content");
+    std::string description = getStr(*body, "description");
 
     // 防护: router 提示词的 JSON 格式示例若含双花括号(fmt 转义残留/旧页面缓存内容),模型会照抄导致解析失败
     if ((key == "router_system" || key == "router_private_system") &&
         (content.find("{{") != std::string::npos || content.find("}}") != std::string::npos)) {
-        callback(HttpResponse::newHttpJsonResponse(
+        callback(jsonResponse(
           AdminResponse::failJson("提示词包含双花括号{{ }}，JSON 格式示例应为单花括号，请刷新页面后重试")));
         co_return;
     }
@@ -111,7 +112,7 @@ Task<> AdminController::savePrompt(HttpRequestPtr req, std::function<void(const 
     PromptStore::setPrompt(key, content, description);
     spdlog::warn("管理后台更新提示词: key={}, 长度={}", key, content.size());
 
-    callback(HttpResponse::newHttpJsonResponse(AdminResponse::okJson("提示词已保存")));
+    callback(jsonResponse(AdminResponse::okJson("提示词已保存")));
     co_return;
 }
 
@@ -121,9 +122,9 @@ Task<> AdminController::getCustomTools(
   HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     const auto tools = ToolStore::getCustomTools();
 
-    Json::Value result(Json::arrayValue);
+    json result(json::array());
     for (const auto &tool: tools) {
-        Json::Value item;
+        json item;
         item["id"] = tool.id;
         item["name"] = tool.name;
         item["description"] = tool.description;
@@ -133,77 +134,74 @@ Task<> AdminController::getCustomTools(
         item["scriptContent"] = tool.scriptContent;
         item["readme"] = tool.readme;
         item["enabled"] = tool.enabled;
-        result.append(item);
+        result.push_back(item);
     }
-    callback(HttpResponse::newHttpJsonResponse(result));
+    callback(jsonResponse(result));
     co_return;
 }
 
 Task<> AdminController::addCustomTool(HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
-    const auto json = req->getJsonObject();
-    if (!json || !json->isMember("name") || !json->isMember("executorType") || !json->isMember("executorConfig")) {
-        callback(HttpResponse::newHttpJsonResponse(
-          AdminResponse::errorJson("缺少必要字段 (name, executorType, executorConfig)")));
+    const auto body = parseJsonBody(req);
+    if (!body || !body->contains("name") || !body->contains("executorType") || !body->contains("executorConfig")) {
+        callback(jsonResponse(AdminResponse::errorJson("缺少必要字段 (name, executorType, executorConfig)")));
         co_return;
     }
 
-    const std::string name = (*json)["name"].asString();
+    const std::string name = getStr(*body, "name");
 
     // 检查是否与内置工具名冲突
     const auto &registry = ToolRegistry::instance();
     if (registry.hasTool(name)) {
-        callback(HttpResponse::newHttpJsonResponse(
-          AdminResponse::errorJson("工具名 '" + name + "' 已存在（内置工具或自定义工具）")));
+        callback(jsonResponse(AdminResponse::errorJson("工具名 '" + name + "' 已存在（内置工具或自定义工具）")));
         co_return;
     }
 
     ToolStore::CustomTool tool;
     tool.name = name;
-    tool.description = json->get("description", "").asString();
-    tool.parameters = json->get("parameters", "").asString();
-    tool.executorType = (*json)["executorType"].asString();
-    tool.executorConfig = json->get("executorConfig", "").asString();
-    tool.scriptContent = json->get("scriptContent", "").asString();
-    tool.readme = json->get("readme", "").asString();
-    tool.enabled = json->get("enabled", true).asBool();
+    tool.description = getStr(*body, "description");
+    tool.parameters = getStr(*body, "parameters");
+    tool.executorType = getStr(*body, "executorType");
+    tool.executorConfig = getStr(*body, "executorConfig");
+    tool.scriptContent = getStr(*body, "scriptContent");
+    tool.readme = getStr(*body, "readme");
+    tool.enabled = getBool(*body, "enabled", true);
 
     const int id = ToolStore::addCustomTool(tool);
 
     // 立即注册到 ToolRegistry
     AgentToolManager::registerCustomTools();
 
-    Json::Value resp = AdminResponse::okJson("自定义工具已添加");
+    json resp = AdminResponse::okJson("自定义工具已添加");
     resp["id"] = id;
-    callback(HttpResponse::newHttpJsonResponse(resp));
+    callback(jsonResponse(resp));
     co_return;
 }
 
 Task<> AdminController::updateCustomTool(
   HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback, const std::string &id) const {
-    const auto json = req->getJsonObject();
-    if (!json || !json->isMember("name") || !json->isMember("executorType") || !json->isMember("executorConfig")) {
-        callback(HttpResponse::newHttpJsonResponse(
-          AdminResponse::errorJson("缺少必要字段 (name, executorType, executorConfig)")));
+    const auto body = parseJsonBody(req);
+    if (!body || !body->contains("name") || !body->contains("executorType") || !body->contains("executorConfig")) {
+        callback(jsonResponse(AdminResponse::errorJson("缺少必要字段 (name, executorType, executorConfig)")));
         co_return;
     }
 
     ToolStore::CustomTool tool;
     tool.id = std::stoi(id);
-    tool.name = (*json)["name"].asString();
-    tool.description = json->get("description", "").asString();
-    tool.parameters = json->get("parameters", "").asString();
-    tool.executorType = (*json)["executorType"].asString();
-    tool.executorConfig = json->get("executorConfig", "").asString();
-    tool.scriptContent = json->get("scriptContent", "").asString();
-    tool.readme = json->get("readme", "").asString();
-    tool.enabled = json->get("enabled", true).asBool();
+    tool.name = getStr(*body, "name");
+    tool.description = getStr(*body, "description");
+    tool.parameters = getStr(*body, "parameters");
+    tool.executorType = getStr(*body, "executorType");
+    tool.executorConfig = getStr(*body, "executorConfig");
+    tool.scriptContent = getStr(*body, "scriptContent");
+    tool.readme = getStr(*body, "readme");
+    tool.enabled = getBool(*body, "enabled", true);
 
     ToolStore::updateCustomTool(tool);
 
     // 重新注册工具
     AgentToolManager::registerCustomTools();
 
-    callback(HttpResponse::newHttpJsonResponse(AdminResponse::okJson("自定义工具已更新")));
+    callback(jsonResponse(AdminResponse::okJson("自定义工具已更新")));
     co_return;
 }
 
@@ -215,7 +213,7 @@ Task<> AdminController::deleteCustomTool(
     // 重新注册工具（移除已删除的）
     AgentToolManager::registerCustomTools();
 
-    callback(HttpResponse::newHttpJsonResponse(AdminResponse::okJson("自定义工具已删除")));
+    callback(jsonResponse(AdminResponse::okJson("自定义工具已删除")));
     co_return;
 }
 
@@ -227,7 +225,7 @@ Task<> AdminController::toggleCustomTool(
     // 重新注册工具
     AgentToolManager::registerCustomTools();
 
-    callback(HttpResponse::newHttpJsonResponse(AdminResponse::okJson("工具状态已切换")));
+    callback(jsonResponse(AdminResponse::okJson("工具状态已切换")));
     co_return;
 }
 
@@ -235,15 +233,15 @@ Task<> AdminController::reloadCustomTools(
   HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
     AgentToolManager::registerCustomTools();
 
-    callback(HttpResponse::newHttpJsonResponse(AdminResponse::okJson("自定义工具已重新加载")));
+    callback(jsonResponse(AdminResponse::okJson("自定义工具已重新加载")));
     co_return;
 }
 
 Task<> AdminController::testCustomTool(
   HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
-    auto json = req->getJsonObject();
-    if (!json) {
-        callback(HttpResponse::newHttpJsonResponse(AdminResponse::failJson("缺少请求数据")));
+    auto body = parseJsonBody(req);
+    if (!body) {
+        callback(jsonResponse(AdminResponse::failJson("缺少请求数据")));
         co_return;
     }
 
@@ -253,27 +251,27 @@ Task<> AdminController::testCustomTool(
     std::string executorType;
     std::string executorConfig;
     std::string scriptContent;
-    Json::Value testArgs;
+    json testArgs;
 
-    if (json->isMember("toolId")) {
+    if (body->contains("toolId")) {
         // 从数据库加载工具
-        int toolId = (*json)["toolId"].asInt();
+        const int toolId = getInt(*body, "toolId");
         auto tools = ToolStore::getCustomTools();
         auto it = std::ranges::find_if(tools, [toolId](const auto &t) { return t.id == toolId; });
         if (it == tools.end()) {
-            callback(HttpResponse::newHttpJsonResponse(AdminResponse::failJson("工具不存在")));
+            callback(jsonResponse(AdminResponse::failJson("工具不存在")));
             co_return;
         }
         executorType = it->executorType;
         executorConfig = it->executorConfig;
         scriptContent = it->scriptContent;
-        testArgs = json->isMember("args") ? (*json)["args"] : Json::Value();
+        testArgs = body->contains("args") ? (*body)["args"] : json();
     } else {
         // 直接使用传入的定义
-        executorType = json->get("executorType", "python").asString();
-        executorConfig = json->get("executorConfig", "").asString();
-        scriptContent = json->get("scriptContent", "").asString();
-        testArgs = json->isMember("args") ? (*json)["args"] : Json::Value();
+        executorType = getStr(*body, "executorType", "python");
+        executorConfig = getStr(*body, "executorConfig");
+        scriptContent = getStr(*body, "scriptContent");
+        testArgs = body->contains("args") ? (*body)["args"] : json();
     }
 
     std::string result;
@@ -285,9 +283,9 @@ Task<> AdminController::testCustomTool(
         result = "未知的执行类型";
     }
 
-    Json::Value resp = AdminResponse::okJson();
+    json resp = AdminResponse::okJson();
     resp["result"] = result;
-    callback(HttpResponse::newHttpJsonResponse(resp));
+    callback(jsonResponse(resp));
     co_return;
 }
 
@@ -295,24 +293,24 @@ Task<> AdminController::testCustomTool(
 
 Task<> AdminController::getCustomToolConfig(
   HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
-    Json::Value resp;
+    json resp;
     resp["pythonPath"] = ToolStore::getCustomToolPython();
-    callback(HttpResponse::newHttpJsonResponse(resp));
+    callback(jsonResponse(resp));
     co_return;
 }
 
 Task<> AdminController::saveCustomToolConfig(
   const HttpRequestPtr req, const std::function<void(const HttpResponsePtr &)> callback) const {
-    const auto json = req->getJsonObject();
-    if (!json || !json->isMember("pythonPath")) {
-        callback(HttpResponse::newHttpJsonResponse(AdminResponse::failJson("缺少 pythonPath 字段")));
+    const auto body = parseJsonBody(req);
+    if (!body || !body->contains("pythonPath")) {
+        callback(jsonResponse(AdminResponse::failJson("缺少 pythonPath 字段")));
         co_return;
     }
 
-    const std::string pythonPath = (*json)["pythonPath"].asString();
+    const std::string pythonPath = getStr(*body, "pythonPath");
     ToolStore::setCustomToolPython(pythonPath);
 
-    callback(HttpResponse::newHttpJsonResponse(AdminResponse::okJson("Python解释器路径已保存")));
+    callback(jsonResponse(AdminResponse::okJson("Python解释器路径已保存")));
     co_return;
 }
 
@@ -326,7 +324,7 @@ Task<> AdminController::exportCustomTool(
     auto it = std::ranges::find_if(tools, [toolId](const ToolStore::CustomTool &t) { return t.id == toolId; });
 
     if (it == tools.end()) {
-        callback(HttpResponse::newHttpJsonResponse(AdminResponse::failJson("工具不存在")));
+        callback(jsonResponse(AdminResponse::failJson("工具不存在")));
         co_return;
     }
 
@@ -334,17 +332,17 @@ Task<> AdminController::exportCustomTool(
 
     // 只支持导出 Python 工具
     if (tool.executorType != "python") {
-        callback(HttpResponse::newHttpJsonResponse(AdminResponse::failJson("仅支持导出 Python 类型工具")));
+        callback(jsonResponse(AdminResponse::failJson("仅支持导出 Python 类型工具")));
         co_return;
     }
 
     // 构建导出 JSON（简化格式，不含 executorType）
-    Json::Value exportJson;
+    json exportJson;
     exportJson["name"] = tool.name;
     exportJson["description"] = tool.description;
 
     // 解析参数 JSON
-    Json::Value params;
+    json params;
     std::ignore = tryParseJson(tool.parameters, params);
     exportJson["parameters"] = params;
 
@@ -355,9 +353,7 @@ Task<> AdminController::exportCustomTool(
     exportJson["version"] = "1.0";
 
     // 返回 JSON 文件
-    Json::StreamWriterBuilder writer;
-    writer["indentation"] = "  ";
-    std::string content = Json::writeString(writer, exportJson);
+    const std::string content = exportJson.dump(2);
 
     auto resp = HttpResponse::newHttpResponse();
     resp->setStatusCode(k200OK);
@@ -370,42 +366,41 @@ Task<> AdminController::exportCustomTool(
 
 Task<> AdminController::importCustomTool(
   HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
-    auto json = req->getJsonObject();
-    if (!json) {
-        callback(HttpResponse::newHttpJsonResponse(AdminResponse::failJson("无效的 JSON 数据")));
+    auto body = parseJsonBody(req);
+    if (!body) {
+        callback(jsonResponse(AdminResponse::failJson("无效的 JSON 数据")));
         co_return;
     }
 
     // 检查必要字段
-    if (!json->isMember("name") || !json->isMember("description") || !json->isMember("scriptContent")) {
-        callback(
-          HttpResponse::newHttpJsonResponse(AdminResponse::failJson("缺少必要字段：name, description, scriptContent")));
+    if (!body->contains("name") || !body->contains("description") || !body->contains("scriptContent")) {
+        callback(jsonResponse(AdminResponse::failJson("缺少必要字段：name, description, scriptContent")));
         co_return;
     }
 
-    std::string name = (*json)["name"].asString();
+    std::string name = getStr(*body, "name");
 
     // 检查是否已存在同名工具
     if (ToolStore::hasCustomTool(name)) {
-        callback(HttpResponse::newHttpJsonResponse(AdminResponse::failJson("工具名已存在：" + name)));
+        callback(jsonResponse(AdminResponse::failJson("工具名已存在：" + name)));
         co_return;
     }
 
     // 构建工具对象（强制使用 Python 类型）
     ToolStore::CustomTool tool;
     tool.name = name;
-    tool.description = (*json)["description"].asString();
+    tool.description = getStr(*body, "description");
     tool.executorType = "python";
 
     // 参数处理
-    if (json->isMember("parameters")) {
-        tool.parameters = dumpJson((*json)["parameters"], false);
+    if (body->contains("parameters")) {
+        tool.parameters = dumpJson((*body)["parameters"], false);
     } else {
         tool.parameters = R"({"type":"object","properties":{},"required":[]})";
     }
 
-    tool.scriptContent = (*json)["scriptContent"].asString();
-    tool.readme = json->get("readme", "").asString();
+    tool.scriptContent = getStr(*body, "scriptContent");
+    tool.readme = getStr(*body, "readme");
     tool.enabled = true;
 
     // 添加到数据库
@@ -414,8 +409,8 @@ Task<> AdminController::importCustomTool(
 
     spdlog::info("导入自定义工具: {} (ID: {})", tool.name, newId);
 
-    Json::Value resp = AdminResponse::okJson("工具已导入");
+    json resp = AdminResponse::okJson("工具已导入");
     resp["id"] = newId;
-    callback(HttpResponse::newHttpJsonResponse(resp));
+    callback(jsonResponse(resp));
     co_return;
 }

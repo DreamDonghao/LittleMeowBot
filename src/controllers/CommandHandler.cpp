@@ -163,23 +163,23 @@ namespace insoulforge {
             if (!(iss >> name)) {
                 co_return "用法: /delemoji <名称或序号>";
             }
-            Json::Value emoji = co_await AgentToolManager::findFavoriteEmoji(name);
-            if (emoji.isNull()) {
+            json emoji = co_await AgentToolManager::findFavoriteEmoji(name);
+            if (emoji.is_null()) {
                 co_return fmt::format("收藏表情中找不到'{}'", name);
             }
 
-            if (!co_await OneBotClient::deleteCustomFace(emoji["res_id"].asString())) {
+            if (!co_await OneBotClient::deleteCustomFace(getStr(emoji, "res_id"))) {
                 co_return fmt::format("删除失败: {}（QQ 客户端操作失败）", name);
             }
             AgentToolManager::invalidateFavoriteEmojiCache();
-            response = fmt::format("已从收藏表情中删除: {}", emoji["name"].asString());
+            response = fmt::format("已从收藏表情中删除: {}", getStr(emoji, "name"));
         } else if (cmd == "/listemoji" || cmd == "/表情列表") {
-            if (const Json::Value emojis = co_await AgentToolManager::fetchFavoriteEmojis(); emojis.empty()) {
+            if (const json emojis = co_await AgentToolManager::fetchFavoriteEmojis(); emojis.empty()) {
                 response = "QQ收藏表情为空或获取失败";
             } else {
                 response = "收藏表情列表:\n";
                 for (const auto &emoji: emojis) {
-                    response += fmt::format("- {}\n", emoji["name"].asString());
+                    response += fmt::format("- {}\n", getStr(emoji, "name"));
                 }
                 response += fmt::format("\n共 {} 个表情", emojis.size());
             }

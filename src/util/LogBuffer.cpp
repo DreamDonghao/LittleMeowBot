@@ -68,7 +68,7 @@ namespace insoulforge {
         entry.message = std::string(message.payload.data(), message.payload.size());
         entry.sessionId = extractSessionId(entry.message);
 
-        Json::Value evt;
+        json evt;
         {
             std::lock_guard lock(m_mutex);
             entry.id = m_nextId++;
@@ -80,8 +80,7 @@ namespace insoulforge {
             evt["level"] = entry.level;
             evt["message"] = entry.message;
             // 会话 ID 可能带私聊标志位（超过 JS 安全整数范围），序列化为字符串
-            evt["groupId"] = entry.sessionId.has_value() ? Json::Value(std::to_string(*entry.sessionId))
-                                                         : Json::Value(Json::nullValue);
+            evt["groupId"] = entry.sessionId.has_value() ? json(std::to_string(*entry.sessionId)) : json();
             m_entries.push_back(entry);
         }
         LogWebSocketManager::instance().pushLog(evt);

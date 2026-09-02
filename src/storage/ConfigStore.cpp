@@ -7,58 +7,50 @@
 #include <storage/ConfigStore.hpp>
 #include <storage/Database.hpp>
 #include <storage/Statement.hpp>
+#include <util/JsonUtil.hpp>
 
 namespace insoulforge {
     namespace ConfigStore {
         namespace {
-            Json::Value loadConfigJson(const std::string &key, const Json::Value &defaults) {
+            json loadConfigJson(const std::string &key, const json &defaults) {
                 const auto &db = Database::instance();
                 std::shared_lock lock(db.mutex());
 
-                Json::Value config = defaults;
+                json config = defaults;
                 const Statement stmt(db.handle(), "SELECT value FROM settings WHERE key = ?");
                 stmt.bind(1, key);
                 if (stmt.step()) {
-                    Json::Value parsed;
-                    Json::CharReaderBuilder builder;
-                    Json::CharReader *reader = builder.newCharReader();
+                    json parsed;
                     const std::string payload = stmt.getText(0);
-                    std::string errs;
-                    if (reader->parse(payload.data(), payload.data() + payload.size(), &parsed, &errs) &&
-                        parsed.isObject()) {
+                    if (tryParseJson(payload, parsed) && parsed.is_object()) {
                         // 以存储值覆盖默认值
-                        for (const auto &name: defaults.getMemberNames()) {
-                            if (parsed.isMember(name)) {
-                                config[name] = parsed[name];
+                        for (const auto &name: defaults.items()) {
+                            if (const auto it = parsed.find(name.key()); it != parsed.end()) {
+                                config[name.key()] = *it;
                             }
                         }
                     } else {
-                        spdlog::error("settings 配置 {} 解析失败: {}，使用默认值", key, errs);
+                        spdlog::error("settings 配置 {} 解析失败，使用默认值", key);
                     }
-                    delete reader;
                 }
                 return config;
             }
 
-            void saveConfigJson(const std::string &key, const Json::Value &config) {
+            void saveConfigJson(const std::string &key, const json &config) {
                 const auto &db = Database::instance();
                 std::unique_lock lock(db.mutex());
 
-                Json::StreamWriterBuilder builder;
-                builder["indentation"] = "";
-                const std::string payload = Json::writeString(builder, config);
-
                 const Statement stmt(db.handle(), "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)");
                 stmt.bind(1, key);
-                stmt.bind(2, payload);
+                stmt.bind(2, dumpJson(config));
                 stmt.exec();
             }
         } // namespace
 
-        Json::Value getLLMConfig(const std::string &name) {
+        json getLLMConfig(const std::string &name) {
             const auto &db = Database::instance();
             std::shared_lock lock(db.mutex());
-            Json::Value config;
+            json config;
 
             const Statement stmt(db.handle(), "SELECT api_key, base_url, path, model, max_tokens, temperature, top_p, "
                                               "reasoning_effort FROM llm_config WHERE name = ?");
@@ -77,7 +69,7 @@ namespace insoulforge {
             return config;
         }
 
-        void saveLLMConfig(const std::string &name, const Json::Value &config) {
+        void saveLLMConfig(const std::string &name, const json &config) {
             const auto &db = Database::instance();
             std::unique_lock lock(db.mutex());
 
@@ -85,26 +77,26 @@ namespace insoulforge {
               "INSERT OR REPLACE INTO llm_config (name, api_key, base_url, path, model, max_tokens, "
               "temperature, top_p, reasoning_effort) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
             stmt.bind(1, name);
-            stmt.bind(2, config["apiKey"].asString());
-            stmt.bind(3, config["baseUrl"].asString());
-            stmt.bind(4, config["path"].asString());
-            stmt.bind(5, config["model"].asString());
-            stmt.bind(6, config["maxTokens"].asInt());
-            stmt.bind(7, config["temperature"].asDouble());
-            stmt.bind(8, config["topP"].asDouble());
-            stmt.bind(9, config.get("reasoningEffort", "").asString());
+            stmt.bind(2, getStr(config, "apiKey"));
+            stmt.bind(3, getStr(config, "baseUrl"));
+            stmt.bind(4, getStr(config, "path"));
+            stmt.bind(5, getStr(config, "model"));
+            stmt.bind(6, getInt(config, "maxTokens"));
+            stmt.bind(7, getDouble(config, "temperature"));
+            stmt.bind(8, getDouble(config, "topP"));
+            stmt.bind(9, getStr(config, "reasoningEffort"));
             stmt.exec();
         }
 
-        Json::Value getAllLLMConfigs() {
+        json getAllLLMConfigs() {
             const auto &db = Database::instance();
             std::shared_lock lock(db.mutex());
-            Json::Value configs;
+            json configs;
 
             const Statement stmt(db.handle(), "SELECT name, api_key, base_url, path, model, max_tokens, temperature, "
                                               "top_p, reasoning_effort FROM llm_config");
             while (stmt.step()) {
-                Json::Value cfg;
+                json cfg;
                 cfg["apiKey"] = stmt.getText(1);
                 cfg["baseUrl"] = stmt.getText(2);
                 cfg["path"] = stmt.getText(3);
@@ -118,8 +110,8 @@ namespace insoulforge {
             return configs;
         }
 
-        Json::Value getQQConfig() {
-            Json::Value defaults;
+        json getQQConfig() {
+            json defaults;
             defaults["accessToken"] = "";
             defaults["selfQQNumber"] = 0;
             defaults["qqHttpHost"] = "http://127.0.0.1:3000";
@@ -127,13 +119,13 @@ namespace insoulforge {
             return loadConfigJson("qq_config", defaults);
         }
 
-        void saveQQConfig(const Json::Value &config) {
+        void saveQQConfig(const json &config) {
             saveConfigJson("qq_config", config);
             spdlog::info("QQ Bot 配置已保存");
         }
 
-        Json::Value getMemoryConfig() {
-            Json::Value defaults;
+        json getMemoryConfig() {
+            json defaults;
             defaults["windowTriggerCount"] = 100;
             defaults["windowKeepCount"] = 50;
             defaults["memoryExtractMaxTokens"] = 4000;
@@ -145,7 +137,7 @@ namespace insoulforge {
             return loadConfigJson("memory_config", defaults);
         }
 
-        void saveMemoryConfig(const Json::Value &config) {
+        void saveMemoryConfig(const json &config) {
             saveConfigJson("memory_config", config);
             spdlog::info("记忆配置已保存");
         }

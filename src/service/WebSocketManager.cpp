@@ -4,7 +4,6 @@
 #include <ranges>
 #include <service/WebSocketManager.hpp>
 #include <spdlog/spdlog.h>
-#include <util/CommonUtil.hpp>
 
 namespace insoulforge {
     WebSocketManager &WebSocketManager::instance() {
@@ -44,16 +43,14 @@ namespace insoulforge {
     void WebSocketManager::pushMessage(const uint64_t sessionId, const std::string &role, const std::string &content) {
         std::lock_guard lock(m_mutex);
 
-        Json::Value msg;
+        json msg;
         msg["type"] = "new_message";
         // 字符串形式：会话 ID 可能带私聊标志位，超出 JS Number 安全整数范围
         msg["groupId"] = std::to_string(sessionId);
         msg["data"]["role"] = role;
         msg["data"]["content"] = content;
         msg["data"]["timestamp"] = currentDateTime();
-
-        const Json::StreamWriterBuilder builder;
-        const std::string jsonStr = Json::writeString(builder, msg);
+        const std::string jsonStr = msg.dump();
 
         // 发送给订阅该群的连接
         if (m_subscriptions.contains(sessionId)) {
@@ -78,18 +75,16 @@ namespace insoulforge {
         }
     }
 
-    void WebSocketManager::broadcastEvent(const std::string &type, const Json::Value &data) const {
+    void WebSocketManager::broadcastEvent(const std::string &type, const json &data) const {
         std::lock_guard lock(m_mutex);
 
-        Json::Value msg;
+        json msg;
         msg["type"] = type;
         msg["data"] = data;
-
-        const Json::StreamWriterBuilder builder;
-        const std::string jsonStr = Json::writeString(builder, msg);
+        const std::string jsonStr = msg.dump();
 
         for (const auto &conn: m_connections) {
             conn->send(jsonStr);
         }
     }
-}
+} // namespace insoulforge

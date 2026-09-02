@@ -4,10 +4,10 @@
 /// @date 2026-08-30
 
 #include <fmt/core.h>
-#include <json/json.h>
 #include <spdlog/spdlog.h>
 #include <storage/SchemaMigrator.hpp>
 #include <storage/Statement.hpp>
+#include <util/JsonUtil.hpp>
 
 namespace insoulforge {
     namespace {
@@ -56,10 +56,8 @@ namespace insoulforge {
             execSQL(db, fmt::format("ALTER TABLE {} DROP COLUMN {}", table, column));
         }
 
-        void storeSetting(sqlite3 *db, std::string_view key, const Json::Value &value) {
-            Json::StreamWriterBuilder builder;
-            builder["indentation"] = "";
-            const std::string payload = Json::writeString(builder, value);
+        void storeSetting(sqlite3 *db, std::string_view key, const json &value) {
+            const std::string payload = dumpJson(value);
 
             const Statement stmt(db, "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)");
             stmt.bind(1, key);
@@ -270,7 +268,7 @@ namespace insoulforge {
         void migrateV1ToV2(sqlite3 *db) {
             spdlog::info("执行迁移: kb_config/memory_config/qq_config 并入 settings");
 
-            Json::Value kb;
+            json kb;
             {
                 const Statement stmt(db, "SELECT enabled, api_key, base_url, knowledge_dataset_id, memory_dataset_id, "
                                          "memory_document_id FROM kb_config WHERE id = 1");
@@ -292,7 +290,7 @@ namespace insoulforge {
             }
             storeSetting(db, "kb_config", kb);
 
-            Json::Value memory;
+            json memory;
             {
                 const Statement stmt(db,
                   "SELECT window_trigger_count, window_keep_count, memory_extract_max_tokens, "
@@ -318,7 +316,7 @@ namespace insoulforge {
             }
             storeSetting(db, "memory_config", memory);
 
-            Json::Value qq;
+            json qq;
             {
                 const Statement stmt(
                   db, "SELECT access_token, self_qq_number, qq_http_host, bot_name FROM qq_config WHERE id = 1");

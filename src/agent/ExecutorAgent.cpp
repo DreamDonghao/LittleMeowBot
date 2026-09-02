@@ -21,6 +21,7 @@
 #include <unordered_map>
 #include <util/CommonUtil.hpp>
 #include <util/HttpUtil.hpp>
+#include <util/JsonUtil.hpp>
 #include <util/Logger.hpp>
 #include <utility>
 #include <vector>
@@ -95,10 +96,9 @@ namespace insoulforge {
         }
 
         /// @brief 解析记录的 content 字段（由本服务写入的 JSON 对象字符串）
-        [[nodiscard]] Json::Value parseRecordContent(const Json::Value &record) {
-            const std::string content = record["content"].asString();
-            Json::Value parsed;
-            if (!tryParseJson(content, parsed) || !parsed.isObject()) {
+        [[nodiscard]] json parseRecordContent(const json &record) {
+            json parsed;
+            if (!tryParseJson(getStr(record, "content"), parsed) || !parsed.is_object()) {
                 return {};
             }
             return parsed;
@@ -126,23 +126,24 @@ namespace insoulforge {
         }
 
         /// @brief 处理较早的单条消息记录：删除 images 字段、截断 text 字段后作为数组元素返回
-        [[nodiscard]] Json::Value processOlderRecord(const Json::Value &record) {
-            Json::Value content = parseRecordContent(record);
-            content.removeMember("images");
-            if (content.isMember("text") && content["text"].isString()) {
+        [[nodiscard]] json processOlderRecord(const json &record) {
+            json content = parseRecordContent(record);
+            if (!content.is_object())
+                return content; // 历史存量可能是纯文本，解析失败原样保留
+            content.erase("images");
+            if (content.contains("text") && content["text"].is_string()) {
                 constexpr size_t kOldRecordMaxChars = 500;
-                content["text"] = truncateUtf8(content["text"].asString(), kOldRecordMaxChars);
+                content["text"] = truncateUtf8(content["text"].get<std::string>(), kOldRecordMaxChars);
             }
             return content;
         }
 
         /// @brief 注入发送者当前好感度（读时注入，保证 LLM 看到的永远是最新值）
         /// @details qq 非数字（机器人记录的 "self"）跳过；映射中不存在的用户按 0（中立）注入
-        [[nodiscard]] Json::Value injectAffinity(
-          Json::Value content, const std::unordered_map<uint64_t, int> &affinityMap) {
-            if (!content.isMember("sender"))
+        [[nodiscard]] json injectAffinity(json content, const std::unordered_map<uint64_t, int> &affinityMap) {
+            if (!content.is_object() || !content.contains("sender"))
                 return content;
-            if (const uint64_t qq = parseUInt64(content["sender"]["qq"].asString()); qq > 0) {
+            if (const uint64_t qq = parseUInt64(getStr(content["sender"], "qq")); qq > 0) {
                 const auto it = affinityMap.find(qq);
                 content["sender"]["affinity"] = it != affinityMap.end() ? it->second : 0;
             }
@@ -152,9 +153,9 @@ namespace insoulforge {
         /// @brief 把记录范围经 transform 逐条处理后拼为 JSON 数组字符串
         template<std::ranges::input_range Range, typename Transform>
         [[nodiscard]] std::string joinRecords(const Range &records, const Transform &transform) {
-            Json::Value array(Json::arrayValue);
+            json array = json::array();
             for (const auto &record: records) {
-                array.append(transform(record));
+                array.push_back(transform(record));
             }
             return dumpJson(array);
         }
@@ -177,7 +178,7 @@ namespace insoulforge {
             std::unordered_map<int64_t, std::pair<float, size_t>> bestOwner; // 记忆 id → (最高相似度, 消息下标)
             for (const auto &record: recentRecords) {
                 std::vector<MessageRecallHit> hits;
-                const std::string messageIdStr = parseRecordContent(record).get("message_id", "").asString();
+                const std::string messageIdStr = getStr(parseRecordContent(record), "message_id");
                 if (const uint64_t messageId = parseUInt64(messageIdStr); messageId > 0)
                     hits = MessageRecall::getHits(chatRecords.getSessionId(), messageId);
                 for (const auto &hit: hits) {
@@ -192,21 +193,21 @@ namespace insoulforge {
 
             // 处理更早的对话
             if (olderCount > 0) {
-                context += "【更早对话】\n" + joinRecords(olderRecords, [&affinityMap](const Json::Value &record) {
+                context += "【更早对话】\n" + joinRecords(olderRecords, [&affinityMap](const json &record) {
                     return injectAffinity(processOlderRecord(record), affinityMap);
                 }) + "\n\n";
             }
 
             // 处理最近对话（注入好感度与召回记忆）
             size_t recentIndex = 0;
-            context += "【最近对话】\n" + joinRecords(recentRecords, [&](const Json::Value &record) {
+            context += "【最近对话】\n" + joinRecords(recentRecords, [&](const json &record) {
                 const size_t index = recentIndex++;
-                Json::Value content = injectAffinity(parseRecordContent(record), affinityMap);
+                json content = injectAffinity(parseRecordContent(record), affinityMap);
                 if (!recentHits[index].empty()) {
-                    Json::Value memories(Json::arrayValue);
+                    json memories = json::array();
                     for (const auto &hit: recentHits[index]) {
                         if (bestOwner.at(hit.id).second == index)
-                            memories.append(hit.content);
+                            memories.push_back(hit.content);
                     }
                     if (!memories.empty())
                         content["memories"] = memories;
@@ -218,14 +219,14 @@ namespace insoulforge {
 
         /// @brief 构建 Executor 消息列表（system + 单条 user）
         /// @details 短期记忆+聊天记录+回复要求合并为单条 user 消息，避免连续多条 user（部分 OpenAI 兼容后端不支持）
-        [[nodiscard]] Json::Value buildPrompt(
+        [[nodiscard]] json buildPrompt(
           const ChatRecordManager &chatRecords, const MemoryManager &memory, const RouterDecision &decision) {
-            Json::Value messages;
+            json messages = json::array();
 
-            Json::Value systemMsg;
+            json systemMsg;
             systemMsg["role"] = "system";
             systemMsg["content"] = getSystemPrompt(decision);
-            messages.append(systemMsg);
+            messages.push_back(systemMsg);
 
             std::string userContent;
             if (std::string shortMemory = memory.getMemory(); !shortMemory.empty()) {
@@ -235,10 +236,10 @@ namespace insoulforge {
             userContent += fmt::format("\n\n【回复要求】\n语气: {}\n字数限制: {} 字\n原因: {}", decision.tone,
               decision.maxLength, decision.reason);
 
-            Json::Value userMsg;
+            json userMsg;
             userMsg["role"] = "user";
             userMsg["content"] = userContent;
-            messages.append(userMsg);
+            messages.push_back(userMsg);
 
             return messages;
         }
@@ -259,13 +260,13 @@ namespace insoulforge {
         /// @param tools 工具定义（null 表示不附带）
         /// @param sessionId 会话 ID
         /// @return 校验通过的响应 JSON；不可恢复错误或重试耗尽时返回 std::nullopt
-        drogon::Task<std::optional<Json::Value>> requestChat(const std::string &label, const std::string &usageRole,
-          const LLMApiConfig &apiConfig, const LLMModelParams &params, const Json::Value &messages,
-          const Json::Value &tools, const uint64_t sessionId) {
+        drogon::Task<std::optional<json>> requestChat(const std::string &label, const std::string &usageRole,
+          const LLMApiConfig &apiConfig, const LLMModelParams &params, const json &messages, const json &tools,
+          const uint64_t sessionId) {
             Logger::session(sessionId).debug("[Executor] {}: {}", label, apiConfig.model);
 
             for (int attempt = 0;; ++attempt) {
-                const Json::Value body = LlmClient::buildChatRequestBody(apiConfig, params, messages, tools);
+                const json body = LlmClient::buildChatRequestBody(apiConfig, params, messages, tools);
                 const auto resp = co_await HttpUtil::send("[Executor]", apiConfig.baseUrl, apiConfig.path, drogon::Post,
                   body, apiConfig.apiKey, kLlmTimeoutSeconds, sessionId);
 
@@ -311,24 +312,24 @@ namespace insoulforge {
 
         /// @brief 处理终端工具（no_reply / reply / reply_with_quote），把决策写入 decision
         /// @return 是否为终端工具；参数缺失时不产生决策也不回传工具结果（终端工具不降级为普通工具执行）
-        [[nodiscard]] bool applyTerminalTool(const std::string &name, const Json::Value &args,
-          const std::string &accumulatedCQCodes, ReplyDecision &decision) {
+        [[nodiscard]] bool applyTerminalTool(
+          const std::string &name, const json &args, const std::string &accumulatedCQCodes, ReplyDecision &decision) {
             if (name == "no_reply") {
                 decision.shouldReply = false;
                 return true;
             }
             if (name == "reply") {
-                if (args.isMember("content")) {
+                if (args.contains("content")) {
                     decision.shouldReply = true;
-                    decision.content = finalizeContent(args["content"].asString(), accumulatedCQCodes);
+                    decision.content = finalizeContent(jsonToString(args["content"]), accumulatedCQCodes);
                 }
                 return true;
             }
             if (name == "reply_with_quote") {
-                if (args.isMember("content") && args.isMember("message_id")) {
+                if (args.contains("content") && args.contains("message_id")) {
                     decision.shouldReply = true;
-                    decision.content = fmt::format("[CQ:reply,id={}]", args["message_id"].asString()) +
-                                       finalizeContent(args["content"].asString(), accumulatedCQCodes);
+                    decision.content = fmt::format("[CQ:reply,id={}]", jsonToString(args["message_id"])) +
+                                       finalizeContent(jsonToString(args["content"]), accumulatedCQCodes);
                 }
                 return true;
             }
@@ -336,19 +337,19 @@ namespace insoulforge {
         }
 
         /// @brief 把模型返回的 tool_calls 转为需回传以补全上下文的 assistant 消息
-        [[nodiscard]] Json::Value buildAssistantToolCallMessage(const Json::Value &message) {
-            Json::Value assistantMsg;
+        [[nodiscard]] json buildAssistantToolCallMessage(const json &message) {
+            json assistantMsg;
             assistantMsg["role"] = "assistant";
-            assistantMsg["content"] = message.isMember("content") ? message["content"].asString() : "";
+            assistantMsg["content"] = message.contains("content") ? jsonToString(message["content"]) : "";
 
-            Json::Value toolCalls(Json::arrayValue);
+            json toolCalls = json::array();
             for (const auto &toolCall: message["tool_calls"]) {
-                Json::Value entry;
-                entry["id"] = toolCall["id"].asString();
+                json entry;
+                entry["id"] = jsonToString(atOrNull(toolCall, "id"));
                 entry["type"] = "function";
-                entry["function"]["name"] = toolCall["function"]["name"].asString();
-                entry["function"]["arguments"] = toolCall["function"]["arguments"].asString();
-                toolCalls.append(entry);
+                entry["function"]["name"] = jsonToString(atOrNull(atOrNull(toolCall, "function"), "name"));
+                entry["function"]["arguments"] = jsonToString(atOrNull(atOrNull(toolCall, "function"), "arguments"));
+                toolCalls.push_back(entry);
             }
             assistantMsg["tool_calls"] = toolCalls;
             return assistantMsg;
@@ -357,17 +358,17 @@ namespace insoulforge {
         /// @brief 逐个处理本轮工具调用：终端工具直接产出回复决策；其余工具经 ToolRegistry 执行并把结果
         /// 作为 tool 消息回传，CQ 码类工具的结果累积备用
         /// @return 命中终端工具时返回决策（同轮多个终端工具以最后一个为准），否则返回空（继续下一轮）
-        drogon::Task<std::optional<ReplyDecision>> processToolCalls(const Json::Value &message, Json::Value &messages,
-          std::string &accumulatedCQCodes, const uint64_t sessionId) {
+        drogon::Task<std::optional<ReplyDecision>> processToolCalls(
+          const json &message, json &messages, std::string &accumulatedCQCodes, const uint64_t sessionId) {
             ReplyDecision decision;
             bool hasDecision = false;
 
             for (const auto &toolCall: message["tool_calls"]) {
-                const std::string name = toolCall["function"]["name"].asString();
+                const std::string name = jsonToString(atOrNull(atOrNull(toolCall, "function"), "name"));
                 Logger::session(sessionId).info("[Executor] 工具: {}", name);
 
-                Json::Value args;
-                std::ignore = tryParseJson(toolCall["function"]["arguments"].asString(), args);
+                json args;
+                std::ignore = tryParseJson(jsonToString(atOrNull(atOrNull(toolCall, "function"), "arguments")), args);
 
                 if (applyTerminalTool(name, args, accumulatedCQCodes, decision)) {
                     hasDecision = true; // 终端工具：结束本轮，不回传工具结果
@@ -380,11 +381,11 @@ namespace insoulforge {
                     accumulatedCQCodes += result;
                 }
 
-                Json::Value toolMsg;
+                json toolMsg;
                 toolMsg["role"] = "tool";
-                toolMsg["tool_call_id"] = toolCall["id"].asString();
+                toolMsg["tool_call_id"] = jsonToString(atOrNull(toolCall, "id"));
                 toolMsg["content"] = result;
-                messages.append(toolMsg);
+                messages.push_back(toolMsg);
             }
 
             if (hasDecision) {
@@ -398,40 +399,40 @@ namespace insoulforge {
         /// @brief 执行思考模型（不带 tools，产出回复思路）
         /// @return 思考模型输出（优先取 reasoning_content 字段）；请求失败返回 std::nullopt
         drogon::Task<std::optional<std::string>> executeThinking(
-          const Json::Value &messages, const int maxLength, const uint64_t sessionId) {
+          const json &messages, const int maxLength, const uint64_t sessionId) {
             const auto &config = Config::instance();
 
             // 仅替换 system prompt 为思考任务指令，其余消息原样保留
-            Json::Value thinkingMessages;
-            Json::Value systemMsg;
+            json thinkingMessages = json::array();
+            json systemMsg;
             systemMsg["role"] = "system";
             systemMsg["content"] = getThinkingSystemPrompt(maxLength);
-            thinkingMessages.append(systemMsg);
-            for (Json::ArrayIndex i = 1; i < messages.size(); ++i) {
-                thinkingMessages.append(messages[i]);
+            thinkingMessages.push_back(systemMsg);
+            for (size_t i = 1; i < messages.size(); ++i) {
+                thinkingMessages.push_back(messages[i]);
             }
 
-            const auto json = co_await requestChat("思考模型", "executorThinking", config.executorThinking,
+            const auto respJson = co_await requestChat("思考模型", "executorThinking", config.executorThinking,
               config.executorThinkingParams, thinkingMessages, {}, sessionId);
-            if (!json) {
+            if (!respJson) {
                 co_return std::nullopt;
             }
 
             // DeepSeek Reasoner 等模型将分析过程放在 reasoning_content，优先取用
-            const auto &message = (*json)["choices"][0]["message"];
+            const json &message = atOrNull((*respJson)["choices"][0], "message");
             std::string content;
-            if (message.isMember("reasoning_content") && !message["reasoning_content"].isNull()) {
-                content = message["reasoning_content"].asString();
-            } else if (message.isMember("content") && !message["content"].isNull()) {
-                content = message["content"].asString();
+            if (message.contains("reasoning_content") && !message["reasoning_content"].is_null()) {
+                content = jsonToString(message["reasoning_content"]);
+            } else if (message.contains("content") && !message["content"].is_null()) {
+                content = jsonToString(message["content"]);
             }
             co_return content;
         }
 
         /// @brief Agent 模式执行（带 tools）：循环「请求模型 → 处理工具调用」，直到产出回复决策或达最大轮数
-        drogon::Task<std::optional<ReplyDecision>> executeWithAgent(Json::Value messages, const uint64_t sessionId) {
+        drogon::Task<std::optional<ReplyDecision>> executeWithAgent(json messages, const uint64_t sessionId) {
             const auto &config = Config::instance();
-            const Json::Value tools = ToolRegistry::instance().getAllTools();
+            const json tools = ToolRegistry::instance().getAllTools();
             if (tools.empty()) {
                 Logger::session(sessionId).error("[Executor] 未注册工具");
                 co_return std::nullopt;
@@ -440,26 +441,27 @@ namespace insoulforge {
             std::string accumulatedCQCodes; // 跨轮累积 CQ 码，产出 reply 时自动拼入正文
 
             for (int round = 0; round < kMaxToolRounds; ++round) {
-                const auto json = co_await requestChat(
+                const auto respJson = co_await requestChat(
                   "LLM", "executor", config.executor, config.executorParams, messages, tools, sessionId);
-                if (!json) {
+                if (!respJson) {
                     co_return std::nullopt;
                 }
 
-                const auto &message = (*json)["choices"][0]["message"];
+                const json &message = atOrNull((*respJson)["choices"][0], "message");
 
                 // 无工具调用：文本即回复；无文本视为不回复
-                if (!message.isMember("tool_calls") || message["tool_calls"].empty()) {
+                if (!message.contains("tool_calls") || !message["tool_calls"].is_array() ||
+                    message["tool_calls"].empty()) {
                     ReplyDecision decision;
-                    if (message.isMember("content") && !message["content"].isNull()) {
+                    if (message.contains("content") && !message["content"].is_null()) {
                         decision.shouldReply = true;
-                        decision.content = cleanReplyContent(message["content"].asString());
+                        decision.content = cleanReplyContent(jsonToString(message["content"]));
                     }
                     co_return decision;
                 }
 
                 // 有工具调用：回传 assistant 消息后逐个处理，未命中终端工具则继续下一轮
-                messages.append(buildAssistantToolCallMessage(message));
+                messages.push_back(buildAssistantToolCallMessage(message));
                 if (const auto decision = co_await processToolCalls(message, messages, accumulatedCQCodes, sessionId)) {
                     co_return decision;
                 }
@@ -471,7 +473,7 @@ namespace insoulforge {
 
         /// @brief 思考模式执行（两阶段：思考模型分析 → 执行模型带工具生成回复；思考失败时回退普通模式）
         drogon::Task<std::optional<ReplyDecision>> executeWithThinking(
-          Json::Value messages, const int maxLength, const uint64_t sessionId) {
+          json messages, const int maxLength, const uint64_t sessionId) {
             Logger::session(sessionId).info("[Executor] 思考模式 - Step 1: 分析");
 
             const std::optional<std::string> thinkingResult = co_await executeThinking(messages, maxLength, sessionId);
@@ -486,15 +488,15 @@ namespace insoulforge {
             // Step 2: 注入思考结果，交由执行模型带工具生成回复
             Logger::session(sessionId).info("[Executor] 思考模式 - Step 2: 执行");
 
-            Json::Value thinkingMsg;
+            json thinkingMsg;
             thinkingMsg["role"] = "assistant";
             thinkingMsg["content"] = "【思考分析】\n" + *thinkingResult;
-            messages.append(thinkingMsg);
+            messages.push_back(thinkingMsg);
 
-            Json::Value execMsg;
+            json execMsg;
             execMsg["role"] = "user";
             execMsg["content"] = "根据以上分析，调用工具发送回复。";
-            messages.append(execMsg);
+            messages.push_back(execMsg);
 
             co_return co_await executeWithAgent(std::move(messages), sessionId);
         }
@@ -536,7 +538,7 @@ namespace insoulforge {
         Logger::session(sessionId).info("[Executor] 开始执行 | thinking={} | priority={} | maxLength={}",
           decision.enableThinking, decision.isPriority, decision.maxLength);
 
-        const Json::Value messages = buildPrompt(chatRecords, memory, decision);
+        const json messages = buildPrompt(chatRecords, memory, decision);
 
         // 思考模式两阶段执行（思考模型分析 → 执行模型生成），普通模式单阶段直接生成
         if (decision.enableThinking) {

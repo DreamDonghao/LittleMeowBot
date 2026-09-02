@@ -17,6 +17,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <util/CommonUtil.hpp>
+#include <util/JsonUtil.hpp>
 #include <util/Logger.hpp>
 
 namespace insoulforge {
@@ -94,7 +95,7 @@ namespace insoulforge {
 
         /// @brief LLM 响应文本 → JSON 对象（容忍模型输出 ```json 围栏等杂质）
         /// @return nullopt 表示 API 失败或输出不是合法 JSON（调用方不得推进水位线），失败原因已按 tag 记日志
-        std::optional<Json::Value> parseLlmJson(
+        std::optional<json> parseLlmJson(
           const std::optional<std::string> &result, const std::string &tag, const uint64_t sessionId) {
             if (!result) {
                 Logger::session(sessionId).error("{}: API 请求失败", tag);
@@ -107,8 +108,8 @@ namespace insoulforge {
                 return std::nullopt;
             }
 
-            Json::Value parsed;
-            if (!tryParseJson(payload, parsed) || !parsed.isObject()) {
+            json parsed;
+            if (!tryParseJson(payload, parsed) || !parsed.is_object()) {
                 Logger::session(sessionId).warn("{}: JSON 解析失败，本批重试", tag);
                 return std::nullopt;
             }
@@ -119,8 +120,8 @@ namespace insoulforge {
         /// @return nullopt 表示 API 失败或输出不是合法 JSON（调用方不得推进水位线）
         drogon::Task<std::optional<std::vector<std::string>>> extractMemories(
           const std::string &chatRecords, const int maxTokens, const uint64_t sessionId) {
-            Json::Value messages;
-            Json::Value item;
+            json messages;
+            json item;
             item["role"] = "system";
             item["content"] = R"(你是一个【群聊记忆提取器】。
 从群聊记录中提取值得记住的信息。
@@ -140,11 +141,11 @@ namespace insoulforge {
 {"memories": ["小明喜欢写Python", "老王的外号是老王"]}
 没有任何值得记住的内容时输出：{"memories": []})";
 
-            messages.append(item);
+            messages.push_back(item);
             item.clear();
             item["role"] = "user";
             item["content"] = "=== 群聊记录 ===\n" + chatRecords + "\n\n请输出提取结果 JSON：";
-            messages.append(item);
+            messages.push_back(item);
 
             const auto parsed =
               parseLlmJson(co_await LlmClient::requestLLM(messages, 0.4f, 0.9f, maxTokens, "memory", sessionId),
@@ -152,14 +153,15 @@ namespace insoulforge {
             if (!parsed) {
                 co_return std::nullopt;
             }
-            if (!(*parsed)["memories"].isArray()) {
+            const json &memoriesArr = atOrNull(*parsed, "memories");
+            if (!memoriesArr.is_array()) {
                 Logger::session(sessionId).warn("记忆提取: 输出缺少 memories 数组，本批重试");
                 co_return std::nullopt;
             }
 
             std::vector<std::string> memories;
-            for (const auto &entry: (*parsed)["memories"]) {
-                if (std::string text = trim(entry.asString()); !text.empty())
+            for (const auto &entry: memoriesArr) {
+                if (std::string text = trim(jsonToString(entry)); !text.empty())
                     memories.push_back(std::move(text));
             }
             co_return memories;
@@ -242,11 +244,11 @@ namespace insoulforge {
                 systemPrompt += "\n长期记忆库当前不可用：所有记忆都归入短期记忆，longTerm 固定输出空数组。";
             }
 
-            Json::Value messages;
-            Json::Value item;
+            json messages;
+            json item;
             item["role"] = "system";
             item["content"] = systemPrompt;
-            messages.append(item);
+            messages.push_back(item);
             item.clear();
 
             std::string recalledText;
@@ -259,7 +261,7 @@ namespace insoulforge {
             item["content"] = "=== 当前短期记忆 ===\n" + numberedLines(currentShortTerm) + "\n=== 新提取的记忆 ===\n" +
                               numberedLines(newMemories) + "\n=== 召回的长期记忆 ===\n" + recalledText +
                               "\n请输出整理结果 JSON：";
-            messages.append(item);
+            messages.push_back(item);
 
             const auto parsed = parseLlmJson(
               co_await LlmClient::requestLLM(messages, 0.3f, 0.9f, config.memoryExtractMaxTokens, "memory", sessionId),
@@ -267,14 +269,15 @@ namespace insoulforge {
             if (!parsed) {
                 co_return std::nullopt;
             }
-            if (!(*parsed)["shortTerm"].isArray()) {
+            const json &shortTermArr = atOrNull(*parsed, "shortTerm");
+            if (!shortTermArr.is_array()) {
                 Logger::session(sessionId).warn("记忆整理: 输出缺少 shortTerm 数组，本批重试");
                 co_return std::nullopt;
             }
 
             ReconcileResult reconcile;
-            for (const auto &entry: (*parsed)["shortTerm"]) {
-                if (std::string text = trim(entry.asString()); !text.empty())
+            for (const auto &entry: shortTermArr) {
+                if (std::string text = trim(jsonToString(entry)); !text.empty())
                     reconcile.shortTerm.push_back(std::move(text));
             }
             const size_t maxShortTerm = static_cast<size_t>(std::max(config.shortTermMemoryMax, 0));
@@ -284,20 +287,22 @@ namespace insoulforge {
                 reconcile.shortTerm.resize(maxShortTerm);
             }
 
-            if (longTermEnabled && (*parsed)["longTerm"].isArray()) {
-                for (const auto &entry: (*parsed)["longTerm"]) {
-                    if (!entry.isObject())
+            const json &longTermArr = atOrNull(*parsed, "longTerm");
+            if (longTermEnabled && longTermArr.is_array()) {
+                for (const auto &entry: longTermArr) {
+                    if (!entry.is_object())
                         continue;
-                    std::string content = trim(entry["content"].asString());
+                    std::string content = trim(getStr(entry, "content"));
                     if (content.empty())
                         continue;
                     MergedLongTermMemory merged;
                     merged.content = std::move(content);
-                    if (entry["sources"].isArray()) {
-                        for (const auto &source: entry["sources"]) {
-                            if (!source.isIntegral())
+                    const json &sources = atOrNull(entry, "sources");
+                    if (sources.is_array()) {
+                        for (const auto &source: sources) {
+                            if (!source.is_number_integer())
                                 continue;
-                            const auto id = source.asInt64();
+                            const auto id = source.get<int64_t>();
                             // 只接受真实召回过的 id，防止模型编造误删无关条目
                             if (std::ranges::any_of(recalled, [id](const auto &r) { return r.id == id; }))
                                 merged.sources.push_back(id);
@@ -310,14 +315,14 @@ namespace insoulforge {
         }
 
         /// @brief 把记录区间拼接为 JSON 数组字符串（与旧 getChatRecordsText 格式一致）
-        std::string formatRecordsText(const std::vector<Json::Value> &records, const size_t from, const size_t to) {
+        std::string formatRecordsText(const std::vector<json> &records, const size_t from, const size_t to) {
             std::string text = "[";
             bool first = true;
             for (size_t i = from; i < to; ++i) {
                 if (!first)
                     text += ',';
                 first = false;
-                text += records[i]["content"].asString();
+                text += records[i]["content"].get<std::string>();
             }
             text += ']';
             return text;
@@ -325,14 +330,14 @@ namespace insoulforge {
 
         /// @brief 去除记录 content JSON 中的 images 字段（文件名/URL 对提取与评分无用，纯耗 token）
         /// @details 解析失败或非 JSON 内容原样保留（历史存量可能是纯文本），不做修改
-        void stripRecordImages(std::vector<Json::Value> &records) {
+        void stripRecordImages(std::vector<json> &records) {
             for (auto &record: records) {
-                Json::Value content;
-                if (!tryParseJson(record["content"].asString(), content) || !content.isObject())
+                json content;
+                if (!tryParseJson(getStr(record, "content"), content) || !content.is_object())
                     continue;
-                if (!content.isMember("images"))
+                if (!content.contains("images"))
                     continue;
-                content.removeMember("images");
+                content.erase("images");
                 record["content"] = dumpJson(content);
             }
         }
@@ -341,13 +346,13 @@ namespace insoulforge {
         /// @details 只对本次真正滑出的记录评分——提取失败时水位线不推进、同批记录会重试，
         ///          评分若不跟着水位线走会重复加减。评分失败仅跳过本批，不阻塞记忆流程
         drogon::Task<> updateAffinityFromRecords(
-          const uint64_t sessionId, const std::vector<Json::Value> &records, const size_t evictedCount) {
+          const uint64_t sessionId, const std::vector<json> &records, const size_t evictedCount) {
             const size_t limit = std::min(evictedCount, kMaxAffinityRecords);
             if (limit == 0)
                 co_return;
 
-            Json::Value messages;
-            Json::Value item;
+            json messages;
+            json item;
             item["role"] = "system";
             item["content"] = R"(你是一个【群聊好感度评估器】。
 机器人看完了一段群聊记录，请评估每个发言用户在这段对话中给机器人留下的印象变化。
@@ -363,12 +368,12 @@ namespace insoulforge {
 {"123456": 2, "789012": -3}
 
 没有任何值得调整的变化时输出：{})";
-            messages.append(item);
+            messages.push_back(item);
             item.clear();
             item["role"] = "user";
             item["content"] =
               "=== 群聊记录 ===\n" + formatRecordsText(records, 0, limit) + "\n\n请输出好感度变化 JSON：";
-            messages.append(item);
+            messages.push_back(item);
 
             const auto deltas =
               parseLlmJson(co_await LlmClient::requestLLM(messages, 0.3f, 0.9f, 256, "affinity", sessionId),
@@ -378,14 +383,13 @@ namespace insoulforge {
             }
 
             int applied = 0;
-            for (const auto &qqStr: deltas->getMemberNames()) {
+            for (const auto &[qqStr, deltaValue]: deltas->items()) {
                 const uint64_t qqNumber = parseUInt64(qqStr);
                 if (qqNumber == 0 || qqNumber == QQMessage::kSystemAccountId)
                     continue;
-                const Json::Value &deltaValue = (*deltas)[qqStr];
-                if (!deltaValue.isIntegral())
+                if (!deltaValue.is_number_integer())
                     continue;
-                if (const int delta = std::clamp(deltaValue.asInt(), -kMaxAffinityDelta, kMaxAffinityDelta);
+                if (const int delta = std::clamp(jsonToInt(deltaValue), -kMaxAffinityDelta, kMaxAffinityDelta);
                   delta != 0) {
                     AffinityStore::adjustAffinity(sessionId, qqNumber, delta);
                     ++applied;
@@ -447,7 +451,7 @@ namespace insoulforge {
                 break;
             }
 
-            chunkEndId = records[batchEnd - 1]["id"].asUInt64();
+            chunkEndId = jsonToUInt64(records[batchEnd - 1]["id"]);
 
             if (extracted->empty()) {
                 // 本批没有新记忆，直接推进水位线

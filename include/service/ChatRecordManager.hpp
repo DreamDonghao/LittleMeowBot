@@ -8,7 +8,8 @@
 #pragma once
 #include <cstddef>
 #include <deque>
-#include <json/value.h>
+
+#include <util/JsonUtil.hpp>
 
 namespace insoulforge {
     /// @brief 提示词中完整保留的最近记录条数（更早记录简化处理；召回缓存按此长度对齐淘汰）
@@ -37,7 +38,7 @@ namespace insoulforge {
 
         /// @brief 获取上下文窗口内的聊天记录（水位线之后的最新记录，旧→新）
         /// @return 聊天记录队列
-        [[nodiscard]] std::deque<Json::Value> getRecords() const;
+        [[nodiscard]] std::deque<json> getRecords() const;
 
     private:
         uint64_t m_sessionId; ///< 群号

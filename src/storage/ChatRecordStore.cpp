@@ -9,6 +9,7 @@
 #include <storage/ChatRecordStore.hpp>
 #include <storage/Database.hpp>
 #include <storage/Statement.hpp>
+#include <util/JsonUtil.hpp>
 
 namespace insoulforge {
     namespace ChatRecordStore {
@@ -22,10 +23,10 @@ namespace insoulforge {
             stmt.exec();
         }
 
-        std::vector<Json::Value> getChatRecords(const uint64_t sessionId, const int limit) {
+        std::vector<json> getChatRecords(const uint64_t sessionId, const int limit) {
             const auto &db = Database::instance();
             std::shared_lock lock(db.mutex());
-            std::vector<Json::Value> records;
+            std::vector<json> records;
 
             const Statement stmt(
               db.handle(), "SELECT role, content FROM chat_records WHERE group_id = ? ORDER BY id DESC LIMIT ?");
@@ -33,7 +34,7 @@ namespace insoulforge {
             stmt.bind(2, limit);
 
             while (stmt.step()) {
-                Json::Value record;
+                json record;
                 record["role"] = stmt.getText(0);
                 record["content"] = stmt.getText(1);
                 records.push_back(record);
@@ -43,10 +44,10 @@ namespace insoulforge {
             return records;
         }
 
-        std::vector<Json::Value> getChatRecordsWithIds(const uint64_t sessionId, const int limit) {
+        std::vector<json> getChatRecordsWithIds(const uint64_t sessionId, const int limit) {
             const auto &db = Database::instance();
             std::shared_lock lock(db.mutex());
-            std::vector<Json::Value> records;
+            std::vector<json> records;
 
             const Statement stmt(
               db.handle(), "SELECT id, role, content FROM chat_records WHERE group_id = ? ORDER BY id DESC LIMIT ?");
@@ -54,7 +55,7 @@ namespace insoulforge {
             stmt.bind(2, limit);
 
             while (stmt.step()) {
-                Json::Value record;
+                json record;
                 record["id"] = stmt.getInt64(0);
                 record["role"] = stmt.getText(1);
                 record["content"] = stmt.getText(2);
@@ -64,11 +65,10 @@ namespace insoulforge {
             return records;
         }
 
-        std::vector<Json::Value> getChatRecordsSince(
-          const uint64_t sessionId, const uint64_t watermarkId, const int limit) {
+        std::vector<json> getChatRecordsSince(const uint64_t sessionId, const uint64_t watermarkId, const int limit) {
             const auto &db = Database::instance();
             std::shared_lock lock(db.mutex());
-            std::vector<Json::Value> records;
+            std::vector<json> records;
 
             const Statement stmt(db.handle(),
               "SELECT id, role, content FROM chat_records WHERE group_id = ? AND id > ? ORDER BY id DESC LIMIT ?");
@@ -77,8 +77,8 @@ namespace insoulforge {
             stmt.bind(3, limit <= 0 ? INT64_MAX : static_cast<int64_t>(limit));
 
             while (stmt.step()) {
-                Json::Value record;
-                record["id"] = static_cast<Json::UInt64>(stmt.getInt64(0));
+                json record;
+                record["id"] = stmt.getInt64(0);
                 record["role"] = stmt.getText(1);
                 record["content"] = stmt.getText(2);
                 records.push_back(std::move(record));

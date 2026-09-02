@@ -9,12 +9,13 @@
 
 #pragma once
 #include <drogon/WebSocketConnection.h>
-#include <json/value.h>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+
+#include <util/JsonUtil.hpp>
 
 namespace insoulforge {
     /// @brief WebSocket连接管理器（单例模式）
@@ -52,7 +53,7 @@ namespace insoulforge {
         /// @brief 广播事件到所有连接
         /// @param type 事件类型
         /// @param data 事件数据
-        void broadcastEvent(const std::string &type, const Json::Value &data) const;
+        void broadcastEvent(const std::string &type, const json &data) const;
 
     private:
         WebSocketManager() = default;
@@ -62,4 +63,4 @@ namespace insoulforge {
           m_subscriptions; ///< 群订阅映射
         mutable std::mutex m_mutex; ///< 线程安全锁
     };
-}
+} // namespace insoulforge

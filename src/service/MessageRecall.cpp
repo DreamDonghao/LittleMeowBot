@@ -9,13 +9,12 @@
 #include <config/Config.hpp>
 #include <deque>
 #include <drogon/utils/coroutine.h>
-#include <json/json.h>
 #include <mutex>
 #include <service/ChatRecordManager.hpp>
 #include <service/LlmClient.hpp>
 #include <storage/LongTermMemoryStore.hpp>
 #include <unordered_map>
-#include <util/CommonUtil.hpp>
+#include <util/JsonUtil.hpp>
 #include <util/Logger.hpp>
 
 namespace insoulforge {
@@ -75,16 +74,16 @@ namespace insoulforge {
 
     void MessageRecall::onRecordAdded(
       const uint64_t sessionId, const std::string &contentJson, const bool isAssistant) {
-        Json::Value content;
-        if (!tryParseJson(contentJson, content) || !content.isObject())
+        json content;
+        if (!tryParseJson(contentJson, content) || !content.is_object())
             return;
-        const uint64_t messageId = parseUInt64(content.get("message_id", "").asString());
+        const uint64_t messageId = parseUInt64(getStr(content, "message_id"));
         if (messageId == 0)
             return;
 
         std::string text;
         if (!isAssistant)
-            text = content.get("text", "").asString();
+            text = getStr(content, "text");
         const bool needRecall = !isAssistant && utf8Length(text) > kMinRecallChars;
 
         {

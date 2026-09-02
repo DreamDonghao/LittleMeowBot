@@ -16,6 +16,7 @@
 #include <string>
 #include <util/CommonUtil.hpp>
 #include <util/HttpUtil.hpp>
+#include <util/JsonUtil.hpp>
 #include <util/Logger.hpp>
 
 namespace insoulforge {
@@ -55,10 +56,10 @@ namespace insoulforge {
         /// @brief 提取 Router 需要的最小字段：发送者名字 + 压缩后文本
         /// @details content 为 formatMessage 生成的 JSON，message_id/reply_to/qq/时间戳/images URL 对路由决策无用
         [[nodiscard]] std::string compactContent(const std::string &content, const bool includeSender) {
-            Json::Value root;
-            if (tryParseJson(content, root)) {
-                const std::string name = root["sender"]["name"].asString();
-                const std::string text = compressCQCodes(root["text"].asString());
+            json root;
+            if (tryParseJson(content, root) && root.is_object()) {
+                const std::string name = getStr(atOrNull(root, "sender"), "name");
+                const std::string text = compressCQCodes(getStr(root, "text"));
                 if (includeSender && !name.empty())
                     return name + ": " + text;
                 return text;
@@ -88,7 +89,7 @@ namespace insoulforge {
 
             // 使用范围循环简化代码
             for (const auto &record: records | std::views::drop(startIdx)) {
-                const bool isAssistant = record["role"].asString() == "assistant";
+                const bool isAssistant = getStr(record, "role") == "assistant";
                 if (isAssistant) {
                     spokeInWindow = true;
                     silentCount = 0;
@@ -96,8 +97,8 @@ namespace insoulforge {
                     ++silentCount;
                 }
                 context += isAssistant ? fmt::format("[{}]: {}\n", config.botName,
-                                           compactContent(record["content"].asString(), false))
-                                       : fmt::format("[用户] {}\n", compactContent(record["content"].asString(), true));
+                                           compactContent(getStr(record, "content"), false))
+                                       : fmt::format("[用户] {}\n", compactContent(getStr(record, "content"), true));
             }
 
             // 发言间隔作为事实注入末尾（置于末尾以保持前缀稳定，缓存不受影响）
@@ -126,7 +127,7 @@ namespace insoulforge {
                 return std::nullopt;
             }
 
-            Json::Value root;
+            json root;
             if (!tryParseJson(jsonStr, root)) {
                 Logger::session(sessionId).error("[Router] JSON解析失败: {}", jsonStr);
                 return std::nullopt;
@@ -135,20 +136,20 @@ namespace insoulforge {
             RouterDecision decision;
 
             // 解析 action
-            std::string actionStr = root.get("action", "reply").asString();
+            std::string actionStr = getStr(root, "action", "reply");
             std::ranges::transform(
               actionStr, actionStr.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
             decision.action = (actionStr == "skip") ? RouterDecision::Action::SKIP : RouterDecision::Action::REPLY;
 
             // 解析 reason
-            decision.reason = root.get("reason", "").asString();
+            decision.reason = getStr(root, "reason");
 
             // 解析 strategy
-            if (root.isMember("strategy") && root["strategy"].isObject()) {
-                const auto &strategy = root["strategy"];
-                decision.enableThinking = strategy.get("enableThinking", false).asBool();
-                decision.tone = strategy.get("tone", "friendly").asString();
-                int maxLen = strategy.get("maxLength", 25).asInt();
+            if (root.contains("strategy") && root["strategy"].is_object()) {
+                const json &strategy = root["strategy"];
+                decision.enableThinking = getBool(strategy, "enableThinking");
+                decision.tone = getStr(strategy, "tone", "friendly");
+                const int maxLen = getInt(strategy, "maxLength", 25);
                 decision.maxLength = std::clamp(maxLen, 10, 500);
             }
 
@@ -158,20 +159,20 @@ namespace insoulforge {
         }
 
         /// @brief 构建 LLM Prompt
-        Json::Value buildPrompt(const ChatRecordManager &chatRecords, const bool isPrivate) {
-            Json::Value messages;
+        json buildPrompt(const ChatRecordManager &chatRecords, const bool isPrivate) {
+            json messages = json::array();
 
             // System Prompt（数据库存储，管理后台可编辑；私聊使用独立的私聊路由提示词）
-            Json::Value systemMsg;
+            json systemMsg;
             systemMsg["role"] = "system";
             systemMsg["content"] =
               isPrivate ? PromptService::getRouterPrivateSystemPrompt() : PromptService::getRouterSystemPrompt();
-            messages.append(systemMsg);
+            messages.push_back(systemMsg);
 
-            Json::Value userMsg;
+            json userMsg;
             userMsg["role"] = "user";
             userMsg["content"] = buildChatContext(chatRecords);
-            messages.append(userMsg);
+            messages.push_back(userMsg);
 
             return messages;
         }
@@ -181,9 +182,9 @@ namespace insoulforge {
           const ChatRecordManager &chatRecords, const bool isPrivate) {
             const auto &config = Config::instance();
 
-            const Json::Value messages = buildPrompt(chatRecords, isPrivate);
+            const json messages = buildPrompt(chatRecords, isPrivate);
 
-            const Json::Value body = LlmClient::buildChatRequestBody(config.router, config.routerParams, messages);
+            const json body = LlmClient::buildChatRequestBody(config.router, config.routerParams, messages);
 
             const auto resp = co_await HttpUtil::send("[Router]", config.router.baseUrl, config.router.path,
               drogon::Post, body, config.router.apiKey, 90.0, chatRecords.getSessionId());
@@ -191,16 +192,17 @@ namespace insoulforge {
                 co_return std::nullopt;
             }
 
-            const auto json = LlmClient::validChatJson(*resp);
-            if (!json) {
+            const auto respJson = LlmClient::validChatJson(*resp);
+            if (!respJson) {
                 Logger::session(chatRecords.getSessionId())
                   .error("[Router] LLM请求失败: status={}", static_cast<int>((*resp)->getStatusCode()));
                 co_return std::nullopt;
             }
 
-            LlmClient::logUsage(*json, config.router.model, "router", chatRecords.getSessionId());
+            LlmClient::logUsage(*respJson, config.router.model, "router", chatRecords.getSessionId());
 
-            const std::string content = (*json)["choices"][0]["message"]["content"].asString();
+            const std::string content =
+              jsonToString(atOrNull(atOrNull((*respJson)["choices"][0], "message"), "content"));
             Logger::session(chatRecords.getSessionId()).debug("[Router] LLM响应: {}", content);
 
             co_return parseResponse(content, chatRecords.getSessionId());

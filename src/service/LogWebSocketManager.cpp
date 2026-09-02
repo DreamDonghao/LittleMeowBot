@@ -1,9 +1,7 @@
 /// @file LogWebSocketManager.cpp
 /// @brief 运行日志 WebSocket 管理器 - 实现
 
-#include <json/writer.h>
 #include <service/LogWebSocketManager.hpp>
-#include <util/CommonUtil.hpp>
 #include <utility>
 
 namespace insoulforge {
@@ -29,49 +27,47 @@ namespace insoulforge {
         m_subscriptions[conn] = std::move(subscription);
     }
 
-    void LogWebSocketManager::pushLog(const Json::Value &log) {
+    void LogWebSocketManager::pushLog(const json &log) {
         std::lock_guard lock(m_mutex);
         for (const auto &conn: m_connections) {
             auto it = m_subscriptions.find(conn);
             if (it != m_subscriptions.end() && matches(it->second, log)) {
-                Json::Value msg;
+                json msg;
                 msg["type"] = "log";
                 msg["data"] = log;
-                Json::StreamWriterBuilder builder;
-                conn->send(Json::writeString(builder, msg));
+                conn->send(msg.dump());
             }
         }
     }
 
-    void LogWebSocketManager::broadcastStatus(const Json::Value &status) {
+    void LogWebSocketManager::broadcastStatus(const json &status) {
         std::lock_guard lock(m_mutex);
-        Json::Value msg;
+        json msg;
         msg["type"] = "status";
         msg["data"] = status;
-        const Json::StreamWriterBuilder builder;
-        const auto json = Json::writeString(builder, msg);
+        const auto jsonStr = msg.dump();
         for (const auto &conn: m_connections) {
-            conn->send(json);
+            conn->send(jsonStr);
         }
     }
 
-    bool LogWebSocketManager::matches(const LogSubscription &subscription, const Json::Value &log) {
+    bool LogWebSocketManager::matches(const LogSubscription &subscription, const json &log) {
         // 日志条目的会话字段线上名为 "groupId"（字符串，可能带私聊标志位超出 int64）
-        const bool hasSession = log.isMember("groupId") && !log["groupId"].isNull();
+        const json &groupIdVal = atOrNull(log, "groupId");
+        const bool hasSession = !groupIdVal.is_null();
         if (subscription.systemOnly) {
             if (hasSession) {
                 return false;
             }
         } else if (subscription.sessionId.has_value()) {
-            if (!hasSession || parseUInt64(log["groupId"].asString()) != *subscription.sessionId) {
+            if (!hasSession || parseUInt64(jsonToString(groupIdVal)) != *subscription.sessionId) {
                 return false;
             }
         }
-        if (subscription.level.has_value() && log.get("level", "").asString() != *subscription.level) {
+        if (subscription.level.has_value() && getStr(log, "level") != *subscription.level) {
             return false;
         }
-        if (!subscription.keyword.empty() &&
-            log.get("message", "").asString().find(subscription.keyword) == std::string::npos) {
+        if (!subscription.keyword.empty() && getStr(log, "message").find(subscription.keyword) == std::string::npos) {
             return false;
         }
         return true;

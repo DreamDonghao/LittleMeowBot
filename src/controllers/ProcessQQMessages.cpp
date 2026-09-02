@@ -53,8 +53,8 @@ namespace {
 
 Task<> ProcessQQMessages::receiveMessages(const HttpRequestPtr req,
                                           std::function<void(const HttpResponsePtr &)> callback) {
-    const auto json = req->getJsonObject();
-    if (!json || !json->isObject()) {
+    const auto body = parseJsonBody(req);
+    if (!body) {
         auto resp = HttpResponse::newHttpResponse();
         resp->setStatusCode(k400BadRequest);
         resp->setBody("Invalid JSON or not an object");
@@ -62,22 +62,22 @@ Task<> ProcessQQMessages::receiveMessages(const HttpRequestPtr req,
         co_return;
     }
     // 检查 post_type 字段
-    if (!json->isMember("post_type") || (*json)["post_type"].asString() != "message") {
-        Json::Value resp;
+    if (getStr(*body, "post_type") != "message") {
+        json resp;
         resp["status"] = "ok";
-        callback(HttpResponse::newHttpJsonResponse(resp));
+        callback(jsonResponse(resp));
         co_return;
     }
     // 返回响应
-    Json::Value respJson;
+    json respJson;
     respJson["status"] = "ok";
-    callback(HttpResponse::newHttpJsonResponse(respJson));
+    callback(jsonResponse(respJson));
 
     if (!AgentSystem::instance().isRunning()) {
         co_return;
     }
 
-    QQMessage qqMessage(*json);
+    QQMessage qqMessage(*body);
     const uint64_t sessionId = qqMessage.getSessionId(); ///< 会话 ID（群聊=群号；私聊=用户QQ号|私聊标志位）
     // 确保会话配置存在
     if (!SessionConfigManager::contains(sessionId)) {

@@ -6,27 +6,26 @@
 #include <service/WebSocketManager.hpp>
 #include <spdlog/spdlog.h>
 #include <storage/UsageStore.hpp>
-#include <util/CommonUtil.hpp>
 #include <util/HttpUtil.hpp>
 #include <util/Logger.hpp>
 
 namespace insoulforge {
     namespace {
         /// @brief 通用 API 请求函数
-        drogon::Task<std::optional<std::string>> requestStr(const Json::Value &messages, const std::string &base_url,
+        drogon::Task<std::optional<std::string>> requestStr(const json &messages, const std::string &base_url,
           const std::string &path, const std::string &api_key, const std::string &model, const double temperature,
           const double top_p, const int max_tokens, const std::string &role, const std::optional<uint64_t> sessionId) {
             const LLMApiConfig api{.apiKey = api_key, .baseUrl = base_url, .path = path, .model = model};
             const LLMModelParams params{.maxTokens = max_tokens, .temperature = temperature, .topP = top_p};
-            const Json::Value body = LlmClient::buildChatRequestBody(api, params, messages);
+            const json body = LlmClient::buildChatRequestBody(api, params, messages);
             const auto resp =
               co_await HttpUtil::send("[LLM]", base_url, path, drogon::Post, body, api_key, 90.0, sessionId);
             if (!resp) {
                 co_return std::nullopt;
             }
 
-            const auto json = LlmClient::validChatJson(*resp);
-            if (!json) {
+            const auto respJson = LlmClient::validChatJson(*resp);
+            if (!respJson) {
                 if (sessionId) {
                     Logger::session(*sessionId)
                       .error("[LLM] 请求出错: status={}", static_cast<int>((*resp)->getStatusCode()));
@@ -36,29 +35,21 @@ namespace insoulforge {
                 co_return std::nullopt;
             }
 
-            LlmClient::logUsage(*json, model, role, sessionId);
+            LlmClient::logUsage(*respJson, model, role, sessionId);
 
-            const auto &choices = (*json)["choices"];
-            if (!choices.isArray() || choices.empty()) {
-                if (sessionId) {
-                    Logger::session(*sessionId).error("LLM 返回格式错误: choices 不是数组或为空");
-                } else {
-                    spdlog::error("LLM 返回格式错误: choices 不是数组或为空");
-                }
-                co_return std::nullopt;
-            }
-
-            co_return choices[0]["message"]["content"].asString();
+            // validChatJson 已校验 choices 为非空数组
+            const json &message = atOrNull((*respJson)["choices"][0], "message");
+            co_return jsonToString(atOrNull(message, "content"));
         }
     } // namespace
 
     namespace LlmClient {
-        Json::Value buildChatRequestBody(const LLMApiConfig &api, const LLMModelParams &params,
-          const Json::Value &messages, const Json::Value &tools) {
-            Json::Value body;
+        json buildChatRequestBody(
+          const LLMApiConfig &api, const LLMModelParams &params, const json &messages, const json &tools) {
+            json body;
             body["model"] = api.model;
             body["messages"] = messages;
-            if (!tools.isNull())
+            if (!tools.is_null())
                 body["tools"] = tools;
             body["temperature"] = params.temperature;
             body["max_tokens"] = params.maxTokens;
@@ -68,19 +59,22 @@ namespace insoulforge {
             return body;
         }
 
-        std::optional<Json::Value> validChatJson(const drogon::HttpResponsePtr &resp) {
+        std::optional<json> validChatJson(const drogon::HttpResponsePtr &resp) {
             if (!resp || resp->getStatusCode() != drogon::k200OK)
                 return std::nullopt;
-            const auto json = resp->getJsonObject();
-            if (!json || !json->isMember("choices"))
+            json parsed;
+            if (!tryParseJson(resp->body(), parsed))
                 return std::nullopt;
-            return *json;
+            // choices 必须为非空数组（调用方直接按 [choices][0] 取 message）
+            const json &choices = atOrNull(parsed, "choices");
+            if (!choices.is_array() || choices.empty())
+                return std::nullopt;
+            return parsed;
         }
     } // namespace LlmClient
 
-    drogon::Task<std::optional<std::string>> LlmClient::requestLLM(const Json::Value &messages,
-      const double temperature, const double top_p, const int max_tokens, const std::string &role,
-      const std::optional<uint64_t> sessionId) {
+    drogon::Task<std::optional<std::string>> LlmClient::requestLLM(const json &messages, const double temperature,
+      const double top_p, const int max_tokens, const std::string &role, const std::optional<uint64_t> sessionId) {
         const auto &config = Config::instance();
         co_return co_await requestStr(messages, config.executor.baseUrl, config.executor.path, config.executor.apiKey,
           config.executor.model, temperature, top_p, max_tokens, role, sessionId);
@@ -94,9 +88,9 @@ namespace insoulforge {
             co_return std::nullopt;
         }
 
-        Json::Value body;
+        json body;
         body["model"] = config.model;
-        body["input"].append(text);
+        body["input"].push_back(text);
 
         const auto resp = co_await HttpUtil::send(
           "[Embedding]", config.baseUrl, config.path, drogon::Post, body, config.apiKey, 30.0, sessionId);
@@ -104,9 +98,10 @@ namespace insoulforge {
             co_return std::nullopt;
         }
 
-        const auto json = (*resp)->getJsonObject();
-        if ((*resp)->getStatusCode() != drogon::k200OK || !json || !json->isMember("data") ||
-            !(*json)["data"].isArray() || (*json)["data"].empty()) {
+        json respJson;
+        const bool requestOk = (*resp)->getStatusCode() == drogon::k200OK && tryParseJson((*resp)->body(), respJson);
+        const json &data = atOrNull(respJson, "data");
+        if (!requestOk || !data.is_array() || data.empty()) {
             if (sessionId) {
                 Logger::session(*sessionId)
                   .error("[Embedding] 请求出错: status={}", static_cast<int>((*resp)->getStatusCode()));
@@ -116,11 +111,11 @@ namespace insoulforge {
             co_return std::nullopt;
         }
 
-        LlmClient::logUsage(*json, config.model, "embedding", sessionId);
+        LlmClient::logUsage(respJson, config.model, "embedding", sessionId);
 
         std::vector<float> embedding;
-        for (const auto &value: (*json)["data"][0]["embedding"]) {
-            embedding.push_back(value.asFloat());
+        for (const auto &value: atOrNull(data[0], "embedding")) {
+            embedding.push_back(static_cast<float>(jsonToDouble(value)));
         }
         if (embedding.empty()) {
             co_return std::nullopt;
@@ -128,24 +123,24 @@ namespace insoulforge {
         co_return embedding;
     }
 
-    void LlmClient::logUsage(const Json::Value &responseJson, const std::string &model, const std::string &role,
+    void LlmClient::logUsage(const json &responseJson, const std::string &model, const std::string &role,
       const std::optional<uint64_t> sessionId) {
-        if (!responseJson.isMember("usage"))
+        if (!responseJson.contains("usage"))
             return;
-        const auto &usage = responseJson["usage"];
-        int promptTokens = usage.get("prompt_tokens", 0).asInt();
-        int completionTokens = usage.get("completion_tokens", 0).asInt();
-        int totalTokens = usage.get("total_tokens", 0).asInt();
+        const json &usage = responseJson["usage"];
+        int promptTokens = getInt(usage, "prompt_tokens");
+        int completionTokens = getInt(usage, "completion_tokens");
+        int totalTokens = getInt(usage, "total_tokens");
 
         int cachedTokens = 0;
         // OpenAI-compatible: prompt_tokens_details.cached_tokens（0 命中也是有效数据，不能当作缺失）
-        if (usage.isMember("prompt_tokens_details")) {
-            const auto &details = usage["prompt_tokens_details"];
-            cachedTokens = details.get("cached_tokens", 0).asInt();
+        if (usage.contains("prompt_tokens_details")) {
+            const json &details = usage["prompt_tokens_details"];
+            cachedTokens = getInt(details, "cached_tokens");
         } else {
             // 部分网关用 prompt_cache_hit_tokens / prompt_cache_miss_tokens 表达
-            const int hitTokens = usage.get("prompt_cache_hit_tokens", 0).asInt();
-            const int missTokens = usage.get("prompt_cache_miss_tokens", 0).asInt();
+            const int hitTokens = getInt(usage, "prompt_cache_hit_tokens");
+            const int missTokens = getInt(usage, "prompt_cache_miss_tokens");
             cachedTokens = hitTokens;
             if (promptTokens == 0) {
                 promptTokens = hitTokens + missTokens;
@@ -181,7 +176,7 @@ namespace insoulforge {
 
         UsageStore::addUsageRecord(role, model, promptTokens, completionTokens, totalTokens, cachedTokens);
 
-        Json::Value evt;
+        json evt;
         evt["role"] = role;
         evt["model"] = model;
         if (sessionId.has_value()) {

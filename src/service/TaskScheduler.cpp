@@ -56,7 +56,7 @@ namespace insoulforge {
             return text;
         }
 
-        Json::Value buildSystemEvent(const TaskStore::ScheduledTask &task, const bool delayed) {
+        json buildSystemEvent(const TaskStore::ScheduledTask &task, const bool delayed) {
             const auto &config = Config::instance();
             const std::string text = buildText(task, delayed);
 
@@ -64,10 +64,10 @@ namespace insoulforge {
             static std::atomic<int64_t> s_syntheticMsgId{0};
             const auto msgId = 9000000000LL + s_syntheticMsgId.fetch_add(1);
 
-            Json::Value body;
+            json body;
             body["post_type"] = "message";
             body["self_id"] = config.selfQQNumber;
-            body["time"] = static_cast<Json::Int64>(std::time(nullptr));
+            body["time"] = static_cast<int64_t>(std::time(nullptr));
             body["message_id"] = fmt::to_string(msgId);
             body["raw_message"] = text;
             body["sender"]["user_id"] = QQMessage::kSystemAccountId;
@@ -79,10 +79,10 @@ namespace insoulforge {
                 body["message_type"] = "group";
                 body["group_id"] = task.targetId;
             }
-            Json::Value item;
+            json item;
             item["type"] = "text";
             item["data"]["text"] = text;
-            body["message"].append(item);
+            body["message"].push_back(item);
             return body;
         }
     } // namespace

@@ -6,22 +6,22 @@
 
 #pragma once
 #include <cstdint>
-#include <json/json.h>
 #include <string>
 #include <vector>
+
+#include <util/JsonUtil.hpp>
 
 namespace insoulforge {
     /// @brief 聊天记录存储
     namespace ChatRecordStore {
         void addChatRecord(uint64_t sessionId, const std::string &role, const std::string &content);
 
-        [[nodiscard]] std::vector<Json::Value> getChatRecords(uint64_t sessionId, int limit = 50);
+        [[nodiscard]] std::vector<json> getChatRecords(uint64_t sessionId, int limit = 50);
 
-        [[nodiscard]] std::vector<Json::Value> getChatRecordsWithIds(uint64_t sessionId, int limit = 50);
+        [[nodiscard]] std::vector<json> getChatRecordsWithIds(uint64_t sessionId, int limit = 50);
 
         /// @brief 获取水位线之后的最新记录（旧→新），limit<=0 表示不限
-        [[nodiscard]] std::vector<Json::Value> getChatRecordsSince(
-          uint64_t sessionId, uint64_t watermarkId, int limit = 0);
+        [[nodiscard]] std::vector<json> getChatRecordsSince(uint64_t sessionId, uint64_t watermarkId, int limit = 0);
 
         /// @brief 统计水位线之后的记录条数
         [[nodiscard]] size_t getChatRecordCountSince(uint64_t sessionId, uint64_t watermarkId);

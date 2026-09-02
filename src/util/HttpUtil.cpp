@@ -7,8 +7,6 @@
 #include <util/HttpUtil.hpp>
 #include <utility>
 
-#include <util/CommonUtil.hpp>
-
 namespace insoulforge::HttpUtil {
     namespace {
         constexpr size_t kBodyLogMax = 400; // 日志中请求体截断长度
@@ -34,8 +32,6 @@ namespace insoulforge::HttpUtil {
             }
         }
 
-        std::string serializeBody(const Json::Value &body) { return dumpJson(body); }
-
         std::string truncate(std::string s, const size_t max) {
             if (s.size() <= max)
                 return s;
@@ -53,11 +49,11 @@ namespace insoulforge::HttpUtil {
     } // namespace
 
     drogon::Task<std::optional<drogon::HttpResponsePtr>> send(const std::string_view tag, const std::string &baseUrl,
-      const std::string &path, const drogon::HttpMethod method, const Json::Value &body, const std::string &bearerToken,
+      const std::string &path, const drogon::HttpMethod method, const json &body, const std::string &bearerToken,
       const double timeout, std::optional<uint64_t> sessionId) {
         const auto prefix = sessionId.has_value() ? fmt::format("[group_id={}] {}", *sessionId, tag) : std::string(tag);
-        // 请求体完整序列化一次：日志里截断展示，HttpTrace 里存全量供调试查询
-        auto bodyText = body.isNull() ? std::string{} : serializeBody(body);
+        // 请求体完整序列化一次：请求、HttpTrace（全量）、日志（截断）共用
+        auto bodyText = body.is_null() ? std::string{} : dumpJson(body);
         const auto bodyLog = truncate(bodyText, kBodyLogMax);
 
         spdlog::debug("{} [HTTP] {} {}{}", prefix, methodName(method), baseUrl, path);
@@ -73,13 +69,6 @@ namespace insoulforge::HttpUtil {
         trace.method = methodName(method);
         trace.url = baseUrl + path;
         trace.sessionId = sessionId;
-        trace.requestBody = std::move(bodyText);
-
-        const auto finishTrace = [&](const int statusCode, std::string responseBody) {
-            trace.status = statusCode;
-            trace.responseBody = std::move(responseBody);
-            HttpTrace::instance().append(std::move(trace));
-        };
 
         drogon::HttpClientPtr client;
         try {
@@ -87,17 +76,29 @@ namespace insoulforge::HttpUtil {
         } catch (const std::exception &e) {
             spdlog::error("{} [HTTP] 创建客户端失败: {} ({} {}{}) body={}", prefix, e.what(), methodName(method),
               baseUrl, path, bodyLog);
-            finishTrace(0, e.what());
+            trace.status = 0;
+            trace.responseBody = e.what();
+            HttpTrace::instance().append(std::move(trace));
             co_return std::nullopt;
         }
 
-        const auto req =
-          body.isNull() ? drogon::HttpRequest::newHttpRequest() : drogon::HttpRequest::newHttpJsonRequest(body);
+        const auto req = drogon::HttpRequest::newHttpRequest();
         req->setMethod(method);
         req->setPath(path);
+        if (!bodyText.empty()) {
+            req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+            req->setBody(bodyText);
+        }
         if (!bearerToken.empty()) {
             req->addHeader("Authorization", "Bearer " + bearerToken);
         }
+        trace.requestBody = std::move(bodyText);
+
+        const auto finishTrace = [&](const int statusCode, std::string responseBody) {
+            trace.status = statusCode;
+            trace.responseBody = std::move(responseBody);
+            HttpTrace::instance().append(std::move(trace));
+        };
 
         drogon::HttpResponsePtr resp;
         try {

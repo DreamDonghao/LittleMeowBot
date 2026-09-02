@@ -5,6 +5,7 @@
 #include <spdlog/spdlog.h>
 #include <storage/ConfigStore.hpp>
 #include <util/CommonUtil.hpp>
+#include <util/JsonUtil.hpp>
 
 namespace insoulforge {
     namespace {
@@ -15,21 +16,21 @@ namespace insoulforge {
         void loadLLMConfig(
           const std::string_view name, LLMApiConfig &apiConfig, LLMModelParams *modelParams = nullptr) {
             const auto cfg = ConfigStore::getLLMConfig(std::string(name));
-            if (cfg.isNull())
+            if (cfg.is_null())
                 return;
 
-            apiConfig.apiKey = trim(cfg["apiKey"].asString());
-            apiConfig.baseUrl = trim(cfg["baseUrl"].asString());
-            apiConfig.path = trim(cfg["path"].asString());
-            apiConfig.model = trim(cfg["model"].asString());
-            if (cfg.isMember("reasoningEffort")) {
-                apiConfig.reasoningEffort = cfg["reasoningEffort"].asString();
+            apiConfig.apiKey = trim(getStr(cfg, "apiKey"));
+            apiConfig.baseUrl = trim(getStr(cfg, "baseUrl"));
+            apiConfig.path = trim(getStr(cfg, "path"));
+            apiConfig.model = trim(getStr(cfg, "model"));
+            if (cfg.contains("reasoningEffort")) {
+                apiConfig.reasoningEffort = getStr(cfg, "reasoningEffort");
             }
 
             if (modelParams) {
-                modelParams->maxTokens = cfg["maxTokens"].asInt();
-                modelParams->temperature = cfg["temperature"].asDouble();
-                modelParams->topP = cfg["topP"].asDouble();
+                modelParams->maxTokens = getInt(cfg, "maxTokens");
+                modelParams->temperature = getDouble(cfg, "temperature");
+                modelParams->topP = getDouble(cfg, "topP");
             }
         }
     } // namespace
@@ -48,15 +49,15 @@ namespace insoulforge {
         loadLLMConfig("embedding", embedding);
 
         // 加载记忆配置
-        if (auto memCfg = ConfigStore::getMemoryConfig(); !memCfg.isNull()) {
-            windowTriggerCount = memCfg["windowTriggerCount"].asInt();
-            windowKeepCount = memCfg["windowKeepCount"].asInt();
-            memoryExtractMaxTokens = memCfg["memoryExtractMaxTokens"].asInt();
-            routerWindowTriggerCount = memCfg["routerWindowTriggerCount"].asInt();
-            routerWindowKeepCount = memCfg["routerWindowKeepCount"].asInt();
-            shortTermMemoryMax = memCfg["shortTermMemoryMax"].asInt();
-            longTermRecallThreshold = memCfg["longTermRecallThreshold"].asDouble();
-            longTermInjectThreshold = memCfg["longTermInjectThreshold"].asDouble();
+        if (auto memCfg = ConfigStore::getMemoryConfig(); !memCfg.is_null()) {
+            windowTriggerCount = getInt(memCfg, "windowTriggerCount");
+            windowKeepCount = getInt(memCfg, "windowKeepCount");
+            memoryExtractMaxTokens = getInt(memCfg, "memoryExtractMaxTokens");
+            routerWindowTriggerCount = getInt(memCfg, "routerWindowTriggerCount");
+            routerWindowKeepCount = getInt(memCfg, "routerWindowKeepCount");
+            shortTermMemoryMax = getInt(memCfg, "shortTermMemoryMax");
+            longTermRecallThreshold = getDouble(memCfg, "longTermRecallThreshold");
+            longTermInjectThreshold = getDouble(memCfg, "longTermInjectThreshold");
             // 兜底: 保留条数必须小于触发条数,否则触发后永远删不完
             if (windowTriggerCount <= 0)
                 windowTriggerCount = 100;
@@ -76,12 +77,12 @@ namespace insoulforge {
         }
 
         // 加载 QQ Bot 配置
-        if (auto qqCfg = ConfigStore::getQQConfig(); !qqCfg.isNull()) {
-            accessToken = trim(qqCfg["accessToken"].asString());
-            selfQQNumber = qqCfg["selfQQNumber"].asInt64();
-            qqHttpHost = trim(qqCfg["qqHttpHost"].asString());
-            if (qqCfg.isMember("botName")) {
-                botName = qqCfg["botName"].asString();
+        if (auto qqCfg = ConfigStore::getQQConfig(); !qqCfg.is_null()) {
+            accessToken = trim(getStr(qqCfg, "accessToken"));
+            selfQQNumber = getInt64(qqCfg, "selfQQNumber");
+            qqHttpHost = trim(getStr(qqCfg, "qqHttpHost"));
+            if (qqCfg.contains("botName")) {
+                botName = getStr(qqCfg, "botName");
             }
             spdlog::info("QQ Bot 配置已从数据库加载");
         }

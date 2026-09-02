@@ -5,8 +5,9 @@
 /// @details 表：llm_config（多行 LLM 配置）、settings（QQ/记忆配置以 JSON 键值存储）
 
 #pragma once
-#include <json/json.h>
 #include <string>
+
+#include <util/JsonUtil.hpp>
 
 namespace insoulforge {
     /// @brief 配置存储
@@ -15,23 +16,23 @@ namespace insoulforge {
         //                      LLM 配置
         // ============================================================
 
-        [[nodiscard]] Json::Value getLLMConfig(const std::string &name);
+        [[nodiscard]] json getLLMConfig(const std::string &name);
 
-        void saveLLMConfig(const std::string &name, const Json::Value &config);
+        void saveLLMConfig(const std::string &name, const json &config);
 
-        [[nodiscard]] Json::Value getAllLLMConfigs();
+        [[nodiscard]] json getAllLLMConfigs();
 
         // ============================================================
         //              QQ Bot / 记忆 配置（settings 存储）
         // ============================================================
 
-        [[nodiscard]] Json::Value getQQConfig();
+        [[nodiscard]] json getQQConfig();
 
-        void saveQQConfig(const Json::Value &config);
+        void saveQQConfig(const json &config);
 
-        [[nodiscard]] Json::Value getMemoryConfig();
+        [[nodiscard]] json getMemoryConfig();
 
-        void saveMemoryConfig(const Json::Value &config);
+        void saveMemoryConfig(const json &config);
 
         /// @brief 首次启动时初始化默认 LLM 配置（已存在则跳过）
         void initDefaults();

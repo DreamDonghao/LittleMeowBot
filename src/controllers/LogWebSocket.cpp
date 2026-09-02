@@ -4,17 +4,16 @@
 #include <controllers/LogWebSocket.hpp>
 #include <service/LogWebSocketManager.hpp>
 #include <spdlog/spdlog.h>
-#include <util/CommonUtil.hpp>
+#include <util/JsonUtil.hpp>
 
 namespace insoulforge {
     void LogWebSocket::handleNewConnection(
       const drogon::HttpRequestPtr &req, const drogon::WebSocketConnectionPtr &conn) {
         LogWebSocketManager::instance().addConnection(conn);
-        Json::Value welcome;
+        json welcome;
         welcome["type"] = "connected";
         welcome["message"] = "log websocket connected";
-        Json::StreamWriterBuilder builder;
-        conn->send(Json::writeString(builder, welcome));
+        conn->send(welcome.dump());
     }
 
     void LogWebSocket::handleNewMessage(
@@ -22,30 +21,29 @@ namespace insoulforge {
         if (type != drogon::WebSocketMessageType::Text) {
             return;
         }
-        Json::Value msg;
+        json msg;
         if (!tryParseJson(message, msg)) {
             spdlog::warn("日志WebSocket消息解析失败");
             return;
         }
 
-        if (msg.get("action", "") == "subscribe") {
+        if (getStr(msg, "action") == "subscribe") {
             // 线上 JSON 字段沿用 "groupId"（内部语义为 sessionId）
             LogSubscription sub;
-            sub.all = !msg.isMember("groupId") || msg["groupId"].isNull() ||
-                      (msg["groupId"].isString() && msg["groupId"].asString() == "all");
-            if (msg.isMember("groupId") && msg["groupId"].isString() && msg["groupId"].asString() == "system") {
+            const json &groupIdVal = atOrNull(msg, "groupId");
+            sub.all = groupIdVal.is_null() || (groupIdVal.is_string() && groupIdVal.get<std::string>() == "all");
+            if (groupIdVal.is_string() && groupIdVal.get<std::string>() == "system") {
                 sub.all = false;
                 sub.systemOnly = true;
             } else if (!sub.all) {
-                // sessionId 由前端以字符串形式发送（群号可能超过 JS 安全整数范围），
-                // 不能直接 asUInt64()，否则 JSON 字符串会抛 LogicError
-                sub.sessionId = jsonToUInt64(msg["groupId"]);
+                // sessionId 由前端以字符串形式发送（群号可能超过 JS 安全整数范围），需安全解析
+                sub.sessionId = jsonToUInt64(groupIdVal);
             }
-            if (msg.isMember("level") && msg["level"].isString() && msg["level"].asString() != "all") {
-                sub.level = msg["level"].asString();
+            if (atOrNull(msg, "level").is_string() && getStr(msg, "level") != "all") {
+                sub.level = getStr(msg, "level");
             }
-            if (msg.isMember("keyword") && msg["keyword"].isString()) {
-                sub.keyword = msg["keyword"].asString();
+            if (msg.contains("keyword") && atOrNull(msg, "keyword").is_string()) {
+                sub.keyword = getStr(msg, "keyword");
             }
             LogWebSocketManager::instance().updateSubscription(conn, std::move(sub));
         }

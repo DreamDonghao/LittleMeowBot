@@ -8,20 +8,22 @@
 #include <spdlog/spdlog.h>
 #include <storage/SessionStore.hpp>
 
+using insoulforge::json;
+
 namespace {
     /// @brief 构建单个工具的 OpenAI function calling 定义（缺省字段补齐为合法 schema）
-    Json::Value buildToolDef(const insoulforge::Tool &tool) {
-        Json::Value toolDef;
+    json buildToolDef(const insoulforge::Tool &tool) {
+        json toolDef;
         toolDef["type"] = "function";
         toolDef["function"]["name"] = tool.name;
         toolDef["function"]["description"] = tool.description;
-        Json::Value params = tool.parameters.isNull() ? Json::Value(Json::objectValue) : tool.parameters;
+        json params = tool.parameters.is_null() ? json::object() : tool.parameters;
         params["type"] = "object";
-        if (!params.isMember("properties")) {
-            params["properties"] = Json::Value(Json::objectValue);
+        if (!params.contains("properties")) {
+            params["properties"] = json::object();
         }
-        if (!params.isMember("required")) {
-            params["required"] = Json::Value(Json::arrayValue);
+        if (!params.contains("required")) {
+            params["required"] = json::array();
         }
         toolDef["function"]["parameters"] = params;
         return toolDef;
@@ -54,13 +56,13 @@ namespace insoulforge {
         spdlog::info("工具注册成功: {} (分类: {})", tool.name, categoryToString(category));
     }
 
-    Json::Value ToolRegistry::getAllTools() const {
-        Json::Value tools;
+    json ToolRegistry::getAllTools() const {
+        json tools = json::array();
 
         // 分类顺序固定（终端 → 信息 → 动作），类内按名称有序，保证 tools 数组跨重启稳定
         for (const auto *categoryTools: {&m_terminalTools, &m_infoTools, &m_actionTools}) {
             for (const auto &tool: *categoryTools | std::views::values) {
-                tools.append(buildToolDef(tool));
+                tools.push_back(buildToolDef(tool));
             }
         }
 
@@ -68,7 +70,7 @@ namespace insoulforge {
     }
 
     drogon::Task<std::string> ToolRegistry::executeTool(
-      const std::string &name, const Json::Value &args, uint64_t sessionId) const {
+      const std::string &name, const json &args, uint64_t sessionId) const {
         // 设置上下文
         auto &ctx = currentToolContext();
         ctx.sessionId = sessionId;

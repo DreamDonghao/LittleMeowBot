@@ -13,6 +13,8 @@
 #include <unordered_map>
 #include <utility>
 
+#include <util/JsonUtil.hpp>
+
 namespace insoulforge {
     /// @brief QQ 消息模型类
     /// @details 封装单条 QQ 群消息的解析和格式化
@@ -20,7 +22,7 @@ namespace insoulforge {
     public:
         /// @brief 构造函数，从 JSON 解析消息
         /// @param qqMessageJson OneBot 消息 JSON
-        explicit QQMessage(Json::Value qqMessageJson);
+        explicit QQMessage(json qqMessageJson);
 
         /// @brief 检查是否 @ 了机器人
         /// @return 是否 @ 了机器人
@@ -34,7 +36,7 @@ namespace insoulforge {
 
         /// @brief 获取群号
         /// @return 群号
-        [[nodiscard]] Json::UInt64 getGroupId() const;
+        [[nodiscard]] uint64_t getGroupId() const;
 
         /// @brief 私聊会话标志位：私聊会话 ID = 用户QQ号 | kPrivateSessionFlag，
         /// 与群号共享同一 uint64 键空间（群号不会用到最高位），下游存储/Map 无需区分
@@ -69,21 +71,21 @@ namespace insoulforge {
 
         /// @brief 获取机器人自己的 QQ 号
         /// @return 机器人 QQ 号
-        [[nodiscard]] Json::UInt64 getSelfQQNumber() const;
+        [[nodiscard]] uint64_t getSelfQQNumber() const;
 
         /// @brief 获取发送者 QQ 号
         /// @return 发送者 QQ 号
-        [[nodiscard]] Json::UInt64 getSenderQQNumber() const;
+        [[nodiscard]] uint64_t getSenderQQNumber() const;
 
         /// @brief 获取消息归属用户的 QQ 号（顶层 user_id 字段，缺失时回退 sender）。
         /// 私聊会话以该字段为准：定时任务合成的私聊事件中 sender 是系统账号，
         /// 会话与回复目标必须指向真实的用户 QQ
         /// @return 用户 QQ 号
-        [[nodiscard]] Json::UInt64 getUserId() const;
+        [[nodiscard]] uint64_t getUserId() const;
 
         /// @brief 获取消息 ID
         /// @return 消息 ID
-        [[nodiscard]] Json::UInt64 getMessageId() const;
+        [[nodiscard]] uint64_t getMessageId() const;
 
         /// @brief 格式化消息（异步，可能需要识别图片）
         /// @details 将消息转换为JSON格式，包含发送者、消息ID、内容等
@@ -91,7 +93,7 @@ namespace insoulforge {
 
         /// @brief 获取格式化后的消息（JSON格式）
         /// @return 格式化后的JSON字符串
-        [[nodiscard]] Json::String getFormatMessage() const;
+        [[nodiscard]] std::string getFormatMessage() const;
 
         /// @brief 获取原始消息文本（不含 CQ 码）
         /// @return 原始消息文本
@@ -100,12 +102,12 @@ namespace insoulforge {
         /// @brief 设置自定义 QQ 昵称
         /// @param qqNumber QQ 号
         /// @param qqName 自定义昵称
-        static void setCustomQQName(Json::UInt64 qqNumber, const Json::String &qqName);
+        static void setCustomQQName(uint64_t qqNumber, const std::string &qqName);
 
         /// @brief 获取 QQ 昵称
         /// @param qqNumber QQ 号
         /// @return 昵称（优先返回自定义昵称）
-        static Json::String getQQName(Json::UInt64 qqNumber);
+        static std::string getQQName(uint64_t qqNumber);
 
         /// @brief 获取昵称到QQ号的反向映射（用于@转换）
         /// @return 昵称到QQ号的映射表
@@ -114,14 +116,14 @@ namespace insoulforge {
     private:
         /// @brief 获取发送者昵称
         /// @return 发送者昵称
-        [[nodiscard]] Json::String getSenderQQName() const;
+        [[nodiscard]] std::string getSenderQQName() const;
 
-        const Json::Value m_qqMessageJson{}; ///< OneBot 消息 JSON 指针
-        Json::String m_formatMessage; ///< 格式化后的消息（JSON格式）
+        const json m_qqMessageJson; ///< OneBot 消息 JSON
+        std::string m_formatMessage; ///< 格式化后的消息（JSON格式）
         uint64_t m_replyTo{0}; ///< 引用的消息ID
         bool m_isAtMe{false}; ///< 是否 @ 了机器人
 
-        inline static std::unordered_map<Json::UInt64, Json::String> m_QQNameMap; ///< QQ 号到昵称映射
-        inline static std::unordered_map<Json::UInt64, Json::String> m_customQQNameMap; ///< 自定义昵称映射
+        inline static std::unordered_map<uint64_t, std::string> m_QQNameMap; ///< QQ 号到昵称映射
+        inline static std::unordered_map<uint64_t, std::string> m_customQQNameMap; ///< 自定义昵称映射
     };
 } // namespace insoulforge

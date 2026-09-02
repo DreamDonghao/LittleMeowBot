@@ -22,7 +22,7 @@ namespace insoulforge {
         MessageRecall::onRecordAdded(m_sessionId, content, true);
     }
 
-    std::deque<Json::Value> ChatRecordManager::getRecords() const {
+    std::deque<json> ChatRecordManager::getRecords() const {
         const uint64_t watermark = MemoryStore::getMemoryWatermark(m_sessionId);
         const auto records =
           ChatRecordStore::getChatRecordsSince(m_sessionId, watermark, Config::instance().windowTriggerCount);

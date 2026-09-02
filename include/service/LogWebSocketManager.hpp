@@ -4,12 +4,13 @@
 #pragma once
 
 #include <drogon/WebSocketConnection.h>
-#include <json/value.h>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+
+#include <util/JsonUtil.hpp>
 
 namespace insoulforge {
     struct LogSubscription {
@@ -30,14 +31,14 @@ namespace insoulforge {
 
         void updateSubscription(const drogon::WebSocketConnectionPtr &conn, LogSubscription subscription);
 
-        void pushLog(const Json::Value &log);
+        void pushLog(const json &log);
 
-        void broadcastStatus(const Json::Value &status);
+        void broadcastStatus(const json &status);
 
     private:
         LogWebSocketManager() = default;
 
-        [[nodiscard]] static bool matches(const LogSubscription &subscription, const Json::Value &log);
+        [[nodiscard]] static bool matches(const LogSubscription &subscription, const json &log);
 
         std::mutex m_mutex;
         std::unordered_set<drogon::WebSocketConnectionPtr> m_connections;

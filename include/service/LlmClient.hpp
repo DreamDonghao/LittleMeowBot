@@ -10,10 +10,11 @@
 #pragma once
 #include <drogon/HttpResponse.h>
 #include <drogon/utils/coroutine.h>
-#include <json/value.h>
 #include <optional>
 #include <string>
 #include <vector>
+
+#include <util/JsonUtil.hpp>
 
 namespace insoulforge {
     struct LLMApiConfig;
@@ -24,12 +25,12 @@ namespace insoulforge {
 namespace insoulforge::LlmClient {
     /// @brief 构建 OpenAI 兼容 chat 请求体（model/messages/采样参数；reasoningEffort 非空才附带）
     /// @param tools 工具定义；非 null 时附带 tools 字段
-    Json::Value buildChatRequestBody(const LLMApiConfig &api, const LLMModelParams &params, const Json::Value &messages,
-      const Json::Value &tools = Json::Value());
+    json buildChatRequestBody(
+      const LLMApiConfig &api, const LLMModelParams &params, const json &messages, const json &tools = {});
 
-    /// @brief 校验 chat 响应：200 + JSON body + 含 choices 字段
+    /// @brief 校验 chat 响应：200 + JSON body + choices 为非空数组
     /// @return 合法时返回完整响应 JSON；否则 nullopt（错误日志由调用方按上下文输出）
-    std::optional<Json::Value> validChatJson(const drogon::HttpResponsePtr &resp);
+    std::optional<json> validChatJson(const drogon::HttpResponsePtr &resp);
 
     /// @brief 请求 LLM API（使用 Executor 配置）
     /// @param messages 消息列表
@@ -39,7 +40,7 @@ namespace insoulforge::LlmClient {
     /// @param role
     /// @param sessionId
     /// @return 响应文本，失败返回 std::nullopt
-    drogon::Task<std::optional<std::string>> requestLLM(const Json::Value &messages, double temperature = 1.35,
+    drogon::Task<std::optional<std::string>> requestLLM(const json &messages, double temperature = 1.35,
       double top_p = 0.92, int max_tokens = 1024, const std::string &role = "memory",
       std::optional<uint64_t> sessionId = std::nullopt);
 
@@ -48,7 +49,7 @@ namespace insoulforge::LlmClient {
     /// @param model 模型名
     /// @param role 角色名（router/executor/executorThinking/memory/image/embedding）
     /// @param sessionId
-    void logUsage(const Json::Value &responseJson, const std::string &model, const std::string &role,
+    void logUsage(const json &responseJson, const std::string &model, const std::string &role,
       std::optional<uint64_t> sessionId = std::nullopt);
 
     /// @brief 请求 Embedding API（使用 Embedding 配置）

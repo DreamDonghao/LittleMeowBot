@@ -25,17 +25,16 @@ namespace insoulforge::MessageService {
     /// @param groupId 群号
     /// @param message 消息内容
     /// @param chatRecords 聊天记录管理器（用于更新记录）
-    drogon::Task<> sendGroupMsg(Json::UInt64 groupId, const std::string &message, const ChatRecordManager &chatRecords);
+    drogon::Task<> sendGroupMsg(uint64_t groupId, const std::string &message, const ChatRecordManager &chatRecords);
 
     /// @brief 发送私聊消息
     /// @param userId 用户QQ号
     /// @param message 消息内容
     /// @param chatRecords 聊天记录管理器（用于更新记录）
-    drogon::Task<> sendPrivateMsg(
-      Json::UInt64 userId, const std::string &message, const ChatRecordManager &chatRecords);
+    drogon::Task<> sendPrivateMsg(uint64_t userId, const std::string &message, const ChatRecordManager &chatRecords);
 
     /// @brief 获取并更新会话名称（群聊为群名，私聊为 QQ 昵称）
     /// @param sessionId 会话 ID（私聊带标志位）
     /// @return 会话名称
-    [[nodiscard]] drogon::Task<std::string> fetchAndUpdateSessionName(Json::UInt64 sessionId);
+    [[nodiscard]] drogon::Task<std::string> fetchAndUpdateSessionName(uint64_t sessionId);
 } // namespace insoulforge::MessageService

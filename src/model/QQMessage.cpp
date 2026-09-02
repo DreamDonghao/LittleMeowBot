@@ -6,7 +6,6 @@
 #include <model/QQMessage.hpp>
 #include <service/LlmClient.hpp>
 #include <spdlog/spdlog.h>
-#include <util/CommonUtil.hpp>
 #include <util/HttpUtil.hpp>
 #include <util/Logger.hpp>
 #include <utility>
@@ -19,7 +18,7 @@ namespace insoulforge {
             LLMApiConfig api = config.image;
             api.reasoningEffort.clear();
             constexpr LLMModelParams params{.maxTokens = 300, .temperature = 0.7, .topP = 0.92};
-            const Json::Value body = LlmClient::buildChatRequestBody(api, params,
+            const json body = LlmClient::buildChatRequestBody(api, params,
               parseJson(fmt::format(
                 R"([{{"role":"user","content":[
                     {{"type":"image_url","image_url":{{"url":"{}"}}}},
@@ -33,8 +32,8 @@ namespace insoulforge {
                 co_return "无法识别图片";
             }
 
-            const auto json = LlmClient::validChatJson(*resp);
-            if (!json) {
+            const auto respJson = LlmClient::validChatJson(*resp);
+            if (!respJson) {
                 if ((*resp)->getStatusCode() != drogon::k200OK) {
                     Logger::session(groupId).error(
                       "[Image] 图像描述请求失败: status={}", static_cast<int>((*resp)->getStatusCode()));
@@ -44,15 +43,16 @@ namespace insoulforge {
                 co_return "图片识别失败";
             }
 
-            LlmClient::logUsage(*json, config.image.model, "image", groupId);
+            LlmClient::logUsage(*respJson, config.image.model, "image", groupId);
 
-            co_return (*json)["choices"][0]["message"]["content"].asString();
+            const json &message = atOrNull((*respJson)["choices"][0], "message");
+            co_return jsonToString(atOrNull(message, "content"));
         }
     } // namespace
 
-    QQMessage::QQMessage(Json::Value qqMessageJson) : m_qqMessageJson(std::move(qqMessageJson)) {
-        const Json::UInt64 qqNumber = getSenderQQNumber();
-        const Json::UInt64 selfQQ = getSelfQQNumber();
+    QQMessage::QQMessage(json qqMessageJson) : m_qqMessageJson(std::move(qqMessageJson)) {
+        const uint64_t qqNumber = getSenderQQNumber();
+        const uint64_t selfQQ = getSelfQQNumber();
         if (m_customQQNameMap.contains(qqNumber)) {
             m_QQNameMap[qqNumber] = m_customQQNameMap[qqNumber];
         } else {
@@ -63,13 +63,13 @@ namespace insoulforge {
             }
             m_QQNameMap[qqNumber] = name;
         }
-        for (const auto &item: m_qqMessageJson["message"]) {
-            if (item["type"] == "at") {
-                if (parseUInt64(item["data"]["qq"].asString()) == getSelfQQNumber()) {
+        for (const auto &item: atOrNull(m_qqMessageJson, "message")) {
+            if (atOrNull(item, "type") == "at") {
+                if (parseUInt64(jsonToString(atOrNull(atOrNull(item, "data"), "qq"))) == getSelfQQNumber()) {
                     m_isAtMe = true;
                 }
-            } else if (item["type"] == "reply") {
-                m_replyTo = parseUInt64(item["data"]["id"].asString());
+            } else if (atOrNull(item, "type") == "reply") {
+                m_replyTo = parseUInt64(jsonToString(atOrNull(atOrNull(item, "data"), "id")));
             }
         }
     }
@@ -80,9 +80,9 @@ namespace insoulforge {
         return m_isAtMe || isPrivate() || getSenderQQNumber() == kSystemAccountId;
     }
 
-    Json::UInt64 QQMessage::getGroupId() const { return jsonToUInt64(m_qqMessageJson["group_id"]); }
+    uint64_t QQMessage::getGroupId() const { return jsonToUInt64(atOrNull(m_qqMessageJson, "group_id")); }
 
-    bool QQMessage::isPrivate() const { return m_qqMessageJson["message_type"].asString() == "private"; }
+    bool QQMessage::isPrivate() const { return jsonToString(atOrNull(m_qqMessageJson, "message_type")) == "private"; }
 
     uint64_t QQMessage::getSessionId() const {
         if (isPrivate())
@@ -90,15 +90,21 @@ namespace insoulforge {
         return getGroupId();
     }
 
-    Json::UInt64 QQMessage::getUserId() const { return jsonToUInt64(m_qqMessageJson["user_id"], getSenderQQNumber()); }
+    uint64_t QQMessage::getUserId() const {
+        return jsonToUInt64(atOrNull(m_qqMessageJson, "user_id"), getSenderQQNumber());
+    }
 
-    Json::UInt64 QQMessage::getSelfQQNumber() const { return jsonToUInt64(m_qqMessageJson["self_id"]); }
+    uint64_t QQMessage::getSelfQQNumber() const { return jsonToUInt64(atOrNull(m_qqMessageJson, "self_id")); }
 
-    Json::UInt64 QQMessage::getSenderQQNumber() const { return jsonToUInt64(m_qqMessageJson["sender"]["user_id"]); }
+    uint64_t QQMessage::getSenderQQNumber() const {
+        return jsonToUInt64(atOrNull(atOrNull(m_qqMessageJson, "sender"), "user_id"));
+    }
 
-    Json::String QQMessage::getSenderQQName() const { return m_qqMessageJson["sender"]["nickname"].asString(); }
+    std::string QQMessage::getSenderQQName() const {
+        return jsonToString(atOrNull(atOrNull(m_qqMessageJson, "sender"), "nickname"));
+    }
 
-    Json::UInt64 QQMessage::getMessageId() const { return jsonToUInt64(m_qqMessageJson["message_id"]); }
+    uint64_t QQMessage::getMessageId() const { return jsonToUInt64(atOrNull(m_qqMessageJson, "message_id")); }
 
     drogon::Task<> QQMessage::formatMessage() {
         const uint64_t senderQQ = getSenderQQNumber();
@@ -108,28 +114,30 @@ namespace insoulforge {
 
         // 构建消息内容
         std::string textContent;
-        Json::Value images(Json::arrayValue);
-        for (const auto &item: m_qqMessageJson["message"]) {
-            if (item["type"] == "text") {
-                textContent += item["data"]["text"].asString();
-            } else if (item["type"] == "at") {
-                const uint64_t atQQ = parseUInt64(item["data"]["qq"].asString());
+        json images = json::array();
+        for (const auto &item: atOrNull(m_qqMessageJson, "message")) {
+            if (atOrNull(item, "type") == "text") {
+                textContent += jsonToString(atOrNull(atOrNull(item, "data"), "text"));
+            } else if (atOrNull(item, "type") == "at") {
+                const uint64_t atQQ = parseUInt64(jsonToString(atOrNull(atOrNull(item, "data"), "qq")));
                 textContent += "@[" + std::string(getQQName(atQQ)) + ":" + std::to_string(atQQ) + "]";
-            } else if (item["type"] == "face") {
-                textContent += item["data"]["raw"]["faceText"].asString();
-            } else if (item["type"] == "image") {
+            } else if (atOrNull(item, "type") == "face") {
+                textContent += jsonToString(atOrNull(atOrNull(atOrNull(item, "data"), "raw"), "faceText"));
+            } else if (atOrNull(item, "type") == "image") {
                 textContent +=
-                  "[图片：" + co_await getImageDescribe(item["data"]["url"].asString(), getSessionId()) + "]";
-                Json::Value imgInfo;
-                imgInfo["file"] = item["data"].get("file", "").asString();
-                imgInfo["url"] = item["data"].get("url", "").asString();
-                images.append(imgInfo);
+                  "[图片：" +
+                  co_await getImageDescribe(jsonToString(atOrNull(atOrNull(item, "data"), "url")), getSessionId()) +
+                  "]";
+                json imgInfo;
+                imgInfo["file"] = getStr(atOrNull(item, "data"), "file");
+                imgInfo["url"] = getStr(atOrNull(item, "data"), "url");
+                images.push_back(imgInfo);
             }
             // reply类型不在这里处理，通过reply_to字段传递
         }
 
         // 构建JSON格式消息
-        Json::Value msgJson;
+        json msgJson;
         msgJson["time"] = timeStr;
         msgJson["sender"]["name"] = senderName;
         msgJson["sender"]["qq"] = std::to_string(senderQQ);
@@ -141,7 +149,7 @@ namespace insoulforge {
         if (m_replyTo > 0) {
             msgJson["reply_to"] = std::to_string(m_replyTo);
         } else {
-            msgJson["reply_to"] = Json::nullValue;
+            msgJson["reply_to"] = nullptr;
         }
 
         // 紧凑JSON输出（不转义Unicode）
@@ -149,16 +157,16 @@ namespace insoulforge {
         co_return;
     }
 
-    Json::String QQMessage::getFormatMessage() const { return m_formatMessage; }
+    std::string QQMessage::getFormatMessage() const { return m_formatMessage; }
 
-    std::string QQMessage::getRawMessage() const { return m_qqMessageJson["raw_message"].asString(); }
+    std::string QQMessage::getRawMessage() const { return jsonToString(atOrNull(m_qqMessageJson, "raw_message")); }
 
-    void QQMessage::setCustomQQName(const Json::UInt64 qqNumber, const Json::String &qqName) {
+    void QQMessage::setCustomQQName(const uint64_t qqNumber, const std::string &qqName) {
         m_customQQNameMap[qqNumber] = qqName;
         m_QQNameMap[qqNumber] = qqName;
     }
 
-    Json::String QQMessage::getQQName(const Json::UInt64 qqNumber) {
+    std::string QQMessage::getQQName(const uint64_t qqNumber) {
         if (m_QQNameMap.contains(qqNumber)) {
             return m_QQNameMap[qqNumber];
         }

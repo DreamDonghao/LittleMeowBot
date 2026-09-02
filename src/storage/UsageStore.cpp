@@ -7,6 +7,7 @@
 #include <storage/Database.hpp>
 #include <storage/Statement.hpp>
 #include <storage/UsageStore.hpp>
+#include <util/JsonUtil.hpp>
 
 namespace insoulforge {
     namespace UsageStore {
@@ -26,10 +27,10 @@ namespace insoulforge {
             stmt.exec();
         }
 
-        Json::Value getUsageSummary(const int days) {
+        json getUsageSummary(const int days) {
             const auto &db = Database::instance();
             std::shared_lock lock(db.mutex());
-            Json::Value result;
+            json result;
             const std::string sinceDate = fmt::format("-{} days", days);
 
             // 汇总
@@ -65,14 +66,14 @@ namespace insoulforge {
 
             // 今日按角色
             {
-                Json::Value todayByRole(Json::arrayValue);
+                json todayByRole = json::array();
                 const Statement stmt(db.handle(),
                   "SELECT role, MAX(model), COUNT(*), COALESCE(SUM(prompt_tokens),0), "
                   "COALESCE(SUM(completion_tokens),0), COALESCE(SUM(total_tokens),0), COALESCE(SUM(cached_tokens),0) "
                   "FROM llm_usage WHERE date(created_at, 'localtime') = date('now', 'localtime') "
                   "GROUP BY role ORDER BY SUM(total_tokens) DESC");
                 while (stmt.step()) {
-                    Json::Value item;
+                    json item;
                     item["role"] = stmt.getText(0);
                     item["model"] = stmt.getText(1);
                     item["calls"] = stmt.getInt(2);
@@ -80,14 +81,14 @@ namespace insoulforge {
                     item["completion"] = stmt.getInt64(4);
                     item["total"] = stmt.getInt64(5);
                     item["cached"] = stmt.getInt64(6);
-                    todayByRole.append(item);
+                    todayByRole.push_back(item);
                 }
                 result["today_by_role"] = todayByRole;
             }
 
             // 按角色
             {
-                Json::Value byRole(Json::arrayValue);
+                json byRole = json::array();
                 const Statement stmt(db.handle(),
                   "SELECT role, MAX(model), COUNT(*), COALESCE(SUM(prompt_tokens),0), "
                   "COALESCE(SUM(completion_tokens),0), COALESCE(SUM(total_tokens),0), COALESCE(SUM(cached_tokens),0) "
@@ -95,7 +96,7 @@ namespace insoulforge {
                   "GROUP BY role ORDER BY SUM(total_tokens) DESC");
                 stmt.bind(1, sinceDate);
                 while (stmt.step()) {
-                    Json::Value item;
+                    json item;
                     item["role"] = stmt.getText(0);
                     item["model"] = stmt.getText(1);
                     item["calls"] = stmt.getInt(2);
@@ -103,25 +104,25 @@ namespace insoulforge {
                     item["completion"] = stmt.getInt64(4);
                     item["total"] = stmt.getInt64(5);
                     item["cached"] = stmt.getInt64(6);
-                    byRole.append(item);
+                    byRole.push_back(item);
                 }
                 result["by_role"] = byRole;
             }
 
             // 按天
             {
-                Json::Value byDay(Json::arrayValue);
+                json byDay = json::array();
                 const Statement stmt(db.handle(),
                   "SELECT date(created_at, 'localtime') AS day, COUNT(*), COALESCE(SUM(total_tokens),0) "
                   "FROM llm_usage WHERE created_at >= datetime('now', 'localtime', ?) "
                   "GROUP BY day ORDER BY day");
                 stmt.bind(1, sinceDate);
                 while (stmt.step()) {
-                    Json::Value item;
+                    json item;
                     item["day"] = stmt.getText(0);
                     item["calls"] = stmt.getInt(1);
                     item["total"] = stmt.getInt64(2);
-                    byDay.append(item);
+                    byDay.push_back(item);
                 }
                 result["by_day"] = byDay;
             }
@@ -129,16 +130,16 @@ namespace insoulforge {
             return result;
         }
 
-        Json::Value getRecentUsage(const int limit) {
+        json getRecentUsage(const int limit) {
             const auto &db = Database::instance();
             std::shared_lock lock(db.mutex());
-            Json::Value result(Json::arrayValue);
+            json result = json::array();
             const Statement stmt(db.handle(), "SELECT datetime(created_at, 'localtime') AS time, role, model, "
                                               "prompt_tokens, completion_tokens, total_tokens, cached_tokens "
                                               "FROM llm_usage ORDER BY id DESC LIMIT ?");
             stmt.bind(1, limit);
             while (stmt.step()) {
-                Json::Value item;
+                json item;
                 item["time"] = stmt.getText(0);
                 item["role"] = stmt.getText(1);
                 item["model"] = stmt.getText(2);
@@ -146,7 +147,7 @@ namespace insoulforge {
                 item["completion"] = stmt.getInt(4);
                 item["total"] = stmt.getInt(5);
                 item["cached"] = stmt.getInt(6);
-                result.append(item);
+                result.push_back(item);
             }
             return result;
         }

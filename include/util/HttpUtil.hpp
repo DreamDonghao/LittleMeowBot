@@ -12,10 +12,11 @@
 #include <cstdint>
 #include <drogon/HttpClient.h>
 #include <drogon/utils/coroutine.h>
-#include <json/value.h>
 #include <optional>
 #include <string>
 #include <string_view>
+
+#include <util/JsonUtil.hpp>
 
 namespace insoulforge::HttpUtil {
     /// @brief 发送 HTTP 请求，记录请求内容与异常
@@ -23,11 +24,11 @@ namespace insoulforge::HttpUtil {
     /// @param baseUrl 服务器地址（含协议与端口，如 http://127.0.0.1:3001）
     /// @param path 请求路径，如 /v1/chat/completions
     /// @param method HTTP 方法
-    /// @param body JSON 请求体（Json::nullValue 表示无 body，例如 GET）
+    /// @param body JSON 请求体（null 表示无 body，例如 GET）
     /// @param bearerToken Bearer 认证 token（空串则不添加 Authorization 头）
     /// @param timeout 超时秒数
     /// @return 响应；网络异常（含地址解析失败、超时）返回 std::nullopt
     drogon::Task<std::optional<drogon::HttpResponsePtr>> send(std::string_view tag, const std::string &baseUrl,
-      const std::string &path, drogon::HttpMethod method, const Json::Value &body, const std::string &bearerToken,
+      const std::string &path, drogon::HttpMethod method, const json &body, const std::string &bearerToken,
       double timeout, std::optional<uint64_t> sessionId = std::nullopt);
 } // namespace insoulforge::HttpUtil

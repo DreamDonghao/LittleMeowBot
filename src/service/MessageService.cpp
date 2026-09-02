@@ -9,7 +9,7 @@
 #include <service/OneBotClient.hpp>
 #include <service/WebSocketManager.hpp>
 #include <storage/SessionStore.hpp>
-#include <util/CommonUtil.hpp>
+#include <util/JsonUtil.hpp>
 #include <util/Logger.hpp>
 
 namespace insoulforge {
@@ -75,13 +75,13 @@ namespace insoulforge {
             const std::string timeStr = currentDateTime();
 
             // 构造JSON格式的消息
-            Json::Value msgJson;
+            json msgJson;
             msgJson["time"] = timeStr;
             msgJson["sender"]["name"] = config.botName + "(我)";
             msgJson["sender"]["qq"] = "self";
             msgJson["message_id"] = std::to_string(*messageId);
             msgJson["text"] = processedMessage;
-            msgJson["reply_to"] = Json::nullValue;
+            msgJson["reply_to"] = nullptr;
 
             const std::string formattedMsg = dumpJson(msgJson);
 
@@ -97,7 +97,7 @@ namespace insoulforge {
     } // namespace
 
     drogon::Task<> MessageService::sendGroupMsg(
-      Json::UInt64 groupId, const std::string &message, const ChatRecordManager &chatRecords) {
+      const uint64_t groupId, const std::string &message, const ChatRecordManager &chatRecords) {
         // 转换 @[QQ:xxx] 为 CQ 码
         const std::string processedMessage = convertAtToCQCode(message);
         co_await afterSendMessage(
@@ -105,29 +105,26 @@ namespace insoulforge {
     }
 
     drogon::Task<> MessageService::sendPrivateMsg(
-      Json::UInt64 userId, const std::string &message, const ChatRecordManager &chatRecords) {
+      const uint64_t userId, const std::string &message, const ChatRecordManager &chatRecords) {
         const std::string processedMessage = convertAtToCQCode(message);
         co_await afterSendMessage(
           OneBotClient::sendPrivateMsg(userId, processedMessage, userId | QQMessage::kPrivateSessionFlag), chatRecords,
           processedMessage, userId | QQMessage::kPrivateSessionFlag, "私聊消息");
     }
 
-    drogon::Task<std::string> MessageService::fetchAndUpdateSessionName(Json::UInt64 sessionId) {
+    drogon::Task<std::string> MessageService::fetchAndUpdateSessionName(const uint64_t sessionId) {
         std::string name;
         if (QQMessage::isPrivateSession(sessionId)) {
             // 私聊会话取 QQ 昵称，复用 groupName 列存储
             const uint64_t userId = sessionId & ~QQMessage::kPrivateSessionFlag;
             const auto resp = co_await OneBotClient::getStrangerInfo(userId, sessionId);
-            if (resp.isMember("data") && resp["data"].isMember("nickname")) {
-                name = resp["data"]["nickname"].asString();
-                SessionStore::updateSessionName(sessionId, name);
-            }
+            name = getStr(atOrNull(resp, "data"), "nickname");
         } else {
             const auto result = co_await OneBotClient::getGroupInfo(sessionId);
-            if (result.isMember("data") && result["data"].isMember("group_name")) {
-                name = result["data"]["group_name"].asString();
-                SessionStore::updateSessionName(sessionId, name);
-            }
+            name = getStr(atOrNull(result, "data"), "group_name");
+        }
+        if (!name.empty()) {
+            SessionStore::updateSessionName(sessionId, name);
         }
 
         co_return name;

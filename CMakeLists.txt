@@ -15,10 +15,10 @@ endif ()
 find_package(spdlog REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 
+find_package(nlohmann_json CONFIG QUIET)
+
 # 尽量静态链接：能找到系统静态库（.a）就直接链，找不到再回退到 Drogon 传入的动态依赖
 find_library(SQLITE3_STATIC_LIB NAMES libsqlite3.a)
-find_library(JSONCPP_STATIC_LIB NAMES libjsoncpp.a)
-find_path(JSONCPP_INCLUDE_DIR NAMES json/value.h)
 
 # 集中所有源文件（src 目录）
 file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS src/*.cpp)
@@ -46,13 +46,20 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
         SQLite3_lib
 )
 
-if (SQLITE3_STATIC_LIB)
-    target_link_libraries(${PROJECT_NAME} PRIVATE ${SQLITE3_STATIC_LIB})
+# nlohmann/json（header-only）：优先 CMake 包，Homebrew 纯头文件安装时退化为包含目录
+if (nlohmann_json_FOUND)
+    target_link_libraries(${PROJECT_NAME} PRIVATE nlohmann_json::nlohmann_json)
+else ()
+    find_path(NLOHMANN_JSON_INCLUDE_DIR NAMES nlohmann/json.hpp
+            HINTS /opt/homebrew/include /usr/local/include /usr/include)
+    if (NOT NLOHMANN_JSON_INCLUDE_DIR)
+        message(FATAL_ERROR "未找到 nlohmann/json.hpp：macOS 执行 `brew install nlohmann-json`，Debian/Ubuntu 执行 `apt install nlohmann-json3-dev`")
+    endif ()
+    target_include_directories(${PROJECT_NAME} PRIVATE ${NLOHMANN_JSON_INCLUDE_DIR})
 endif ()
 
-if (JSONCPP_STATIC_LIB)
-    target_include_directories(${PROJECT_NAME} PRIVATE ${JSONCPP_INCLUDE_DIR})
-    target_link_libraries(${PROJECT_NAME} PRIVATE ${JSONCPP_STATIC_LIB})
+if (SQLITE3_STATIC_LIB)
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${SQLITE3_STATIC_LIB})
 endif ()
 
 # 前端构建 (Vue3) - 前端源码变化时自动重新构建，输出到 build/insoulforge/public

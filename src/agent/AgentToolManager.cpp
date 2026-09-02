@@ -21,6 +21,7 @@
 #include <tuple>
 #include <util/CommonUtil.hpp>
 #include <util/HttpUtil.hpp>
+#include <util/JsonUtil.hpp>
 #include <util/Logger.hpp>
 
 #include <service/LongTermMemory.hpp>
@@ -33,33 +34,33 @@
 namespace insoulforge {
     namespace {
         /// @brief 构建 {"type":"object"} 形式的参数 schema（properties/required 初始化为空容器）
-        Json::Value objectSchema() {
-            Json::Value schema(Json::objectValue);
+        json objectSchema() {
+            json schema;
             schema["type"] = "object";
-            schema["properties"] = Json::Value(Json::objectValue);
-            schema["required"] = Json::Value(Json::arrayValue);
+            schema["properties"] = json::object();
+            schema["required"] = json::array();
             return schema;
         }
 
-        void addStringParam(Json::Value &schema, const char *name, const std::string &description) {
+        void addStringParam(json &schema, const char *name, const std::string &description) {
             schema["properties"][name]["type"] = "string";
             schema["properties"][name]["description"] = description;
         }
 
-        void addIntParam(Json::Value &schema, const char *name, const std::string &description) {
+        void addIntParam(json &schema, const char *name, const std::string &description) {
             schema["properties"][name]["type"] = "integer";
             schema["properties"][name]["description"] = description;
         }
 
-        void addBoolParam(Json::Value &schema, const char *name, const std::string &description) {
+        void addBoolParam(json &schema, const char *name, const std::string &description) {
             schema["properties"][name]["type"] = "boolean";
             schema["properties"][name]["description"] = description;
         }
 
-        void requireParam(Json::Value &schema, const char *name) { schema["required"].append(name); }
+        void requireParam(json &schema, const char *name) { schema["required"].push_back(name); }
 
         /// @brief 读取字符串参数（缺失按空串处理）
-        std::string argString(const Json::Value &args, const char *key) { return args.get(key, "").asString(); }
+        std::string argString(const json &args, const char *key) { return getStr(args, key); }
 
         // ========== 终端工具 ==========
 
@@ -70,23 +71,23 @@ namespace insoulforge {
             registry.registerTool(
               {.name = "no_reply",
                 .description = "决定不回复消息。当：话题已参与过、没人问你、刚说过话、纯表情刷屏时使用。",
-                .parameters = Json::Value(),
-                .handler = [](const Json::Value &) -> drogon::Task<std::string> { co_return "ok"; }},
+                .parameters = json(),
+                .handler = [](const json &) -> drogon::Task<std::string> { co_return "ok"; }},
               ToolCategory::TERMINAL);
 
             // reply
-            Json::Value replyParams = objectSchema();
+            json replyParams = objectSchema();
             addStringParam(replyParams, "content", "要发送的回复内容");
             requireParam(replyParams, "content");
             registry.registerTool(
               {.name = "reply",
                 .description = "回复消息。当：有人开启新的话题、有人问你、有人@你、有人求助时使用。",
                 .parameters = replyParams,
-                .handler = [](const Json::Value &) -> drogon::Task<std::string> { co_return "ok"; }},
+                .handler = [](const json &) -> drogon::Task<std::string> { co_return "ok"; }},
               ToolCategory::TERMINAL);
 
             // reply_with_quote - 引用回复（TERMINAL，直接发送）
-            Json::Value quoteReplyParams = objectSchema();
+            json quoteReplyParams = objectSchema();
             addStringParam(quoteReplyParams, "content", "要发送的回复内容");
             addStringParam(quoteReplyParams, "message_id", "要引用的消息ID（从聊天记录JSON的message_id字段获取）");
             requireParam(quoteReplyParams, "content");
@@ -97,7 +98,7 @@ namespace insoulforge {
                                "天记录格式为JSON：{\"message_id\":\"12345\",\"text\":\"...\"}，用 "
                                "message_id 字段的值作为参数。这是终端工具，调用后直接发送。",
                 .parameters = quoteReplyParams,
-                .handler = [](const Json::Value &) -> drogon::Task<std::string> { co_return "ok"; }},
+                .handler = [](const json &) -> drogon::Task<std::string> { co_return "ok"; }},
               ToolCategory::TERMINAL);
         }
 
@@ -109,11 +110,10 @@ namespace insoulforge {
             // list_stickers
             registry.registerTool({.name = "list_stickers",
                                     .description = "获取QQ收藏表情中所有可用的表情名称列表。",
-                                    .parameters = Json::Value(),
-                                    .handler = [](const Json::Value &) -> drogon::Task<std::string> {
+                                    .parameters = json(),
+                                    .handler = [](const json &) -> drogon::Task<std::string> {
                                         const auto sessionId = currentToolContext().sessionId;
-                                        const Json::Value emojis =
-                                          co_await AgentToolManager::fetchFavoriteEmojis(sessionId);
+                                        const json emojis = co_await AgentToolManager::fetchFavoriteEmojis(sessionId);
                                         if (emojis.empty()) {
                                             co_return std::string("表情库为空（QQ收藏表情列表获取失败或没有收藏表情）");
                                         }
@@ -122,7 +122,7 @@ namespace insoulforge {
                                         for (const auto &emoji: emojis) {
                                             if (!first)
                                                 result += ", ";
-                                            result += emoji["name"].asString();
+                                            result += getStr(emoji, "name");
                                             first = false;
                                         }
                                         co_return result;
@@ -130,7 +130,7 @@ namespace insoulforge {
               ToolCategory::INFORMATION);
 
             // recall_memory
-            Json::Value memoryParams = objectSchema();
+            json memoryParams = objectSchema();
             addStringParam(memoryParams, "query", "要回忆的内容关键词，如某人的喜好、某群的习惯等");
             requireParam(memoryParams, "query");
             registry.registerTool(
@@ -138,7 +138,7 @@ namespace insoulforge {
                 .description = "从长期记忆库中回忆信息（如果需要可以先获取当前群聊的名称）。当想不起某人"
                                "喜好、某群习惯、过去的约定时使用。模拟人类回忆过程。",
                 .parameters = memoryParams,
-                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
+                .handler = [](const json &args) -> drogon::Task<std::string> {
                     const std::string query = argString(args, "query");
                     if (query.empty())
                         co_return std::string("请提供回忆关键词");
@@ -155,8 +155,8 @@ namespace insoulforge {
             // get_group_name
             registry.registerTool({.name = "get_group_name",
                                     .description = "获取当前群聊的名称。当需要知道群名或确认当前群时使用。",
-                                    .parameters = Json::Value(),
-                                    .handler = [](const Json::Value &) -> drogon::Task<std::string> {
+                                    .parameters = json(),
+                                    .handler = [](const json &) -> drogon::Task<std::string> {
                                         const auto &[sessionId, groupName] = currentToolContext();
                                         if (QQMessage::isPrivateSession(sessionId)) {
                                             co_return std::string("当前是私聊，没有群名");
@@ -178,7 +178,7 @@ namespace insoulforge {
             auto &registry = ToolRegistry::instance();
 
             // send_face
-            Json::Value faceParams = objectSchema();
+            json faceParams = objectSchema();
             addIntParam(faceParams, "id",
               "表情ID，常用: 1-发呆, 2-撇嘴, 3-色, 4-发呆, 5-得意, 6-流泪, 7-害羞, 8-闭嘴, 9-睡, 10-大哭, 11-尴尬, "
               "12-发怒, 13-调皮, 14-呲牙, 15-惊讶, 16-难过, 17-酷, 18-冷汗, 19-抓狂, 20-吐, 21-偷笑, 22-可爱, "
@@ -188,21 +188,21 @@ namespace insoulforge {
             registry.registerTool({.name = "send_face",
                                     .description = "获取QQ原生表情的CQ码。返回的CQ码必须复制到reply的content中。",
                                     .parameters = faceParams,
-                                    .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
-                                        int id = args.isMember("id") ? args["id"].asInt() : 1;
+                                    .handler = [](const json &args) -> drogon::Task<std::string> {
+                                        const int id = getInt(args, "id", 1);
                                         co_return fmt::format("[CQ:face,id={}]", id);
                                     }},
               ToolCategory::ACTION);
 
             // send_image
-            Json::Value imageParams = objectSchema();
+            json imageParams = objectSchema();
             addStringParam(imageParams, "url", "图片URL地址");
             requireParam(imageParams, "url");
             registry.registerTool(
               {.name = "send_image",
                 .description = "获取网络图片的CQ码。提供图片URL。返回的CQ码必须复制到reply的content中。",
                 .parameters = imageParams,
-                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
+                .handler = [](const json &args) -> drogon::Task<std::string> {
                     std::string url = argString(args, "url");
                     if (url.empty())
                         co_return std::string("请提供图片URL");
@@ -217,7 +217,7 @@ namespace insoulforge {
             auto &registry = ToolRegistry::instance();
 
             // send_sticker
-            Json::Value stickerParams = objectSchema();
+            json stickerParams = objectSchema();
             addStringParam(stickerParams, "name", "表情名称（先调list_stickers查看可用名称）");
             requireParam(stickerParams, "name");
             registry.registerTool(
@@ -226,35 +226,35 @@ namespace insoulforge {
                   "获取QQ收藏表情的CQ码。先调list_"
                   "stickers查看可用表情名，再用此工具。返回的CQ码必须复制到reply的content中，否则表情不会显示。",
                 .parameters = stickerParams,
-                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
+                .handler = [](const json &args) -> drogon::Task<std::string> {
                     std::string name = argString(args, "name");
                     if (name.empty())
                         co_return std::string("请提供表情名称");
 
                     const auto sessionId = currentToolContext().sessionId;
-                    Json::Value emoji = co_await AgentToolManager::findFavoriteEmoji(name, sessionId);
-                    if (emoji.isNull()) {
+                    json emoji = co_await AgentToolManager::findFavoriteEmoji(name, sessionId);
+                    if (emoji.is_null()) {
                         co_return fmt::format("表情'{}'不存在，先调list_stickers查看可用表情", name);
                     }
 
                     // 商城表情（字段齐全）走 mface；个人收藏表情走 image+sub_type=1（QQ 渲染为表情）
-                    if (emoji.get("is_mark_face", false).asBool() && !emoji["emoji_id"].asString().empty() &&
-                        !emoji["key"].asString().empty()) {
+                    if (getBool(emoji, "is_mark_face") && !getStr(emoji, "emoji_id").empty() &&
+                        !getStr(emoji, "key").empty()) {
                         co_return fmt::format("[CQ:mface,summary={},emoji_id={},emoji_package_id={},key={}]",
-                          emoji["summary"].asString(), emoji["emoji_id"].asString(),
-                          emoji["emoji_package_id"].asString(), emoji["key"].asString());
+                          getStr(emoji, "summary"), getStr(emoji, "emoji_id"), getStr(emoji, "emoji_package_id"),
+                          getStr(emoji, "key"));
                     }
 
-                    if (emoji["url"].asString().empty()) {
+                    if (getStr(emoji, "url").empty()) {
                         co_return fmt::format("表情'{}'缺少图片地址，无法发送", name);
                     }
                     co_return fmt::format(
-                      "[CQ:image,file={},sub_type=1,summary={}]", emoji["url"].asString(), emoji["summary"].asString());
+                      "[CQ:image,file={},sub_type=1,summary={}]", getStr(emoji, "url"), getStr(emoji, "summary"));
                 }},
               ToolCategory::ACTION);
 
             // save_sticker - 保存别人发的表情为QQ收藏表情
-            Json::Value saveParams = objectSchema();
+            json saveParams = objectSchema();
             addStringParam(saveParams, "file", "图片在QQ缓存中的文件名（来自聊天记录JSON的images[].file字段）");
             addStringParam(saveParams, "url",
               "图片URL（来自聊天记录JSON的images[].url字段），file方式获取失败时用于下载，最好同时提供");
@@ -268,7 +268,7 @@ namespace insoulforge {
                                "片消息会带images数组，同时传images[].file和images[]."
                                "url作为参数。name必须起一个能体现图片内容的名字，方便以后用send_sticker引用。",
                 .parameters = saveParams,
-                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
+                .handler = [](const json &args) -> drogon::Task<std::string> {
                     const auto sessionId = currentToolContext().sessionId;
                     const std::string file = argString(args, "file");
                     const std::string url = argString(args, "url");
@@ -303,8 +303,8 @@ namespace insoulforge {
                     AgentToolManager::invalidateFavoriteEmojiCache();
                     std::set<std::string> beforeIds;
                     for (const auto &e: co_await AgentToolManager::fetchFavoriteEmojis(sessionId)) {
-                        if (!e["res_id"].asString().empty()) {
-                            beforeIds.insert(e["res_id"].asString());
+                        if (const std::string rid = getStr(e, "res_id"); !rid.empty()) {
+                            beforeIds.insert(rid);
                         }
                     }
 
@@ -315,20 +315,21 @@ namespace insoulforge {
 
                     // Step 5: 定位新表情并设置描述
                     AgentToolManager::invalidateFavoriteEmojiCache();
-                    Json::Value newItem(Json::nullValue);
+                    json newItem;
                     for (const auto &e: co_await AgentToolManager::fetchFavoriteEmojis(sessionId)) {
-                        if (const std::string rid = e["res_id"].asString(); !rid.empty() && !beforeIds.contains(rid)) {
+                        if (const std::string rid = getStr(e, "res_id"); !rid.empty() && !beforeIds.contains(rid)) {
                             newItem = e;
                             break;
                         }
                     }
-                    if (!newItem.isNull()) {
+                    if (!newItem.is_null()) {
+                        const std::string emojiId =
+                          getStr(newItem, "emoji_id").empty() ? "0" : getStr(newItem, "emoji_id");
                         if (co_await OneBotClient::setCustomFaceDesc(
-                              newItem["emoji_id"].asString().empty() ? "0" : newItem["emoji_id"].asString(),
-                              newItem["res_id"].asString(), newItem["md5"].asString(), name, sessionId)) {
+                              emojiId, getStr(newItem, "res_id"), getStr(newItem, "md5"), name, sessionId)) {
                             AgentToolManager::invalidateFavoriteEmojiCache();
                         } else {
-                            spdlog::warn("[Sticker] 设置表情描述失败: {}", newItem["res_id"].asString());
+                            spdlog::warn("[Sticker] 设置表情描述失败: {}", getStr(newItem, "res_id"));
                         }
                     }
 
@@ -338,45 +339,45 @@ namespace insoulforge {
               ToolCategory::ACTION);
 
             // rename_sticker - 修改收藏表情的名称/描述
-            Json::Value renameParams = objectSchema();
+            json renameParams = objectSchema();
             addStringParam(renameParams, "name", "要改名的表情当前名称（先用list_stickers查看）");
             addStringParam(renameParams, "new_name", "新名称，简短体现图片内容");
             requireParam(renameParams, "name");
             requireParam(renameParams, "new_name");
-            registry.registerTool(
-              {.name = "rename_sticker",
-                .description = "修改收藏表情的名称/"
-                               "描述。仅在用户明确要求给表情改名时使用。先调list_"
-                               "stickers查看当前名称，再把新名称传给new_name。",
-                .parameters = renameParams,
-                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
-                    const std::string name = argString(args, "name");
-                    const std::string newName = argString(args, "new_name");
-                    if (name.empty())
-                        co_return std::string("请提供表情当前名称(name)");
-                    if (newName.empty())
-                        co_return std::string("请提供新名称(new_name)");
+            registry.registerTool({.name = "rename_sticker",
+                                    .description = "修改收藏表情的名称/"
+                                                   "描述。仅在用户明确要求给表情改名时使用。先调list_"
+                                                   "stickers查看当前名称，再把新名称传给new_name。",
+                                    .parameters = renameParams,
+                                    .handler = [](const json &args) -> drogon::Task<std::string> {
+                                        const std::string name = argString(args, "name");
+                                        const std::string newName = argString(args, "new_name");
+                                        if (name.empty())
+                                            co_return std::string("请提供表情当前名称(name)");
+                                        if (newName.empty())
+                                            co_return std::string("请提供新名称(new_name)");
 
-                    const auto sessionId = currentToolContext().sessionId;
-                    Json::Value emoji = co_await AgentToolManager::findFavoriteEmoji(name, sessionId);
-                    if (emoji.isNull()) {
-                        co_return fmt::format("表情'{}'不存在，先调list_stickers查看可用表情", name);
-                    }
+                                        const auto sessionId = currentToolContext().sessionId;
+                                        json emoji = co_await AgentToolManager::findFavoriteEmoji(name, sessionId);
+                                        if (emoji.is_null()) {
+                                            co_return fmt::format(
+                                              "表情'{}'不存在，先调list_stickers查看可用表情", name);
+                                        }
 
-                    if (!co_await OneBotClient::setCustomFaceDesc(
-                          emoji["emoji_id"].asString().empty() ? "0" : emoji["emoji_id"].asString(),
-                          emoji["res_id"].asString(), emoji["md5"].asString(), newName, sessionId)) {
-                        co_return std::string("改名失败");
-                    }
+                                        if (!co_await OneBotClient::setCustomFaceDesc(
+                                              getStr(emoji, "emoji_id").empty() ? "0" : getStr(emoji, "emoji_id"),
+                                              getStr(emoji, "res_id"), getStr(emoji, "md5"), newName, sessionId)) {
+                                            co_return std::string("改名失败");
+                                        }
 
-                    AgentToolManager::invalidateFavoriteEmojiCache();
-                    spdlog::info("[Sticker] 表情改名: {} -> {}", name, newName);
-                    co_return fmt::format("已改名为: {}", newName);
-                }},
+                                        AgentToolManager::invalidateFavoriteEmojiCache();
+                                        spdlog::info("[Sticker] 表情改名: {} -> {}", name, newName);
+                                        co_return fmt::format("已改名为: {}", newName);
+                                    }},
               ToolCategory::ACTION);
 
             // delete_sticker - 从收藏表情中删除
-            Json::Value delParams = objectSchema();
+            json delParams = objectSchema();
             addStringParam(delParams, "name", "要删除的表情名称（先用list_stickers查看）");
             requireParam(delParams, "name");
             registry.registerTool(
@@ -384,18 +385,18 @@ namespace insoulforge {
                 .description = "从QQ收藏表情中删除表情。仅在用户明确要求删除表情时使用，删除前先确认名称无误。先调list"
                                "_stickers查看名称。",
                 .parameters = delParams,
-                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
+                .handler = [](const json &args) -> drogon::Task<std::string> {
                     std::string name = argString(args, "name");
                     if (name.empty())
                         co_return std::string("请提供表情名称(name)");
 
                     const auto sessionId = currentToolContext().sessionId;
-                    Json::Value emoji = co_await AgentToolManager::findFavoriteEmoji(name, sessionId);
-                    if (emoji.isNull()) {
+                    json emoji = co_await AgentToolManager::findFavoriteEmoji(name, sessionId);
+                    if (emoji.is_null()) {
                         co_return fmt::format("表情'{}'不存在，先调list_stickers查看可用表情", name);
                     }
 
-                    if (!co_await OneBotClient::deleteCustomFace(emoji["res_id"].asString(), sessionId)) {
+                    if (!co_await OneBotClient::deleteCustomFace(getStr(emoji, "res_id"), sessionId)) {
                         co_return std::string("删除失败");
                     }
 
@@ -412,7 +413,7 @@ namespace insoulforge {
             auto &registry = ToolRegistry::instance();
 
             // at_user
-            Json::Value atParams = objectSchema();
+            json atParams = objectSchema();
             addStringParam(atParams, "qq", "要@的QQ号（从聊天记录JSON的sender.qq字段获取）。使用 'all' @全体成员");
             requireParam(atParams, "qq");
             registry.registerTool(
@@ -421,7 +422,7 @@ namespace insoulforge {
                   "@某人。返回CQ码嵌入reply的content中。聊天记录格式为JSON：{\"sender\":{\"name\":\"小明\","
                   "\"qq\":\"123456\"}}，用 at_user(qq=\"123456\") 来@他。@全体成员用 at_user(qq=\"all\")",
                 .parameters = atParams,
-                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
+                .handler = [](const json &args) -> drogon::Task<std::string> {
                     if (QQMessage::isPrivateSession(currentToolContext().sessionId)) {
                         co_return std::string("私聊中无法@成员，直接回复即可");
                     }
@@ -436,7 +437,7 @@ namespace insoulforge {
               ToolCategory::ACTION);
 
             // ban_user
-            Json::Value banParams = objectSchema();
+            json banParams = objectSchema();
             addStringParam(banParams, "qq", "要禁言的QQ号（从聊天记录JSON的sender.qq字段获取）");
             addIntParam(
               banParams, "duration", "禁言时长（秒）。轻度60-300秒，中度600-1800秒，重度3600秒以上。0解除禁言");
@@ -446,7 +447,7 @@ namespace insoulforge {
                 .description = "禁言群成员。要有自己的判断，不要别人让你禁言就禁言。根据违规程度选择时长：轻度("
                                "偶尔骂人)60-300秒，中度(持续刷屏骂人)600-1800秒，重度(恶意骚扰)3600秒+",
                 .parameters = banParams,
-                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
+                .handler = [](const json &args) -> drogon::Task<std::string> {
                     const uint64_t sessionId = currentToolContext().sessionId;
                     if (QQMessage::isPrivateSession(sessionId))
                         co_return std::string("私聊中无法禁言");
@@ -454,7 +455,7 @@ namespace insoulforge {
                         co_return std::string("禁言失败: 无法获取群号");
 
                     const uint64_t userId = parseUInt64(argString(args, "qq"));
-                    const uint64_t duration = args.isMember("duration") ? args["duration"].asUInt64() : 600;
+                    const uint64_t duration = getUInt(args, "duration", 600);
                     if (userId == 0)
                         co_return std::string("禁言失败: 请提供有效的QQ号");
 
@@ -465,7 +466,7 @@ namespace insoulforge {
               ToolCategory::ACTION);
 
             // send_poke
-            Json::Value pokeParams = objectSchema();
+            json pokeParams = objectSchema();
             addStringParam(pokeParams, "qq", "要拍一拍的QQ号（从聊天记录JSON的sender.qq字段获取）");
             requireParam(pokeParams, "qq");
             registry.registerTool(
@@ -474,7 +475,7 @@ namespace insoulforge {
                   "拍一拍群成员。用于打招呼、引起注意、开玩笑等轻松互动场景。聊天记录格式为JSON：{\"sender\":{"
                   "\"name\":\"小明\",\"qq\":\"123456\"}}，用 send_poke(qq=\"123456\") 来拍他。",
                 .parameters = pokeParams,
-                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
+                .handler = [](const json &args) -> drogon::Task<std::string> {
                     const uint64_t sessionId = currentToolContext().sessionId;
                     if (QQMessage::isPrivateSession(sessionId)) {
                         co_return std::string("私聊中不支持拍一拍，直接回复即可");
@@ -492,7 +493,7 @@ namespace insoulforge {
               ToolCategory::ACTION);
 
             // recall_message
-            Json::Value recallParams = objectSchema();
+            json recallParams = objectSchema();
             addStringParam(
               recallParams, "message_id", "要撤回的消息ID（从聊天记录JSON的message_id或reply_to字段获取）");
             requireParam(recallParams, "message_id");
@@ -502,7 +503,7 @@ namespace insoulforge {
                                "id\":\"12345\",\"reply_to\":\"67890\"}。若用户想撤回引用的消息，用 "
                                "reply_to 字段的值；若想撤回某条消息本身，用 message_id 字段的值。",
                 .parameters = recallParams,
-                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
+                .handler = [](const json &args) -> drogon::Task<std::string> {
                     const uint64_t messageId = parseUInt64(argString(args, "message_id"));
                     if (messageId == 0)
                         co_return std::string("撤回失败: 请提供有效的消息ID");
@@ -521,7 +522,7 @@ namespace insoulforge {
             auto &registry = ToolRegistry::instance();
 
             // create_scheduled_task - 创建定时提醒任务
-            Json::Value scheduleParams = objectSchema();
+            json scheduleParams = objectSchema();
             addStringParam(scheduleParams, "time",
               "触发时间，必须是 YYYY-MM-DD HH:MM:SS 格式的绝对时间。根据聊天记录中最新消息的 time 字段推算当前时间，"
               "把用户说的『明天6点』『一小时后』换算成完整日期时间再传入");
@@ -541,7 +542,7 @@ namespace insoulforge {
                                "通知某事时使用（如'明天6点叫我起床''两小时后提醒我开会'）。"
                                "到点后会以【系统定时任务】消息回到当前会话，你再据此生成提醒回复。",
                 .parameters = scheduleParams,
-                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
+                .handler = [](const json &args) -> drogon::Task<std::string> {
                     const std::string content = argString(args, "content");
                     if (content.empty())
                         co_return std::string("请提供提醒内容(content)");
@@ -566,7 +567,7 @@ namespace insoulforge {
                         co_return std::string("会话上下文缺失，无法确定提醒目标");
                     const bool isPrivateSession = QQMessage::isPrivateSession(sessionId);
                     const auto [sessionType, targetId] = QQMessage::parseSessionTarget(sessionId);
-                    const bool isDaily = args.isMember("daily") && args["daily"].asBool();
+                    const bool isDaily = getBool(args, "daily");
 
                     TaskStore::ScheduledTask task;
                     task.sessionType = sessionType;
@@ -595,8 +596,8 @@ namespace insoulforge {
               {.name = "list_scheduled_tasks",
                 .description = "查看当前会话所有待触发的定时任务。当用户想确认已设置的提醒、或取消前需要获取任务编号"
                                "时使用。返回任务编号、触发时间和备忘内容。",
-                .parameters = Json::Value(),
-                .handler = [](const Json::Value &) -> drogon::Task<std::string> {
+                .parameters = json(),
+                .handler = [](const json &) -> drogon::Task<std::string> {
                     const uint64_t sessionId = currentToolContext().sessionId;
                     if (sessionId == 0)
                         co_return std::string("会话上下文缺失，无法查询定时任务");
@@ -622,7 +623,7 @@ namespace insoulforge {
               ToolCategory::INFORMATION);
 
             // cancel_scheduled_task - 取消定时任务
-            Json::Value cancelTaskParams = objectSchema();
+            json cancelTaskParams = objectSchema();
             addStringParam(
               cancelTaskParams, "task_id", "要取消的任务编号（用 list_scheduled_tasks 查询，即任务#后的数字）");
             requireParam(cancelTaskParams, "task_id");
@@ -631,7 +632,7 @@ namespace insoulforge {
                 .description = "取消尚未触发的定时任务（含每日重复任务）。当用户要求取消之前的提醒/定时任务时使用；"
                                "如不知道任务编号，先用 list_scheduled_tasks 查询。",
                 .parameters = cancelTaskParams,
-                .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
+                .handler = [](const json &args) -> drogon::Task<std::string> {
                     const int64_t taskId = static_cast<int64_t>(parseUInt64(argString(args, "task_id")));
                     if (taskId == 0)
                         co_return std::string("请提供有效的任务编号（可先用 list_scheduled_tasks 查询）");
@@ -667,11 +668,11 @@ namespace insoulforge {
         int count = 0;
 
         for (const auto &tool: tools) {
-            Json::Value params;
+            json params;
             if (!tool.parameters.empty()) {
                 std::ignore = tryParseJson(tool.parameters, params);
                 // 确保顶层 type 为 object（OpenAI function calling 要求）
-                if (!params.isNull() && !params.isMember("type")) {
+                if (!params.is_null() && !params.contains("type")) {
                     params["type"] = "object";
                 }
             }
@@ -682,7 +683,7 @@ namespace insoulforge {
                   {.name = tool.name,
                     .description = tool.description,
                     .parameters = params,
-                    .handler = [script = tool.scriptContent](const Json::Value &args) -> drogon::Task<std::string> {
+                    .handler = [script = tool.scriptContent](const json &args) -> drogon::Task<std::string> {
                         co_return co_await executePythonTool(script, args);
                     }},
                   ToolCategory::INFORMATION);
@@ -691,7 +692,7 @@ namespace insoulforge {
                   {.name = tool.name,
                     .description = tool.description,
                     .parameters = params,
-                    .handler = [config = tool.executorConfig](const Json::Value &args) -> drogon::Task<std::string> {
+                    .handler = [config = tool.executorConfig](const json &args) -> drogon::Task<std::string> {
                         co_return co_await executeHttpTool(config, args);
                     }},
                   ToolCategory::INFORMATION);
@@ -705,8 +706,7 @@ namespace insoulforge {
         spdlog::info("ToolManager: 自定义工具注册完成（共{}个）", count);
     }
 
-    drogon::Task<std::string> AgentToolManager::executePythonTool(
-      const std::string &scriptContent, const Json::Value &args) {
+    drogon::Task<std::string> AgentToolManager::executePythonTool(const std::string &scriptContent, const json &args) {
         if (scriptContent.empty()) {
             co_return std::string("脚本内容为空");
         }
@@ -793,16 +793,16 @@ namespace insoulforge {
         co_return result;
     }
 
-    drogon::Task<std::string> AgentToolManager::executeHttpTool(const std::string &config, const Json::Value &args) {
+    drogon::Task<std::string> AgentToolManager::executeHttpTool(const std::string &config, const json &args) {
         // 解析配置
-        Json::Value configJson;
+        json configJson;
         if (!tryParseJson(config, configJson)) {
             spdlog::error("HTTP工具配置解析失败");
             co_return std::string("工具配置错误");
         }
 
-        std::string url = argString(configJson, "url");
-        std::string method = configJson.isMember("method") ? configJson["method"].asString() : "POST";
+        std::string url = getStr(configJson, "url");
+        std::string method = getStr(configJson, "method", "POST");
 
         if (url.empty()) {
             co_return std::string("未配置URL");
@@ -825,7 +825,7 @@ namespace insoulforge {
         std::string baseUrl = proto + "://" + hostPort;
         const bool isGet = (method == "GET");
         const auto resp = co_await HttpUtil::send("[HttpTool]", baseUrl, path, isGet ? drogon::Get : drogon::Post,
-          isGet ? Json::Value(Json::nullValue) : args, "", 30.0, currentToolContext().sessionId);
+          isGet ? json(nullptr) : args, "", 30.0, currentToolContext().sessionId);
         if (!resp) {
             co_return std::string("HTTP请求失败");
         }
@@ -835,7 +835,7 @@ namespace insoulforge {
     namespace {
         // 收藏表情缓存（60秒TTL）
         std::mutex g_favEmojiCacheMutex;
-        Json::Value g_favEmojiCache(Json::nullValue);
+        json g_favEmojiCache(nullptr);
         std::chrono::steady_clock::time_point g_favEmojiCacheTime{};
 
         // CQ码参数值不能包含逗号和方括号，替换为空格
@@ -848,35 +848,35 @@ namespace insoulforge {
         }
     } // namespace
 
-    drogon::Task<Json::Value> AgentToolManager::fetchFavoriteEmojis(const std::optional<uint64_t> sessionId) {
+    drogon::Task<json> AgentToolManager::fetchFavoriteEmojis(const std::optional<uint64_t> sessionId) {
         using namespace std::chrono_literals;
         {
             std::lock_guard lock(g_favEmojiCacheMutex);
-            if (!g_favEmojiCache.isNull() && std::chrono::steady_clock::now() - g_favEmojiCacheTime < 60s) {
+            if (!g_favEmojiCache.is_null() && std::chrono::steady_clock::now() - g_favEmojiCacheTime < 60s) {
                 co_return g_favEmojiCache;
             }
         }
 
-        Json::Value result(Json::arrayValue);
-        const Json::Value data = co_await OneBotClient::fetchCustomFaceDetail(sessionId);
+        json result(json::array());
+        const json data = co_await OneBotClient::fetchCustomFaceDetail(sessionId);
 
         int idx = 0;
         for (const auto &item: data) {
-            Json::Value emoji;
-            const std::string desc = sanitizeCqParam(item.get("desc", "").asString());
-            const std::string md5 = item.get("md5", "").asString();
+            json emoji;
+            const std::string desc = sanitizeCqParam(getStr(item, "desc"));
+            const std::string md5 = getStr(item, "md5");
             // 无名表情用 md5 前6位兜底（稳定且可区分），序号会随列表顺序漂移
             std::string fallback = md5.size() >= 6 ? "表情" + md5.substr(0, 6) : fmt::format("表情{}", idx + 1);
             emoji["name"] = desc.empty() ? fallback : desc;
             emoji["summary"] = desc;
-            emoji["emoji_id"] = item.get("eId", "").asString();
-            emoji["emoji_package_id"] = item.get("epId", "").asString();
-            emoji["key"] = item.get("key", "").asString();
-            emoji["url"] = item.get("url", "").asString();
+            emoji["emoji_id"] = getStr(item, "eId");
+            emoji["emoji_package_id"] = getStr(item, "epId");
+            emoji["key"] = getStr(item, "key");
+            emoji["url"] = getStr(item, "url");
             emoji["md5"] = md5;
-            emoji["res_id"] = item.get("resId", "").asString();
-            emoji["is_mark_face"] = item.get("isMarkFace", false).asBool();
-            result.append(emoji);
+            emoji["res_id"] = getStr(item, "resId");
+            emoji["is_mark_face"] = getBool(item, "isMarkFace");
+            result.push_back(emoji);
             idx++;
         }
 
@@ -889,18 +889,18 @@ namespace insoulforge {
         co_return result;
     }
 
-    drogon::Task<Json::Value> AgentToolManager::findFavoriteEmoji(
+    drogon::Task<json> AgentToolManager::findFavoriteEmoji(
       const std::string &name, const std::optional<uint64_t> sessionId) {
-        for (const Json::Value emojis = co_await fetchFavoriteEmojis(sessionId); const auto &emoji: emojis) {
-            if (emoji["name"].asString() == name || emoji["summary"].asString() == name) {
+        for (const json emojis = co_await fetchFavoriteEmojis(sessionId); const auto &emoji: emojis) {
+            if (getStr(emoji, "name") == name || getStr(emoji, "summary") == name) {
                 co_return emoji;
             }
         }
-        co_return Json::Value(Json::nullValue);
+        co_return json(nullptr);
     }
 
     void AgentToolManager::invalidateFavoriteEmojiCache() {
         std::lock_guard lock(g_favEmojiCacheMutex);
-        g_favEmojiCache = Json::Value(Json::nullValue);
+        g_favEmojiCache = json(nullptr);
     }
 } // namespace insoulforge

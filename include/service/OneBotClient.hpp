@@ -7,9 +7,10 @@
 
 #pragma once
 #include <drogon/utils/coroutine.h>
-#include <json/value.h>
 #include <optional>
 #include <string>
+
+#include <util/JsonUtil.hpp>
 
 /// @brief OneBot API 客户端
 namespace insoulforge::OneBotClient {
@@ -30,14 +31,13 @@ namespace insoulforge::OneBotClient {
 
     /// @brief 获取群信息
     /// @note OneBot 11: get_group_info
-    /// @return 响应 JSON（data 含 group_name 等）；失败返回 nullValue
-    [[nodiscard]] drogon::Task<Json::Value> getGroupInfo(uint64_t groupId);
+    /// @return 响应 JSON（data 含 group_name 等）；失败返回 null
+    [[nodiscard]] drogon::Task<json> getGroupInfo(uint64_t groupId);
 
     /// @brief 获取陌生人（QQ 用户）信息
     /// @note OneBot 11: get_stranger_info
-    /// @return 响应 JSON（data 含 nickname 等）；失败返回 nullValue
-    [[nodiscard]] drogon::Task<Json::Value> getStrangerInfo(
-      uint64_t userId, std::optional<uint64_t> sessionId = std::nullopt);
+    /// @return 响应 JSON（data 含 nickname 等）；失败返回 null
+    [[nodiscard]] drogon::Task<json> getStrangerInfo(uint64_t userId, std::optional<uint64_t> sessionId = std::nullopt);
 
     /// @brief 群聊戳一拍
     /// @note NapCat: send_poke（支持群聊/私聊）
@@ -77,5 +77,5 @@ namespace insoulforge::OneBotClient {
     /// @brief 获取收藏表情详情列表
     /// @note NapCat 扩展（与 api.md 收录的 NapCat fetch_custom_face 同族）
     /// @return data 数组；失败返回空数组
-    [[nodiscard]] drogon::Task<Json::Value> fetchCustomFaceDetail(std::optional<uint64_t> sessionId = std::nullopt);
+    [[nodiscard]] drogon::Task<json> fetchCustomFaceDetail(std::optional<uint64_t> sessionId = std::nullopt);
 } // namespace insoulforge::OneBotClient
