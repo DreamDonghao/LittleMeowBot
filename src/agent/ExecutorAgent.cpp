@@ -53,10 +53,8 @@ namespace insoulforge {
             std::string prompt = decision.isPrivate ? PromptService::getExecutorPrivateSystemPrompt()
                                                     : PromptService::getExecutorSystemPrompt();
 
-            prompt += fmt::format("\n\n【回复要求】\n"
-                                  "- 字数限制: {} 字\n"
-                                  "- 要有自己的判断，不要别人说什么就做什么\n",
-              decision.maxLength);
+            prompt += "\n\n【回复要求】\n"
+                      "- 要有自己的判断，不要别人说什么就做什么\n";
             if (decision.isPrivate) {
                 prompt += "- 这是私聊，直接回复即可，不要@对方或引用回复\n";
             } else {
@@ -150,21 +148,17 @@ namespace insoulforge {
             return content;
         }
 
-        /// @brief 把记录范围经 transform 逐条处理后拼为 JSON 数组字符串
-        template<std::ranges::input_range Range, typename Transform>
-        [[nodiscard]] std::string joinRecords(const Range &records, const Transform &transform) {
-            json array = json::array();
-            for (const auto &record: records) {
-                array.push_back(transform(record));
-            }
-            return dumpJson(array);
-        }
+        /// @brief 聊天记录上下文（窗口内，旧 → 新）
+        struct ChatContext {
+            json earlier = json::array(); // 更早记录：去 images、text 截断到 500 字
+            json recent = json::array();  // 最近记录：注入好感度与召回的长期记忆
+        };
 
-        /// @brief 构建聊天记录上下文（窗口内，旧 → 新）：
+        /// @brief 构建聊天记录上下文：
         /// 最新 kRecentRecordCount 条原样保留，更早的每条 text 截断到 500 字；
         /// 每条 sender 注入当前好感度 affinity；最近记录按 message_id 注入召回的长期记忆 memories
         /// （同一条记忆被多条消息命中时只挂在相似度最高的那条消息上）
-        std::string buildChatContextText(const ChatRecordManager &chatRecords) {
+        ChatContext buildChatContext(const ChatRecordManager &chatRecords) {
             const auto records = chatRecords.getRecords(); // 旧 → 新
             const size_t totalRecords = records.size();
             const size_t olderCount = totalRecords > kRecentRecordCount ? totalRecords - kRecentRecordCount : 0;
@@ -189,18 +183,16 @@ namespace insoulforge {
                 recentHits.push_back(std::move(hits));
             }
 
-            std::string context;
+            ChatContext context;
 
             // 处理更早的对话
-            if (olderCount > 0) {
-                context += "【更早对话】\n" + joinRecords(olderRecords, [&affinityMap](const json &record) {
-                    return injectAffinity(processOlderRecord(record), affinityMap);
-                }) + "\n\n";
+            for (const auto &record: olderRecords) {
+                context.earlier.push_back(injectAffinity(processOlderRecord(record), affinityMap));
             }
 
             // 处理最近对话（注入好感度与召回记忆）
             size_t recentIndex = 0;
-            context += "【最近对话】\n" + joinRecords(recentRecords, [&](const json &record) {
+            for (const auto &record: recentRecords) {
                 const size_t index = recentIndex++;
                 json content = injectAffinity(parseRecordContent(record), affinityMap);
                 if (!recentHits[index].empty()) {
@@ -212,13 +204,28 @@ namespace insoulforge {
                     if (!memories.empty())
                         content["memories"] = memories;
                 }
-                return content;
-            });
+                context.recent.push_back(std::move(content));
+            }
             return context;
         }
 
+        /// @brief 把短期记忆文本（每行一条）拆为字符串数组，跳过空白行
+        [[nodiscard]] json splitMemoryLines(const std::string &text) {
+            json lines = json::array();
+            for (size_t start = 0; start < text.size();) {
+                const size_t end = text.find('\n', start);
+                const size_t stop = end == std::string::npos ? text.size() : end;
+                if (std::string line = trim(text.substr(start, stop - start)); !line.empty())
+                    lines.push_back(std::move(line));
+                start = stop + 1;
+            }
+            return lines;
+        }
+
         /// @brief 构建 Executor 消息列表（system + 单条 user）
-        /// @details 短期记忆+聊天记录+回复要求合并为单条 user 消息，避免连续多条 user（部分 OpenAI 兼容后端不支持）
+        /// @details 上下文组装为键序固定的单个 JSON 对象（ordered_json 按插入顺序序列化）作为单条
+        /// user 消息：short_term_memory → earlier_conversation → recent_conversation → response_requirements，
+        /// 避免连续多条 user（部分 OpenAI 兼容后端不支持）
         [[nodiscard]] json buildPrompt(
           const ChatRecordManager &chatRecords, const MemoryManager &memory, const RouterDecision &decision) {
             json messages = json::array();
@@ -228,17 +235,21 @@ namespace insoulforge {
             systemMsg["content"] = getSystemPrompt(decision);
             messages.push_back(systemMsg);
 
-            std::string userContent;
-            if (std::string shortMemory = memory.getMemory(); !shortMemory.empty()) {
-                userContent += fmt::format("【短期记忆】\n{}\n\n结合记忆处理下面的对话。\n\n", shortMemory);
-            }
-            userContent += buildChatContextText(chatRecords);
-            userContent += fmt::format("\n\n【回复要求】\n语气: {}\n字数限制: {} 字\n原因: {}", decision.tone,
-              decision.maxLength, decision.reason);
+            auto [earlierRecords, recentRecords] = buildChatContext(chatRecords);
+
+            json context;
+            context["short_term_memory"] = splitMemoryLines(memory.getMemory());
+            context["earlier_conversation"] = std::move(earlierRecords);
+            context["recent_conversation"] = std::move(recentRecords);
+            json requirements;
+            requirements["tone"] = decision.tone;
+            requirements["max_length"] = decision.maxLength;
+            requirements["reply_reason"] = decision.reason;
+            context["response_requirements"] = std::move(requirements);
 
             json userMsg;
             userMsg["role"] = "user";
-            userMsg["content"] = userContent;
+            userMsg["content"] = dumpJson(context);
             messages.push_back(userMsg);
 
             return messages;

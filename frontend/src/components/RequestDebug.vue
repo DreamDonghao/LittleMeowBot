@@ -13,6 +13,7 @@ const total = ref(0)
 const loading = ref(false)
 const keyword = ref('')
 const autoRefresh = ref(true)
+const expandNestedJson = ref(true)
 const selected = ref<HttpTraceEntry | null>(null)
 let timer: number | undefined
 
@@ -36,11 +37,46 @@ const filtered = computed(() => {
       `${e.tag} ${e.url} ${e.groupId ?? ''}`.toLowerCase().includes(kw))
 })
 
-// JSON 报文格式化显示，解析失败时原样返回
+// 展开嵌套 JSON 的递归深度上限，防极端深层结构
+const kMaxExpandDepth = 32
+
+// 尝试把形如 JSON 对象/数组的字符串解析出来，原始类型或解析失败返回 null
+const tryParseNested = (text: string): object | null => {
+  const trimmed = text.trim()
+  const head = trimmed.charAt(0)
+  if (trimmed.length < 2 || (head !== '{' && head !== '[')) return null
+  try {
+    const parsed: unknown = JSON.parse(trimmed)
+    return parsed !== null && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+// 递归展开字符串形式的嵌套 JSON（消息 content、工具调用 arguments 等），仅用于展示
+const expandNested = (node: unknown, depth: number): unknown => {
+  if (depth <= 0) return node
+  if (typeof node === 'string') {
+    const parsed = tryParseNested(node)
+    return parsed ? expandNested(parsed, depth - 1) : node
+  }
+  if (Array.isArray(node)) return node.map(item => expandNested(item, depth - 1))
+  if (node !== null && typeof node === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(node)) {
+      out[key] = expandNested(value, depth - 1)
+    }
+    return out
+  }
+  return node
+}
+
+// JSON 报文格式化显示，解析失败时原样返回；开启时把字符串形式的嵌套 JSON 展开显示
 const pretty = (text: string | null | undefined): string => {
   if (!text) return ''
   try {
-    return JSON.stringify(JSON.parse(text), null, 2)
+    const parsed: unknown = JSON.parse(text)
+    return JSON.stringify(expandNestedJson.value ? expandNested(parsed, kMaxExpandDepth) : parsed, null, 2)
   } catch {
     return text
   }
@@ -119,6 +155,9 @@ onUnmounted(() => window.clearInterval(timer))
       <input v-model="keyword" class="form-input search" placeholder="筛选 URL / 标签 / 会话 ID">
       <label class="auto-refresh">
         <input v-model="autoRefresh" type="checkbox"> 自动刷新(5s)
+      </label>
+      <label class="auto-refresh">
+        <input v-model="expandNestedJson" type="checkbox"> 展开嵌套 JSON
       </label>
       <button :disabled="loading" class="btn btn-secondary" type="button" @click="load">刷新</button>
       <button class="btn btn-danger" type="button" @click="clearAll">清空</button>

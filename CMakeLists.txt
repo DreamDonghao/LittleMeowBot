@@ -7,6 +7,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(BUILD_SHARED_LIBS OFF)
 set(DEPLOY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/build/insoulforge)
 
+# 禁用 nlohmann/json 的隐式转换运算符（官方开关）：std::string s = j; / return j; 等代码
+# 直接编译报错，而不是编译通过、运行时抛 type_error.302；取值一律走 get<T>()/JsonUtil 宽容取值器
+add_compile_definitions(JSON_USE_IMPLICIT_CONVERSIONS=0)
+
 find_package(Drogon CONFIG REQUIRED)
 # 若 Drogon 没有 SQLite3 应用独立的包
 if (NOT TARGET SQLite3 AND NOT TARGET SQLite3::SQLite3 AND NOT TARGET SQLite3_lib)

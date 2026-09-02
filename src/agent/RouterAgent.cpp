@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <cctype>
 #include <config/Config.hpp>
-#include <fmt/core.h>
 #include <model/QQMessage.hpp>
 #include <ranges>
 #include <regex>
@@ -53,26 +52,28 @@ namespace insoulforge {
             return text;
         }
 
-        /// @brief 提取 Router 需要的最小字段：发送者名字 + 压缩后文本
-        /// @details content 为 formatMessage 生成的 JSON，message_id/reply_to/qq/时间戳/images URL 对路由决策无用
-        [[nodiscard]] std::string compactContent(const std::string &content, const bool includeSender) {
-            json root;
-            if (tryParseJson(content, root) && root.is_object()) {
-                const std::string name = getStr(atOrNull(root, "sender"), "name");
-                const std::string text = compressCQCodes(getStr(root, "text"));
-                if (includeSender && !name.empty())
-                    return name + ": " + text;
-                return text;
+        /// @brief 提取 Router 需要的最小字段：sender + 压缩后 text
+        /// @details content 为 formatMessage 生成的 JSON，message_id/reply_to/qq/时间戳/images URL 对路由决策无用；
+        ///          机器人自身消息的 name 已带 "(我)" 后缀。历史存量可能是纯文本，仅保留 text
+        [[nodiscard]] json compactRecord(const std::string &content) {
+            if (json root; tryParseJson(content, root) && root.is_object()) {
+                json record;
+                if (const std::string name = getStr(atOrNull(root, "sender"), "name"); !name.empty())
+                    record["sender"] = name;
+                record["text"] = compressCQCodes(getStr(root, "text"));
+                return record;
             }
-            return content;
+            json record;
+            record["text"] = content;
+            return record;
         }
 
-        /// @brief 构建聊天上下文文本
+        /// @brief 构建 Router 上下文 JSON（键序固定：chat_records → bot_silence）
         /// @details Router 子窗口（触发/保留可配置，默认 20/10）：窗口大小由记录数派生
         ///          （keep + count % slide），批量滑动而非逐条滑动，使 prompt 前缀在批次内稳定，
         ///          最大化 LLM 上下文缓存命中。被滑出的记录仍在水位线之后，由 Executor 的 eviction 统一提取。
-        ///          行格式：[小喵]: 文本 / [用户] 名字: 文本
-        ///          末尾附带【发言间隔】：精确统计窗口内机器人距上次发言隔了多少条消息
+        ///          记录为 {sender, text}，仅最后一条追加 is_current 标记（当前待决策消息）。
+        ///          bot_silence 发言间隔：精确统计窗口内机器人距上次发言隔了多少条消息
         ///          （LLM 不会数数，由代码计算后作为事实告知，策略由提示词决定）。
         std::string buildChatContext(const ChatRecordManager &chatRecords) {
             const auto &config = Config::instance();
@@ -83,38 +84,38 @@ namespace insoulforge {
             const size_t windowSize = keep + (records.size() % slide);
             const size_t startIdx = records.size() > windowSize ? records.size() - windowSize : 0;
 
-            std::string context = "【聊天记录】（最后一条是当前消息）\n";
+            json recordList = json::array();
             bool spokeInWindow = false;
             size_t silentCount = 0;
 
-            // 使用范围循环简化代码
             for (const auto &record: records | std::views::drop(startIdx)) {
-                const bool isAssistant = getStr(record, "role") == "assistant";
-                if (isAssistant) {
+                if (getStr(record, "role") == "assistant") {
                     spokeInWindow = true;
                     silentCount = 0;
                 } else {
                     ++silentCount;
                 }
-                context += isAssistant ? fmt::format("[{}]: {}\n", config.botName,
-                                           compactContent(getStr(record, "content"), false))
-                                       : fmt::format("[用户] {}\n", compactContent(getStr(record, "content"), true));
+                recordList.push_back(compactRecord(getStr(record, "content")));
             }
+            if (!recordList.empty())
+                recordList.back()["is_current"] = true;
 
-            // 发言间隔作为事实注入末尾（置于末尾以保持前缀稳定，缓存不受影响）
-            const std::string &botName = config.botName;
+            json botSilence;
+            botSilence["spoke_in_window"] = spokeInWindow;
+            botSilence["messages_since_last_speak"] = spokeInWindow ? silentCount : records.size() - startIdx;
+
+            json context;
+            context["chat_records"] = std::move(recordList);
+            context["bot_silence"] = std::move(botSilence);
+
             if (spokeInWindow) {
-                context += fmt::format("\n【发言间隔】{} 距上次发言已隔 {} 条消息。\n", botName, silentCount);
                 Logger::session(chatRecords.getSessionId())
                   .info("[Router] 发言间隔: 距上次发言 {} 条消息", silentCount);
             } else {
-                const size_t windowLen = records.size() - startIdx;
-                context +=
-                  fmt::format("\n【发言间隔】聊天记录中看不到 {} 的发言，已沉默至少 {} 条消息。\n", botName, windowLen);
                 Logger::session(chatRecords.getSessionId())
-                  .info("[Router] 发言间隔: 窗口内无发言记录(至少已沉默 {} 条)", windowLen);
+                  .info("[Router] 发言间隔: 窗口内无发言记录(至少已沉默 {} 条)", records.size() - startIdx);
             }
-            return context;
+            return dumpJson(context);
         }
 
         /// @brief 解析 LLM 响应
