@@ -35,7 +35,7 @@ namespace insoulforge {
                 json msg;
                 msg["type"] = "log";
                 msg["data"] = log;
-                conn->send(msg.dump());
+                conn->send(dumpJson(msg));
             }
         }
     }
@@ -45,7 +45,7 @@ namespace insoulforge {
         json msg;
         msg["type"] = "status";
         msg["data"] = status;
-        const auto jsonStr = msg.dump();
+        const auto jsonStr = dumpJson(msg);
         for (const auto &conn: m_connections) {
             conn->send(jsonStr);
         }

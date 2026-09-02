@@ -50,7 +50,7 @@ namespace insoulforge {
         msg["data"]["role"] = role;
         msg["data"]["content"] = content;
         msg["data"]["timestamp"] = currentDateTime();
-        const std::string jsonStr = msg.dump();
+        const std::string jsonStr = dumpJson(msg);
 
         // 发送给订阅该群的连接
         if (m_subscriptions.contains(sessionId)) {
@@ -81,7 +81,7 @@ namespace insoulforge {
         json msg;
         msg["type"] = type;
         msg["data"] = data;
-        const std::string jsonStr = msg.dump();
+        const std::string jsonStr = dumpJson(msg);
 
         for (const auto &conn: m_connections) {
             conn->send(jsonStr);

@@ -12,7 +12,7 @@ void AdminWebSocket::handleNewConnection(const HttpRequestPtr &req, const WebSoc
     json welcome;
     welcome["type"] = "connected";
     welcome["message"] = "WebSocket连接成功";
-    conn->send(welcome.dump());
+    conn->send(dumpJson(welcome));
 }
 
 void AdminWebSocket::handleNewMessage(
@@ -40,7 +40,7 @@ void AdminWebSocket::handleNewMessage(
             json resp;
             resp["type"] = "subscribed";
             resp["groupId"] = sessionId;
-            conn->send(resp.dump());
+            conn->send(dumpJson(resp));
         } else if (action == "unsubscribe" && msg.contains("groupId")) {
             const uint64_t sessionId = parseUInt64(getStr(msg, "groupId"));
             wsMgr.unsubscribeSession(conn, sessionId);
@@ -48,7 +48,7 @@ void AdminWebSocket::handleNewMessage(
             json resp;
             resp["type"] = "unsubscribed";
             resp["groupId"] = sessionId;
-            conn->send(resp.dump());
+            conn->send(dumpJson(resp));
         }
     }
 }

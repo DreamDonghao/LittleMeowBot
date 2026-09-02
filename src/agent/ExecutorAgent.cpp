@@ -399,7 +399,7 @@ namespace insoulforge {
         /// @brief 执行思考模型（不带 tools，产出回复思路）
         /// @return 思考模型输出（优先取 reasoning_content 字段）；请求失败返回 std::nullopt
         drogon::Task<std::optional<std::string>> executeThinking(
-          const json &messages, const int maxLength, const uint64_t sessionId) {
+          const json *messages, const int maxLength, const uint64_t sessionId) {
             const auto &config = Config::instance();
 
             // 仅替换 system prompt 为思考任务指令，其余消息原样保留
@@ -408,8 +408,8 @@ namespace insoulforge {
             systemMsg["role"] = "system";
             systemMsg["content"] = getThinkingSystemPrompt(maxLength);
             thinkingMessages.push_back(systemMsg);
-            for (size_t i = 1; i < messages.size(); ++i) {
-                thinkingMessages.push_back(messages[i]);
+            for (size_t i = 1; i < messages->size(); ++i) {
+            thinkingMessages.push_back((*messages)[i]);
             }
 
             const auto respJson = co_await requestChat("思考模型", "executorThinking", config.executorThinking,
@@ -476,7 +476,8 @@ namespace insoulforge {
           json messages, const int maxLength, const uint64_t sessionId) {
             Logger::session(sessionId).info("[Executor] 思考模式 - Step 1: 分析");
 
-            const std::optional<std::string> thinkingResult = co_await executeThinking(messages, maxLength, sessionId);
+            const std::optional<std::string> thinkingResult =
+              co_await executeThinking(&messages, maxLength, sessionId);
             if (!thinkingResult || thinkingResult->empty()) {
                 Logger::session(sessionId).warn("[Executor] 思考模型返回空，fallback");
                 co_return co_await executeWithAgent(std::move(messages), sessionId);

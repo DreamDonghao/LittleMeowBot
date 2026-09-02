@@ -12,12 +12,12 @@
 namespace insoulforge {
     namespace {
         /// @brief 通用 API 请求函数
-        drogon::Task<std::optional<std::string>> requestStr(const json &messages, const std::string &base_url,
+        drogon::Task<std::optional<std::string>> requestStr(const json *messages, const std::string &base_url,
           const std::string &path, const std::string &api_key, const std::string &model, const double temperature,
           const double top_p, const int max_tokens, const std::string &role, const std::optional<uint64_t> sessionId) {
             const LLMApiConfig api{.apiKey = api_key, .baseUrl = base_url, .path = path, .model = model};
             const LLMModelParams params{.maxTokens = max_tokens, .temperature = temperature, .topP = top_p};
-            const json body = LlmClient::buildChatRequestBody(api, params, messages);
+            const json body = LlmClient::buildChatRequestBody(api, params, *messages);
             const auto resp =
               co_await HttpUtil::send("[LLM]", base_url, path, drogon::Post, body, api_key, 90.0, sessionId);
             if (!resp) {
@@ -73,7 +73,7 @@ namespace insoulforge {
         }
     } // namespace LlmClient
 
-    drogon::Task<std::optional<std::string>> LlmClient::requestLLM(const json &messages, const double temperature,
+    drogon::Task<std::optional<std::string>> LlmClient::requestLLM(const json *messages, const double temperature,
       const double top_p, const int max_tokens, const std::string &role, const std::optional<uint64_t> sessionId) {
         const auto &config = Config::instance();
         co_return co_await requestStr(messages, config.executor.baseUrl, config.executor.path, config.executor.apiKey,

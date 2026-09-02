@@ -276,9 +276,9 @@ Task<> AdminController::testCustomTool(
 
     std::string result;
     if (executorType == "python") {
-        result = co_await AgentToolManager::executePythonTool(scriptContent, testArgs);
+        result = co_await AgentToolManager::executePythonTool(scriptContent, &testArgs);
     } else if (executorType == "http") {
-        result = co_await AgentToolManager::executeHttpTool(executorConfig, testArgs);
+        result = co_await AgentToolManager::executeHttpTool(executorConfig, &testArgs);
     } else {
         result = "未知的执行类型";
     }
@@ -353,7 +353,7 @@ Task<> AdminController::exportCustomTool(
     exportJson["version"] = "1.0";
 
     // 返回 JSON 文件
-    const std::string content = exportJson.dump(2);
+    const std::string content = dumpJson(exportJson, true, 2);
 
     auto resp = HttpResponse::newHttpResponse();
     resp->setStatusCode(k200OK);

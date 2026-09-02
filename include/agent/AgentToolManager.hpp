@@ -27,10 +27,10 @@ namespace insoulforge::AgentToolManager {
     /// @brief 执行 Python 脚本工具
     /// @param scriptContent Python脚本内容（直接存储在数据库中）
     /// @param args 传入参数
-    drogon::Task<std::string> executePythonTool(const std::string &scriptContent, const json &args);
+    drogon::Task<std::string> executePythonTool(const std::string &scriptContent, const json *args);
 
     /// @brief 执行 HTTP 工具
-    drogon::Task<std::string> executeHttpTool(const std::string &config, const json &args);
+    drogon::Task<std::string> executeHttpTool(const std::string &config, const json *args);
 
     /// @brief 获取 QQ 收藏表情列表（调用 NapCat fetch_custom_face_detail，带60秒缓存）
     /// @return 归一化后的表情数组，失败时返回空数组

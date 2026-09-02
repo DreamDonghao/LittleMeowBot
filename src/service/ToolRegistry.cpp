@@ -80,7 +80,7 @@ namespace insoulforge {
 
         for (const auto *categoryTools: {&m_terminalTools, &m_infoTools, &m_actionTools}) {
             if (const auto it = categoryTools->find(name); it != categoryTools->end()) {
-                co_return co_await it->second.handler(args);
+                co_return co_await it->second.handler(&args);
             }
         }
         co_return "工具未找到: " + name;

@@ -148,7 +148,7 @@ namespace insoulforge {
             messages.push_back(item);
 
             const auto parsed =
-              parseLlmJson(co_await LlmClient::requestLLM(messages, 0.4f, 0.9f, maxTokens, "memory", sessionId),
+              parseLlmJson(co_await LlmClient::requestLLM(&messages, 0.4f, 0.9f, maxTokens, "memory", sessionId),
                 "记忆提取", sessionId);
             if (!parsed) {
                 co_return std::nullopt;
@@ -264,7 +264,7 @@ namespace insoulforge {
             messages.push_back(item);
 
             const auto parsed = parseLlmJson(
-              co_await LlmClient::requestLLM(messages, 0.3f, 0.9f, config.memoryExtractMaxTokens, "memory", sessionId),
+              co_await LlmClient::requestLLM(&messages, 0.3f, 0.9f, config.memoryExtractMaxTokens, "memory", sessionId),
               "记忆整理", sessionId);
             if (!parsed) {
                 co_return std::nullopt;
@@ -376,7 +376,7 @@ namespace insoulforge {
             messages.push_back(item);
 
             const auto deltas =
-              parseLlmJson(co_await LlmClient::requestLLM(messages, 0.3f, 0.9f, 256, "affinity", sessionId),
+              parseLlmJson(co_await LlmClient::requestLLM(&messages, 0.3f, 0.9f, 256, "affinity", sessionId),
                 "好感度评分", sessionId);
             if (!deltas) {
                 co_return;

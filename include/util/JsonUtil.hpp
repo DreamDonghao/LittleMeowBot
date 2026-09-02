@@ -55,8 +55,11 @@ namespace insoulforge {
 
     /// @brief 序列化为紧凑 JSON（与聊天记录等既有存储格式一致）
     /// @param emitUtf8 是否原样输出非 ASCII 字符（false 时转义为 \\uXXXX）
-    [[nodiscard]] inline std::string dumpJson(const json &value, const bool emitUtf8 = true) {
-        return emitUtf8 ? value.dump() : value.dump(-1, ' ', true);
+    /// @param indent 缩进宽度（-1 表示紧凑输出）
+    /// @details 无效 UTF-8 字节替换为 U+FFFD 而不是抛异常：日志/LLM/自定义工具输出可能
+    ///          携带坏字节，序列化处于所有对外边界（HTTP/WS/存储），不允许因坏字节中断
+    [[nodiscard]] inline std::string dumpJson(const json &value, const bool emitUtf8 = true, const int indent = -1) {
+        return value.dump(indent, ' ', !emitUtf8, json::error_handler_t::replace);
     }
 
     /// @brief 容忍模型输出 ```json 围栏等杂质：截取首尾大括号之间的内容
