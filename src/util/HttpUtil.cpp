@@ -49,8 +49,8 @@ namespace insoulforge::HttpUtil {
     } // namespace
 
     drogon::Task<std::optional<drogon::HttpResponsePtr>> send(const std::string_view tag, std::string baseUrl,
-      std::string path, const drogon::HttpMethod method, json body, std::string bearerToken,
-      const double timeout, std::optional<uint64_t> sessionId) {
+      std::string path, const drogon::HttpMethod method, json body, std::string bearerToken, const double timeout,
+      std::optional<uint64_t> sessionId) {
         const auto prefix = sessionId.has_value() ? fmt::format("[group_id={}] {}", *sessionId, tag) : std::string(tag);
         // 请求体完整序列化一次：请求、HttpTrace（全量）、日志（截断）共用
         auto bodyText = body.is_null() ? std::string{} : dumpJson(body);

@@ -74,8 +74,8 @@ namespace insoulforge {
         auto decision = co_await route(chatRecords, std::move(message));
         decision.isPrivate = isPrivateChat;
 
-        Logger::session(sessionId).info("[Router] 结果: {} | shouldReply={} | thinking={} | maxLength={}",
-          decision.action, decision.shouldReply, decision.enableThinking, decision.maxLength);
+        Logger::session(sessionId).info("[Router] 结果: {} | shouldReply={} | maxLength={}", decision.action,
+          decision.shouldReply, decision.maxLength);
 
         // 检查处理代际是否被 @消息取消
         if (!isCurrentGeneration(sessionId, generation)) {

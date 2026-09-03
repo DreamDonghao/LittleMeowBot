@@ -69,8 +69,7 @@ namespace insoulforge {
         return tools;
     }
 
-    drogon::Task<std::string> ToolRegistry::executeTool(
-      std::string name, json args, uint64_t sessionId) const {
+    drogon::Task<std::string> ToolRegistry::executeTool(std::string name, json args, uint64_t sessionId) const {
         // 设置上下文
         auto &ctx = currentToolContext();
         ctx.sessionId = sessionId;

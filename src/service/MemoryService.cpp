@@ -217,8 +217,8 @@ namespace insoulforge {
         /// @param longTermEnabled Embedding 是否可用（不可用时禁止输出长期记忆）
         /// @return nullopt 表示 API 失败或输出不是合法 JSON（调用方不得推进水位线）
         drogon::Task<std::optional<ReconcileResult>> reconcileMemory(std::vector<std::string> currentShortTerm,
-          std::vector<std::string> newMemories, std::vector<SimilarMemory> recalled,
-          const bool longTermEnabled, const uint64_t sessionId) {
+          std::vector<std::string> newMemories, std::vector<SimilarMemory> recalled, const bool longTermEnabled,
+          const uint64_t sessionId) {
             const auto &config = Config::instance();
 
             std::string systemPrompt = R"(你是一个【群聊记忆整理器】。
@@ -263,9 +263,8 @@ namespace insoulforge {
                               "\n请输出整理结果 JSON：";
             messages.push_back(item);
 
-            const auto parsed = parseLlmJson(
-              co_await LlmClient::requestLLM(std::move(messages), 0.3f, 0.9f, config.memoryExtractMaxTokens,
-                "memory", sessionId),
+            const auto parsed = parseLlmJson(co_await LlmClient::requestLLM(std::move(messages), 0.3f, 0.9f,
+                                               config.memoryExtractMaxTokens, "memory", sessionId),
               "记忆整理", sessionId);
             if (!parsed) {
                 co_return std::nullopt;
@@ -377,8 +376,7 @@ namespace insoulforge {
             messages.push_back(item);
 
             const auto deltas =
-              parseLlmJson(
-                co_await LlmClient::requestLLM(std::move(messages), 0.3f, 0.9f, 256, "affinity", sessionId),
+              parseLlmJson(co_await LlmClient::requestLLM(std::move(messages), 0.3f, 0.9f, 256, "affinity", sessionId),
                 "好感度评分", sessionId);
             if (!deltas) {
                 co_return;
@@ -467,9 +465,8 @@ namespace insoulforge {
             if (longTermEnabled)
                 recalled = co_await recallForMerge(*extracted, sessionId);
 
-            const auto reconcile =
-              co_await reconcileMemory(splitLines(existingMemory), std::move(*extracted), std::move(recalled),
-                longTermEnabled, sessionId);
+            const auto reconcile = co_await reconcileMemory(
+              splitLines(existingMemory), std::move(*extracted), std::move(recalled), longTermEnabled, sessionId);
             if (!reconcile) {
                 Logger::session(sessionId).warn("记忆整理失败，水位线保持 {}，下条消息将重试", chunkEndId);
                 break;

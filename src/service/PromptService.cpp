@@ -72,7 +72,6 @@ reply 的场景：
 - 有梗、有幽默发挥空间的内容
 
 策略说明：
-- enableThinking: 仅复杂问题（计算、推理、技术问题）设为 true
 - tone: friendly(友好)/serious(正经)/casual(随意)，根据对话氛围选
 - maxLength 参考值:
   15: 简短接话/打招呼
@@ -89,7 +88,6 @@ reply 的场景：
   "action": "skip" 或 "reply",
   "reason": "简短原因",
   "strategy": {
-    "enableThinking": false,
     "tone": "friendly",
     "maxLength": 25
   }
@@ -142,7 +140,6 @@ reply 的场景：
 - 除 skip 场景外的一切正常对话
 
 策略说明：
-- enableThinking: 仅复杂问题（计算、推理、技术问题）设为 true
 - tone: friendly(友好)/serious(正经)/casual(随意)，根据对话氛围选
 - maxLength 参考值:
   15: 简短接话/打招呼
@@ -159,7 +156,6 @@ reply 的场景：
   "action": "skip" 或 "reply",
   "reason": "简短原因",
   "strategy": {
-    "enableThinking": false,
     "tone": "friendly",
     "maxLength": 25
   }
@@ -180,6 +176,28 @@ reply 的场景：
           stored.find("不要其他内容）：\n{{") != std::string::npos) {
             PromptStore::setPrompt("router_system", defaultPrompts[1].content, defaultPrompts[1].desc);
             spdlog::warn("已自愈 router_system 默认值中的双花括号残留");
+        }
+
+        // 思考模式已改为 Executor 的 deep_think 工具：从 Router 提示词中移除 enableThinking 策略项
+        // （仅删除包含 enableThinking 的行，不影响提示词其余部分的自定义内容）
+        for (const char *key: {"router_system", "router_private_system"}) {
+            std::string stored = PromptStore::getPrompt(key, "");
+            if (stored.find("enableThinking") == std::string::npos) {
+                continue;
+            }
+            std::string updated;
+            for (size_t start = 0; start < stored.size();) {
+                const size_t end = stored.find('\n', start);
+                const size_t stop = end == std::string::npos ? stored.size() : end;
+                if (const std::string line = stored.substr(start, stop - start);
+                  line.find("enableThinking") == std::string::npos) {
+                    updated += line;
+                    updated.push_back('\n');
+                }
+                start = stop + 1;
+            }
+            PromptStore::setPrompt(key, updated);
+            spdlog::info("已从 Router 提示词移除 enableThinking 策略项: {}", key);
         }
 
         spdlog::info("提示词服务初始化完成");

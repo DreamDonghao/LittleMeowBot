@@ -19,9 +19,8 @@ namespace insoulforge::OneBotClient {
         [[nodiscard]] drogon::Task<std::optional<json>> callApi(std::string_view tag, std::string api, json params,
           std::optional<uint64_t> sessionId = std::nullopt, double timeout = 30.0) {
             const auto &config = Config::instance();
-            const auto resp = co_await HttpUtil::send(
-              tag, config.qqHttpHost, "/" + api, drogon::Post, std::move(params), config.accessToken, timeout,
-              sessionId);
+            const auto resp = co_await HttpUtil::send(tag, config.qqHttpHost, "/" + api, drogon::Post,
+              std::move(params), config.accessToken, timeout, sessionId);
             if (!resp) {
                 co_return std::nullopt;
             }
@@ -123,8 +122,7 @@ namespace insoulforge::OneBotClient {
         co_return true;
     }
 
-    drogon::Task<std::optional<std::string>> getImage(
-      std::string file, const std::optional<uint64_t> sessionId) {
+    drogon::Task<std::optional<std::string>> getImage(std::string file, const std::optional<uint64_t> sessionId) {
         json params;
         params["file"] = std::move(file);
 
@@ -135,8 +133,7 @@ namespace insoulforge::OneBotClient {
         co_return jsonToString(atOrNull(atOrNull(*resp, "data"), "file"));
     }
 
-    drogon::Task<std::optional<std::string>> downloadFile(
-      std::string url, const std::optional<uint64_t> sessionId) {
+    drogon::Task<std::optional<std::string>> downloadFile(std::string url, const std::optional<uint64_t> sessionId) {
         json params;
         params["url"] = std::move(url);
 

@@ -22,6 +22,7 @@ namespace insoulforge {
     struct ToolContext {
         uint64_t sessionId = 0;
         std::string groupName;
+        json conversationContext; ///< system 之后的完整消息列表，deep_think 等需要会话上下文的工具在入口读取
     };
 
     /// @brief 获取当前工具执行上下文
@@ -57,8 +58,7 @@ namespace insoulforge {
         [[nodiscard]] json getAllTools() const;
 
         /// @brief 执行工具（异步）
-        [[nodiscard]] drogon::Task<std::string> executeTool(
-          std::string name, json args, uint64_t sessionId = 0) const;
+        [[nodiscard]] drogon::Task<std::string> executeTool(std::string name, json args, uint64_t sessionId = 0) const;
 
         /// @brief 检查工具是否存在
         [[nodiscard]] bool hasTool(const std::string &name) const;

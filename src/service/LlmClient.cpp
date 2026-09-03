@@ -1,6 +1,9 @@
 /// @file LlmClient.cpp
 /// @brief API 客户端 - 实现
 
+#include <chrono>
+#include <drogon/HttpAppFramework.h>
+
 #include <config/Config.hpp>
 #include <service/LlmClient.hpp>
 #include <service/WebSocketManager.hpp>
@@ -11,6 +14,21 @@
 
 namespace insoulforge {
     namespace {
+        /// @brief 网络异常/临时性 HTTP 错误的最大重试次数
+        constexpr int kMaxRetries = 3;
+
+        /// @brief 重试间隔
+        constexpr std::chrono::seconds kRetryDelay{1};
+
+        /// @brief LLM 请求超时（秒）
+        constexpr double kLlmTimeoutSeconds = 90.0;
+
+        /// @brief 日志中错误响应体的截断长度
+        constexpr size_t kErrorBodyMaxChars = 500;
+
+        /// @brief 是否为可重试的临时性 HTTP 状态码
+        bool isRetryableStatus(const int status) { return status == 503 || status == 429 || status == 500; }
+
         /// @brief 通用 API 请求函数
         drogon::Task<std::optional<std::string>> requestStr(json messages, std::string base_url, std::string path,
           std::string api_key, std::string model, const double temperature, const double top_p, const int max_tokens,
@@ -44,8 +62,7 @@ namespace insoulforge {
     } // namespace
 
     namespace LlmClient {
-        json buildChatRequestBody(
-          const LLMApiConfig &api, const LLMModelParams &params, json messages, json tools) {
+        json buildChatRequestBody(const LLMApiConfig &api, const LLMModelParams &params, json messages, json tools) {
             json body;
             body["model"] = api.model;
             body["messages"] = std::move(messages);
@@ -70,6 +87,41 @@ namespace insoulforge {
             if (!choices.is_array() || choices.empty())
                 return std::nullopt;
             return parsed;
+        }
+
+        drogon::Task<std::optional<json>> requestChat(std::string label, std::string usageRole,
+          const LLMApiConfig &apiConfig, const LLMModelParams &params, json messages, json tools,
+          const uint64_t sessionId) {
+            const std::string tag = "[" + label + "]";
+            Logger::session(sessionId).debug("{} model={}", tag, apiConfig.model);
+
+            const json body = buildChatRequestBody(apiConfig, params, std::move(messages), std::move(tools));
+
+            for (int attempt = 0;; ++attempt) {
+                const auto resp = co_await HttpUtil::send(tag, apiConfig.baseUrl, apiConfig.path, drogon::Post, body,
+                  apiConfig.apiKey, kLlmTimeoutSeconds, sessionId);
+
+                if (!resp) {
+                    Logger::session(sessionId).warn("{}网络异常", tag);
+                } else if (const auto respJson = validChatJson(*resp)) {
+                    logUsage(*respJson, apiConfig.model, usageRole, sessionId);
+                    co_return respJson;
+                } else {
+                    const int status = static_cast<int>((*resp)->getStatusCode());
+                    const std::string respBody = std::string((*resp)->getBody()).substr(0, kErrorBodyMaxChars);
+                    Logger::session(sessionId).error("{}失败: status={} body={}", tag, status, respBody);
+                    if (!isRetryableStatus(status)) {
+                        co_return std::nullopt; // 不可恢复的错误（鉴权、参数等）
+                    }
+                    Logger::session(sessionId).warn("{}临时性错误", tag);
+                }
+
+                if (attempt >= kMaxRetries) {
+                    co_return std::nullopt; // 重试耗尽
+                }
+                Logger::session(sessionId).warn("{}第 {}/{} 次重试", tag, attempt + 1, kMaxRetries);
+                co_await drogon::sleepCoro(drogon::app().getLoop(), kRetryDelay);
+            }
         }
     } // namespace LlmClient
 

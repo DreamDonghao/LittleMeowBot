@@ -148,7 +148,6 @@ namespace insoulforge {
             // 解析 strategy
             if (root.contains("strategy") && root["strategy"].is_object()) {
                 const json &strategy = root["strategy"];
-                decision.enableThinking = getBool(strategy, "enableThinking");
                 decision.tone = getStr(strategy, "tone", "friendly");
                 const int maxLen = getInt(strategy, "maxLength", 25);
                 decision.maxLength = std::clamp(maxLen, 10, 500);

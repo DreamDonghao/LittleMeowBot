@@ -132,11 +132,11 @@ AgentSystem::process
     ▼
 Layer 1: RouterAgent
     │ 输入：最近聊天记录 + 长期记忆 + 群配置
-    │ 输出 RouterDecision：SKIP / REPLY + 策略（语气、长度、是否启用思考模式）
+    │ 输出 RouterDecision：SKIP / REPLY + 策略（语气、长度）
     ▼
 Layer 2: ExecutorAgent
-    │ 标准模式：带工具调用循环生成回复
-    │ 思考模式：思考模型先分析 → 执行模型生成回复（两阶段）
+    │ 带工具调用循环生成回复
+    │ deep_think 工具按需把复杂问题交给深度思考模型求解，答案作为工具结果回传后再组织回复
     ▼
 MessageService::sendGroupMsg → OneBot API
 ```
@@ -199,9 +199,9 @@ registry.registerTool(
         .name = "my_tool",
         .description = "工具描述，LLM 据此判断何时调用",
         .parameters = paramsJson,   // JSON Schema 格式
-        .handler = [](const Json::Value &args) -> drogon::Task<std::string> {
+        .handler = [](json args) -> drogon::Task<std::string> {
             co_return "结果";
-        }
+        },
     }, ToolCategory::ACTION);
 ```
 

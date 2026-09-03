@@ -2,10 +2,7 @@
 /// @brief Executor Agent - 实现
 
 #include <agent/ExecutorAgent.hpp>
-#include <algorithm>
-#include <chrono>
 #include <config/Config.hpp>
-#include <drogon/HttpAppFramework.h>
 #include <fmt/core.h>
 #include <ranges>
 #include <regex>
@@ -20,7 +17,6 @@
 #include <tuple>
 #include <unordered_map>
 #include <util/CommonUtil.hpp>
-#include <util/HttpUtil.hpp>
 #include <util/JsonUtil.hpp>
 #include <util/Logger.hpp>
 #include <utility>
@@ -30,21 +26,6 @@ namespace insoulforge {
     namespace {
         /// @brief 工具调用循环最大轮数（防止模型无限循环调用工具）
         constexpr int kMaxToolRounds = 6;
-
-        /// @brief 网络异常/临时性 HTTP 错误的最大重试次数
-        constexpr int kMaxRetries = 3;
-
-        /// @brief 重试间隔
-        constexpr std::chrono::seconds kRetryDelay{1};
-
-        /// @brief LLM 请求超时（秒）
-        constexpr double kLlmTimeoutSeconds = 90.0;
-
-        /// @brief 日志中错误响应体的截断长度
-        constexpr size_t kErrorBodyMaxChars = 500;
-
-        /// @brief 日志中思考结果的预览长度
-        constexpr size_t kThinkingPreviewChars = 100;
 
         // ==================== Prompt 构建 ====================
 
@@ -69,26 +50,6 @@ namespace insoulforge {
                 prompt += decision.isPrivate ? "\n【重要】这是紧急问题，必须回复！"
                                              : "\n【重要】这是@提及或紧急问题，必须回复！";
             }
-
-            return prompt;
-        }
-
-        /// @brief 获取思考模型系统提示词
-        std::string getThinkingSystemPrompt(int maxLength) {
-            std::string prompt = PromptService::getExecutorSystemPrompt();
-
-            prompt += fmt::format("\n\n【思考任务】\n"
-                                  "分析用户请求，给出回复思路。\n\n"
-                                  "【分析要点】\n"
-                                  "- 用户想要什么\n"
-                                  "- 解决方案或回复思路\n"
-                                  "- 回复语气和长度（{}字左右）\n"
-                                  "- 需要引用回复时记下 message_id\n\n"
-                                  "【输出要求】\n"
-                                  "- 直接输出分析和建议的回复内容\n"
-                                  "- 不使用 markdown 代码块\n"
-                                  "- 不输出工具调用格式",
-              maxLength);
 
             return prompt;
         }
@@ -151,7 +112,7 @@ namespace insoulforge {
         /// @brief 聊天记录上下文（窗口内，旧 → 新）
         struct ChatContext {
             json earlier = json::array(); // 更早记录：去 images、text 截断到 500 字
-            json recent = json::array();  // 最近记录：注入好感度与召回的长期记忆
+            json recent = json::array(); // 最近记录：注入好感度与召回的长期记忆
         };
 
         /// @brief 构建聊天记录上下文：
@@ -255,56 +216,6 @@ namespace insoulforge {
             return messages;
         }
 
-        // ==================== LLM 请求 ====================
-
-        /// @brief 是否为可重试的临时性 HTTP 状态码
-        [[nodiscard]] bool isRetryableStatus(const int status) {
-            return status == 503 || status == 429 || status == 500;
-        }
-
-        /// @brief 发送一次 chat completion 请求并校验响应，网络异常或临时性 HTTP 错误（503/429/500）时重试
-        /// @param label 日志标签（"LLM" / "思考模型"）
-        /// @param usageRole 用量记录中的角色标识（executor / executorThinking）
-        /// @param apiConfig LLM API 配置
-        /// @param params 采样参数
-        /// @param messages 消息列表
-        /// @param tools 工具定义（null 表示不附带）
-        /// @param sessionId 会话 ID
-        /// @return 校验通过的响应 JSON；不可恢复错误或重试耗尽时返回 std::nullopt
-        drogon::Task<std::optional<json>> requestChat(std::string label, std::string usageRole,
-          const LLMApiConfig &apiConfig, const LLMModelParams &params, json messages, json tools,
-          const uint64_t sessionId) {
-            Logger::session(sessionId).debug("[Executor] {}: {}", label, apiConfig.model);
-
-            for (int attempt = 0;; ++attempt) {
-                const auto resp =
-                  co_await HttpUtil::send("[Executor]", apiConfig.baseUrl, apiConfig.path, drogon::Post,
-                    LlmClient::buildChatRequestBody(apiConfig, params, messages, tools), apiConfig.apiKey,
-                    kLlmTimeoutSeconds, sessionId);
-
-                if (!resp) {
-                    Logger::session(sessionId).warn("[Executor] {}网络异常", label);
-                } else if (const auto json = LlmClient::validChatJson(*resp)) {
-                    LlmClient::logUsage(*json, apiConfig.model, usageRole, sessionId);
-                    co_return json;
-                } else {
-                    const int status = static_cast<int>((*resp)->getStatusCode());
-                    const std::string respBody = std::string((*resp)->getBody()).substr(0, kErrorBodyMaxChars);
-                    Logger::session(sessionId).error("[Executor] {}失败: status={} body={}", label, status, respBody);
-                    if (!isRetryableStatus(status)) {
-                        co_return std::nullopt; // 不可恢复的错误（鉴权、参数等）
-                    }
-                    Logger::session(sessionId).warn("[Executor] {}临时性错误", label);
-                }
-
-                if (attempt >= kMaxRetries) {
-                    co_return std::nullopt; // 重试耗尽
-                }
-                Logger::session(sessionId).warn("[Executor] {}第 {}/{} 次重试", label, attempt + 1, kMaxRetries);
-                co_await drogon::sleepCoro(drogon::app().getLoop(), kRetryDelay);
-            }
-        }
-
         // ==================== 工具调用 ====================
 
         /// @brief 结果为 CQ 码、需在产出 reply 时自动拼入正文的工具
@@ -387,6 +298,14 @@ namespace insoulforge {
                     continue;
                 }
 
+                // 把 system 之后的完整消息列表放进工具上下文，deep_think 等需要会话上下文的工具在
+                // handler 入口读取；每次调用前设置，避免协程交错时读到其他会话的上下文
+                json conversationContext = json::array();
+                for (size_t i = 1; i < messages.size(); ++i) {
+                    conversationContext.push_back(messages[i]);
+                }
+                currentToolContext().conversationContext = std::move(conversationContext);
+
                 const std::string result =
                   co_await ToolRegistry::instance().executeTool(name, std::move(args), sessionId);
                 Logger::session(sessionId).debug("[Executor] 工具结果: {}", result);
@@ -409,39 +328,6 @@ namespace insoulforge {
 
         // ==================== 执行流程 ====================
 
-        /// @brief 执行思考模型（不带 tools，产出回复思路）
-        /// @return 思考模型输出（优先取 reasoning_content 字段）；请求失败返回 std::nullopt
-        drogon::Task<std::optional<std::string>> executeThinking(
-          json messages, const int maxLength, const uint64_t sessionId) {
-            const auto &config = Config::instance();
-
-            // 仅替换 system prompt 为思考任务指令，其余消息原样保留
-            json thinkingMessages = json::array();
-            json systemMsg;
-            systemMsg["role"] = "system";
-            systemMsg["content"] = getThinkingSystemPrompt(maxLength);
-            thinkingMessages.push_back(systemMsg);
-            for (size_t i = 1; i < messages.size(); ++i) {
-                thinkingMessages.push_back(std::move(messages[i]));
-            }
-
-            const auto respJson = co_await requestChat("思考模型", "executorThinking", config.executorThinking,
-              config.executorThinkingParams, std::move(thinkingMessages), {}, sessionId);
-            if (!respJson) {
-                co_return std::nullopt;
-            }
-
-            // DeepSeek Reasoner 等模型将分析过程放在 reasoning_content，优先取用
-            const json &message = atOrNull((*respJson)["choices"][0], "message");
-            std::string content;
-            if (message.contains("reasoning_content") && !message["reasoning_content"].is_null()) {
-                content = jsonToString(message["reasoning_content"]);
-            } else if (message.contains("content") && !message["content"].is_null()) {
-                content = jsonToString(message["content"]);
-            }
-            co_return content;
-        }
-
         /// @brief Agent 模式执行（带 tools）：循环「请求模型 → 处理工具调用」，直到产出回复决策或达最大轮数
         drogon::Task<std::optional<ReplyDecision>> executeWithAgent(json messages, const uint64_t sessionId) {
             const auto &config = Config::instance();
@@ -454,7 +340,7 @@ namespace insoulforge {
             std::string accumulatedCQCodes; // 跨轮累积 CQ 码，产出 reply 时自动拼入正文
 
             for (int round = 0; round < kMaxToolRounds; ++round) {
-                const auto respJson = co_await requestChat(
+                const auto respJson = co_await LlmClient::requestChat(
                   "LLM", "executor", config.executor, config.executorParams, messages, tools, sessionId);
                 if (!respJson) {
                     co_return std::nullopt;
@@ -476,8 +362,8 @@ namespace insoulforge {
                 // 有工具调用：回传 assistant 消息后逐个处理，未命中终端工具则继续下一轮
                 messages.push_back(buildAssistantToolCallMessage(message));
                 std::optional<ReplyDecision> roundDecision;
-                std::tie(roundDecision, messages, accumulatedCQCodes) = co_await processToolCalls(
-                  message, std::move(messages), std::move(accumulatedCQCodes), sessionId);
+                std::tie(roundDecision, messages, accumulatedCQCodes) =
+                  co_await processToolCalls(message, std::move(messages), std::move(accumulatedCQCodes), sessionId);
                 if (roundDecision) {
                     co_return std::move(roundDecision);
                 }
@@ -487,36 +373,6 @@ namespace insoulforge {
             co_return std::nullopt;
         }
 
-        /// @brief 思考模式执行（两阶段：思考模型分析 → 执行模型带工具生成回复；思考失败时回退普通模式）
-        drogon::Task<std::optional<ReplyDecision>> executeWithThinking(
-          json messages, const int maxLength, const uint64_t sessionId) {
-            Logger::session(sessionId).info("[Executor] 思考模式 - Step 1: 分析");
-
-            const std::optional<std::string> thinkingResult =
-              co_await executeThinking(messages, maxLength, sessionId);
-            if (!thinkingResult || thinkingResult->empty()) {
-                Logger::session(sessionId).warn("[Executor] 思考模型返回空，fallback");
-                co_return co_await executeWithAgent(std::move(messages), sessionId);
-            }
-
-            Logger::session(sessionId).debug("[Executor] 思考结果: {}...",
-              thinkingResult->substr(0, std::min(kThinkingPreviewChars, thinkingResult->length())));
-
-            // Step 2: 注入思考结果，交由执行模型带工具生成回复
-            Logger::session(sessionId).info("[Executor] 思考模式 - Step 2: 执行");
-
-            json thinkingMsg;
-            thinkingMsg["role"] = "assistant";
-            thinkingMsg["content"] = "【思考分析】\n" + *thinkingResult;
-            messages.push_back(thinkingMsg);
-
-            json execMsg;
-            execMsg["role"] = "user";
-            execMsg["content"] = "根据以上分析，调用工具发送回复。";
-            messages.push_back(execMsg);
-
-            co_return co_await executeWithAgent(std::move(messages), sessionId);
-        }
     } // namespace
 
     /// @brief 清理模型输出的污染内容（think标签、tool_call标签、DSML标签等）
@@ -552,15 +408,11 @@ namespace insoulforge {
     drogon::Task<std::optional<ReplyDecision>> execute(
       const ChatRecordManager &chatRecords, const MemoryManager &memory, RouterDecision decision) {
         const uint64_t sessionId = chatRecords.getSessionId();
-        Logger::session(sessionId).info("[Executor] 开始执行 | thinking={} | priority={} | maxLength={}",
-          decision.enableThinking, decision.isPriority, decision.maxLength);
+        Logger::session(sessionId).info(
+          "[Executor] 开始执行 | priority={} | maxLength={}", decision.isPriority, decision.maxLength);
 
         json messages = buildPrompt(chatRecords, memory, decision);
 
-        // 思考模式两阶段执行（思考模型分析 → 执行模型生成），普通模式单阶段直接生成
-        if (decision.enableThinking) {
-            co_return co_await executeWithThinking(std::move(messages), decision.maxLength, sessionId);
-        }
         co_return co_await executeWithAgent(std::move(messages), sessionId);
     }
 } // namespace insoulforge

@@ -24,7 +24,6 @@ namespace insoulforge {
 
         // 回复策略
         bool shouldReply = true;
-        bool enableThinking = false;
         std::string tone = "friendly";
         int maxLength = 25;
         bool isPriority = false;
