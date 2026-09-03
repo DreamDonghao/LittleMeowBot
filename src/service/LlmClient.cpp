@@ -12,14 +12,14 @@
 namespace insoulforge {
     namespace {
         /// @brief 通用 API 请求函数
-        drogon::Task<std::optional<std::string>> requestStr(const json *messages, const std::string &base_url,
-          const std::string &path, const std::string &api_key, const std::string &model, const double temperature,
-          const double top_p, const int max_tokens, const std::string &role, const std::optional<uint64_t> sessionId) {
+        drogon::Task<std::optional<std::string>> requestStr(json messages, std::string base_url, std::string path,
+          std::string api_key, std::string model, const double temperature, const double top_p, const int max_tokens,
+          std::string role, const std::optional<uint64_t> sessionId) {
             const LLMApiConfig api{.apiKey = api_key, .baseUrl = base_url, .path = path, .model = model};
             const LLMModelParams params{.maxTokens = max_tokens, .temperature = temperature, .topP = top_p};
-            const json body = LlmClient::buildChatRequestBody(api, params, *messages);
-            const auto resp =
-              co_await HttpUtil::send("[LLM]", base_url, path, drogon::Post, body, api_key, 90.0, sessionId);
+            json body = LlmClient::buildChatRequestBody(api, params, std::move(messages));
+            const auto resp = co_await HttpUtil::send("[LLM]", std::move(base_url), std::move(path), drogon::Post,
+              std::move(body), std::move(api_key), 90.0, sessionId);
             if (!resp) {
                 co_return std::nullopt;
             }
@@ -45,12 +45,12 @@ namespace insoulforge {
 
     namespace LlmClient {
         json buildChatRequestBody(
-          const LLMApiConfig &api, const LLMModelParams &params, const json &messages, const json &tools) {
+          const LLMApiConfig &api, const LLMModelParams &params, json messages, json tools) {
             json body;
             body["model"] = api.model;
-            body["messages"] = messages;
+            body["messages"] = std::move(messages);
             if (!tools.is_null())
-                body["tools"] = tools;
+                body["tools"] = std::move(tools);
             body["temperature"] = params.temperature;
             body["max_tokens"] = params.maxTokens;
             body["top_p"] = params.topP;
@@ -73,15 +73,15 @@ namespace insoulforge {
         }
     } // namespace LlmClient
 
-    drogon::Task<std::optional<std::string>> LlmClient::requestLLM(const json *messages, const double temperature,
-      const double top_p, const int max_tokens, const std::string &role, const std::optional<uint64_t> sessionId) {
+    drogon::Task<std::optional<std::string>> LlmClient::requestLLM(json messages, const double temperature,
+      const double top_p, const int max_tokens, std::string role, const std::optional<uint64_t> sessionId) {
         const auto &config = Config::instance();
-        co_return co_await requestStr(messages, config.executor.baseUrl, config.executor.path, config.executor.apiKey,
-          config.executor.model, temperature, top_p, max_tokens, role, sessionId);
+        co_return co_await requestStr(std::move(messages), config.executor.baseUrl, config.executor.path,
+          config.executor.apiKey, config.executor.model, temperature, top_p, max_tokens, std::move(role), sessionId);
     }
 
     drogon::Task<std::optional<std::vector<float>>> LlmClient::requestEmbedding(
-      const std::string &text, const std::optional<uint64_t> sessionId) {
+      std::string text, const std::optional<uint64_t> sessionId) {
         const auto &config = Config::instance().embedding;
         if (config.baseUrl.empty() || config.model.empty()) {
             spdlog::debug("Embedding 未配置，跳过向量化");
@@ -90,10 +90,10 @@ namespace insoulforge {
 
         json body;
         body["model"] = config.model;
-        body["input"].push_back(text);
+        body["input"].push_back(std::move(text));
 
         const auto resp = co_await HttpUtil::send(
-          "[Embedding]", config.baseUrl, config.path, drogon::Post, body, config.apiKey, 30.0, sessionId);
+          "[Embedding]", config.baseUrl, config.path, drogon::Post, std::move(body), config.apiKey, 30.0, sessionId);
         if (!resp) {
             co_return std::nullopt;
         }

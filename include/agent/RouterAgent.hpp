@@ -16,5 +16,5 @@ namespace insoulforge {
     /// @param chatRecords 聊天记录
     /// @param message QQ 消息
     /// @return 路由决策结果（包含回复策略）
-    [[nodiscard]] drogon::Task<RouterDecision> route(const ChatRecordManager &chatRecords, const QQMessage &message);
+    [[nodiscard]] drogon::Task<RouterDecision> route(const ChatRecordManager &chatRecords, QQMessage message);
 } // namespace insoulforge

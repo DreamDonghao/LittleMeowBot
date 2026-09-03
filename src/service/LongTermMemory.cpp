@@ -10,7 +10,7 @@
 #include <util/Logger.hpp>
 
 namespace insoulforge {
-    drogon::Task<bool> LongTermMemory::addMemory(const std::string &content, const uint64_t sessionId) {
+    drogon::Task<bool> LongTermMemory::addMemory(std::string content, const uint64_t sessionId) {
         const auto embedding = co_await LlmClient::requestEmbedding(content, sessionId);
         if (!embedding) {
             Logger::session(sessionId).warn("长期记忆向量化失败（Embedding 未配置或请求失败），本条不入库");
@@ -27,8 +27,8 @@ namespace insoulforge {
     }
 
     drogon::Task<std::optional<std::string>> LongTermMemory::searchMemory(
-      const std::string &query, const int topK, const uint64_t sessionId) {
-        const auto embedding = co_await LlmClient::requestEmbedding(query, sessionId);
+      std::string query, const int topK, const uint64_t sessionId) {
+        const auto embedding = co_await LlmClient::requestEmbedding(std::move(query), sessionId);
         if (!embedding) {
             Logger::session(sessionId).warn("记忆检索向量化失败（Embedding 未配置或请求失败）");
             co_return std::nullopt;

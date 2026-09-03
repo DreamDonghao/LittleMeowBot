@@ -16,11 +16,12 @@ namespace insoulforge::OneBotClient {
         /// @param sessionId 会话 ID（用于会话日志，可空）
         /// @param timeout 超时秒数
         /// @return 响应 JSON（含 status/retcode/data）；HTTP 非 200 或 status != ok 时返回 nullopt（已记日志）
-        [[nodiscard]] drogon::Task<std::optional<json>> callApi(std::string_view tag, const std::string &api,
-          const json &params, std::optional<uint64_t> sessionId = std::nullopt, double timeout = 30.0) {
+        [[nodiscard]] drogon::Task<std::optional<json>> callApi(std::string_view tag, std::string api, json params,
+          std::optional<uint64_t> sessionId = std::nullopt, double timeout = 30.0) {
             const auto &config = Config::instance();
             const auto resp = co_await HttpUtil::send(
-              tag, config.qqHttpHost, "/" + api, drogon::Post, params, config.accessToken, timeout, sessionId);
+              tag, config.qqHttpHost, "/" + api, drogon::Post, std::move(params), config.accessToken, timeout,
+              sessionId);
             if (!resp) {
                 co_return std::nullopt;
             }
@@ -41,14 +42,14 @@ namespace insoulforge::OneBotClient {
         }
 
         /// @brief 发送消息的公共实现（群聊/私聊共用，仅 API 名与目标字段不同）
-        drogon::Task<std::optional<uint64_t>> sendMessage(const std::string &api, const std::string &targetKey,
-          const uint64_t targetId, const std::string &message, const std::optional<uint64_t> sessionId) {
+        drogon::Task<std::optional<uint64_t>> sendMessage(std::string api, std::string targetKey,
+          const uint64_t targetId, std::string message, const std::optional<uint64_t> sessionId) {
             json params;
             params[targetKey] = targetId;
             params["message"] = message;
             params["auto_escape"] = false;
 
-            const auto resp = co_await callApi("[Msg]", api, params, sessionId);
+            const auto resp = co_await callApi("[Msg]", std::move(api), std::move(params), sessionId);
             if (!resp) {
                 Logger::session(sessionId.value_or(0))
                   .error("发送消息错误: msgLen={}, preview={}", message.size(), message.substr(0, 200));
@@ -58,13 +59,13 @@ namespace insoulforge::OneBotClient {
         }
     } // namespace
 
-    drogon::Task<std::optional<uint64_t>> sendGroupMsg(const uint64_t groupId, const std::string &message) {
-        co_return co_await sendMessage("send_group_msg", "group_id", groupId, message, groupId);
+    drogon::Task<std::optional<uint64_t>> sendGroupMsg(const uint64_t groupId, std::string message) {
+        co_return co_await sendMessage("send_group_msg", "group_id", groupId, std::move(message), groupId);
     }
 
     drogon::Task<std::optional<uint64_t>> sendPrivateMsg(
-      const uint64_t userId, const std::string &message, const std::optional<uint64_t> sessionId) {
-        co_return co_await sendMessage("send_private_msg", "user_id", userId, message, sessionId);
+      const uint64_t userId, std::string message, const std::optional<uint64_t> sessionId) {
+        co_return co_await sendMessage("send_private_msg", "user_id", userId, std::move(message), sessionId);
     }
 
     drogon::Task<bool> setGroupBan(const uint64_t groupId, const uint64_t userId, const uint64_t duration) {
@@ -123,9 +124,9 @@ namespace insoulforge::OneBotClient {
     }
 
     drogon::Task<std::optional<std::string>> getImage(
-      const std::string &file, const std::optional<uint64_t> sessionId) {
+      std::string file, const std::optional<uint64_t> sessionId) {
         json params;
-        params["file"] = file;
+        params["file"] = std::move(file);
 
         const auto resp = co_await callApi("[Sticker]", "get_image", params, sessionId, 15.0);
         if (!resp) {
@@ -135,9 +136,9 @@ namespace insoulforge::OneBotClient {
     }
 
     drogon::Task<std::optional<std::string>> downloadFile(
-      const std::string &url, const std::optional<uint64_t> sessionId) {
+      std::string url, const std::optional<uint64_t> sessionId) {
         json params;
-        params["url"] = url;
+        params["url"] = std::move(url);
 
         const auto resp = co_await callApi("[Sticker]", "download_file", params, sessionId);
         if (!resp) {
@@ -146,7 +147,7 @@ namespace insoulforge::OneBotClient {
         co_return jsonToString(atOrNull(atOrNull(*resp, "data"), "file"));
     }
 
-    drogon::Task<bool> addCustomFace(const std::string &file, const std::optional<uint64_t> sessionId) {
+    drogon::Task<bool> addCustomFace(std::string file, const std::optional<uint64_t> sessionId) {
         json params;
         params["file"] = file;
 
@@ -158,21 +159,21 @@ namespace insoulforge::OneBotClient {
         co_return true;
     }
 
-    drogon::Task<bool> setCustomFaceDesc(const std::string &emojiId, const std::string &resId, const std::string &md5,
-      const std::string &desc, const std::optional<uint64_t> sessionId) {
+    drogon::Task<bool> setCustomFaceDesc(std::string emojiId, std::string resId, std::string md5, std::string desc,
+      const std::optional<uint64_t> sessionId) {
         json params;
-        params["emoji_id"] = emojiId;
-        params["res_id"] = resId;
-        params["md5"] = md5;
-        params["desc"] = desc;
+        params["emoji_id"] = std::move(emojiId);
+        params["res_id"] = std::move(resId);
+        params["md5"] = std::move(md5);
+        params["desc"] = std::move(desc);
 
         const auto resp = co_await callApi("[Sticker]", "set_custom_face_desc", params, sessionId);
         co_return resp.has_value();
     }
 
-    drogon::Task<bool> deleteCustomFace(const std::string &resId, const std::optional<uint64_t> sessionId) {
+    drogon::Task<bool> deleteCustomFace(std::string resId, const std::optional<uint64_t> sessionId) {
         json params;
-        params["res_id"] = resId;
+        params["res_id"] = std::move(resId);
 
         const auto resp = co_await callApi("[Sticker]", "delete_custom_face", params, sessionId);
         co_return resp.has_value();

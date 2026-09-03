@@ -26,7 +26,7 @@ namespace insoulforge::LlmClient {
     /// @brief 构建 OpenAI 兼容 chat 请求体（model/messages/采样参数；reasoningEffort 非空才附带）
     /// @param tools 工具定义；非 null 时附带 tools 字段
     json buildChatRequestBody(
-      const LLMApiConfig &api, const LLMModelParams &params, const json &messages, const json &tools = {});
+      const LLMApiConfig &api, const LLMModelParams &params, json messages, json tools = {});
 
     /// @brief 校验 chat 响应：200 + JSON body + choices 为非空数组
     /// @return 合法时返回完整响应 JSON；否则 nullopt（错误日志由调用方按上下文输出）
@@ -40,8 +40,8 @@ namespace insoulforge::LlmClient {
     /// @param role
     /// @param sessionId
     /// @return 响应文本，失败返回 std::nullopt
-    drogon::Task<std::optional<std::string>> requestLLM(const json *messages, double temperature = 1.35,
-      double top_p = 0.92, int max_tokens = 1024, const std::string &role = "memory",
+    drogon::Task<std::optional<std::string>> requestLLM(json messages, double temperature = 1.35,
+      double top_p = 0.92, int max_tokens = 1024, std::string role = "memory",
       std::optional<uint64_t> sessionId = std::nullopt);
 
     /// @brief 从 API 响应中提取 usage 信息并输出缓存命中率日志
@@ -57,5 +57,5 @@ namespace insoulforge::LlmClient {
     /// @param sessionId
     /// @return 向量，未配置或失败返回 std::nullopt
     drogon::Task<std::optional<std::vector<float>>> requestEmbedding(
-      const std::string &text, std::optional<uint64_t> sessionId = std::nullopt);
+      std::string text, std::optional<uint64_t> sessionId = std::nullopt);
 } // namespace insoulforge::LlmClient

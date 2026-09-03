@@ -41,12 +41,11 @@ namespace {
     /// @param message 触发回复的原始消息
     /// @param content 回复内容
     /// @param chatRecords 聊天记录管理器
-    Task<> sendReply(const QQMessage &message, const std::string &content,
-                     const ChatRecordManager &chatRecords) {
+    Task<> sendReply(QQMessage message, std::string content, const ChatRecordManager &chatRecords) {
         if (message.isPrivate()) {
-            co_await MessageService::sendPrivateMsg(message.getUserId(), content, chatRecords);
+            co_await MessageService::sendPrivateMsg(message.getUserId(), std::move(content), chatRecords);
         } else {
-            co_await MessageService::sendGroupMsg(message.getGroupId(), content, chatRecords);
+            co_await MessageService::sendGroupMsg(message.getGroupId(), std::move(content), chatRecords);
         }
     }
 } // namespace
@@ -95,7 +94,7 @@ Task<> ProcessQQMessages::receiveMessages(const HttpRequestPtr req,
         ChatRecordManager chatRecords(sessionId);
 
         std::string cmdResponse = co_await handleCommand(qqMessage);
-        co_await sendReply(qqMessage, cmdResponse, chatRecords);
+        co_await sendReply(std::move(qqMessage), std::move(cmdResponse), chatRecords);
         co_return;
     }
 
@@ -132,10 +131,10 @@ Task<> ProcessQQMessages::receiveMessages(const HttpRequestPtr req,
             const auto [cqPart, textPart] = splitCqAndText(result.value());
 
             if (!cqPart.empty()) {
-                co_await sendReply(qqMessage, cqPart, chatRecords);
+                co_await sendReply(qqMessage, std::move(cqPart), chatRecords);
             }
             if (!textPart.empty()) {
-                co_await sendReply(qqMessage, textPart, chatRecords);
+                co_await sendReply(qqMessage, std::move(textPart), chatRecords);
             }
         } else {
             log.info("多层代理决定不回复");

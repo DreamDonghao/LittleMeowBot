@@ -24,11 +24,11 @@ namespace insoulforge::HttpUtil {
     /// @param baseUrl 服务器地址（含协议与端口，如 http://127.0.0.1:3001）
     /// @param path 请求路径，如 /v1/chat/completions
     /// @param method HTTP 方法
-    /// @param body JSON 请求体（null 表示无 body，例如 GET）
+    /// @param body JSON 请求体（null 表示无 body，例如 GET；按值接管，协程帧持有）
     /// @param bearerToken Bearer 认证 token（空串则不添加 Authorization 头）
     /// @param timeout 超时秒数
     /// @return 响应；网络异常（含地址解析失败、超时）返回 std::nullopt
-    drogon::Task<std::optional<drogon::HttpResponsePtr>> send(std::string_view tag, const std::string &baseUrl,
-      const std::string &path, drogon::HttpMethod method, const json &body, const std::string &bearerToken,
+    drogon::Task<std::optional<drogon::HttpResponsePtr>> send(std::string_view tag, std::string baseUrl,
+      std::string path, drogon::HttpMethod method, json body, std::string bearerToken,
       double timeout, std::optional<uint64_t> sessionId = std::nullopt);
 } // namespace insoulforge::HttpUtil

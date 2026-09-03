@@ -70,7 +70,7 @@ namespace insoulforge {
     }
 
     drogon::Task<std::string> ToolRegistry::executeTool(
-      const std::string &name, const json &args, uint64_t sessionId) const {
+      std::string name, json args, uint64_t sessionId) const {
         // 设置上下文
         auto &ctx = currentToolContext();
         ctx.sessionId = sessionId;
@@ -80,7 +80,7 @@ namespace insoulforge {
 
         for (const auto *categoryTools: {&m_terminalTools, &m_infoTools, &m_actionTools}) {
             if (const auto it = categoryTools->find(name); it != categoryTools->end()) {
-                co_return co_await it->second.handler(&args);
+                co_return co_await it->second.handler(std::move(args));
             }
         }
         co_return "工具未找到: " + name;

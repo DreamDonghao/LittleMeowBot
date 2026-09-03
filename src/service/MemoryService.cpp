@@ -119,7 +119,7 @@ namespace insoulforge {
         /// @brief 从聊天记录中提取新记忆，每条只包含一条完整信息
         /// @return nullopt 表示 API 失败或输出不是合法 JSON（调用方不得推进水位线）
         drogon::Task<std::optional<std::vector<std::string>>> extractMemories(
-          const std::string &chatRecords, const int maxTokens, const uint64_t sessionId) {
+          std::string chatRecords, const int maxTokens, const uint64_t sessionId) {
             json messages;
             json item;
             item["role"] = "system";
@@ -144,12 +144,12 @@ namespace insoulforge {
             messages.push_back(item);
             item.clear();
             item["role"] = "user";
-            item["content"] = "=== 群聊记录 ===\n" + chatRecords + "\n\n请输出提取结果 JSON：";
+            item["content"] = "=== 群聊记录 ===\n" + std::move(chatRecords) + "\n\n请输出提取结果 JSON：";
             messages.push_back(item);
 
-            const auto parsed =
-              parseLlmJson(co_await LlmClient::requestLLM(&messages, 0.4f, 0.9f, maxTokens, "memory", sessionId),
-                "记忆提取", sessionId);
+            const auto parsed = parseLlmJson(
+              co_await LlmClient::requestLLM(std::move(messages), 0.4f, 0.9f, maxTokens, "memory", sessionId),
+              "记忆提取", sessionId);
             if (!parsed) {
                 co_return std::nullopt;
             }
@@ -171,7 +171,7 @@ namespace insoulforge {
         ///        跨查询按 id 去重（同一旧记忆只参与一次整理），候选总量超限时保留相似度最高的
         /// @return 召回条目（id + 内容 + 相似度）；Embedding 失败的查询跳过（召回是优化，不阻塞记忆流程）
         drogon::Task<std::vector<SimilarMemory>> recallForMerge(
-          const std::vector<std::string> &newMemories, const uint64_t sessionId) {
+          std::vector<std::string> newMemories, const uint64_t sessionId) {
             const float threshold = static_cast<float>(Config::instance().longTermRecallThreshold);
             std::unordered_map<int64_t, SimilarMemory> recalled;
 
@@ -216,8 +216,8 @@ namespace insoulforge {
         /// @brief 把新记忆、当前短期记忆与召回的长期记忆合并归类为短期/长期两部分
         /// @param longTermEnabled Embedding 是否可用（不可用时禁止输出长期记忆）
         /// @return nullopt 表示 API 失败或输出不是合法 JSON（调用方不得推进水位线）
-        drogon::Task<std::optional<ReconcileResult>> reconcileMemory(const std::vector<std::string> &currentShortTerm,
-          const std::vector<std::string> &newMemories, const std::vector<SimilarMemory> &recalled,
+        drogon::Task<std::optional<ReconcileResult>> reconcileMemory(std::vector<std::string> currentShortTerm,
+          std::vector<std::string> newMemories, std::vector<SimilarMemory> recalled,
           const bool longTermEnabled, const uint64_t sessionId) {
             const auto &config = Config::instance();
 
@@ -264,7 +264,8 @@ namespace insoulforge {
             messages.push_back(item);
 
             const auto parsed = parseLlmJson(
-              co_await LlmClient::requestLLM(&messages, 0.3f, 0.9f, config.memoryExtractMaxTokens, "memory", sessionId),
+              co_await LlmClient::requestLLM(std::move(messages), 0.3f, 0.9f, config.memoryExtractMaxTokens,
+                "memory", sessionId),
               "记忆整理", sessionId);
             if (!parsed) {
                 co_return std::nullopt;
@@ -346,7 +347,7 @@ namespace insoulforge {
         /// @details 只对本次真正滑出的记录评分——提取失败时水位线不推进、同批记录会重试，
         ///          评分若不跟着水位线走会重复加减。评分失败仅跳过本批，不阻塞记忆流程
         drogon::Task<> updateAffinityFromRecords(
-          const uint64_t sessionId, const std::vector<json> &records, const size_t evictedCount) {
+          const uint64_t sessionId, std::vector<json> records, const size_t evictedCount) {
             const size_t limit = std::min(evictedCount, kMaxAffinityRecords);
             if (limit == 0)
                 co_return;
@@ -376,7 +377,8 @@ namespace insoulforge {
             messages.push_back(item);
 
             const auto deltas =
-              parseLlmJson(co_await LlmClient::requestLLM(&messages, 0.3f, 0.9f, 256, "affinity", sessionId),
+              parseLlmJson(
+                co_await LlmClient::requestLLM(std::move(messages), 0.3f, 0.9f, 256, "affinity", sessionId),
                 "好感度评分", sessionId);
             if (!deltas) {
                 co_return;
@@ -444,7 +446,7 @@ namespace insoulforge {
 
             Logger::session(sessionId).info("记忆提取: 待删第 {}-{} 条（共 {} 条）", processed + 1, batchEnd, toDrop);
 
-            const auto extracted = co_await extractMemories(chunkText, config.memoryExtractMaxTokens, sessionId);
+            auto extracted = co_await extractMemories(std::move(chunkText), config.memoryExtractMaxTokens, sessionId);
             if (!extracted) {
                 // API 失败：水位线停在本批之前，下条消息自动重试
                 Logger::session(sessionId).warn("记忆提取失败，水位线保持 {}，下条消息将重试", chunkEndId);
@@ -466,7 +468,8 @@ namespace insoulforge {
                 recalled = co_await recallForMerge(*extracted, sessionId);
 
             const auto reconcile =
-              co_await reconcileMemory(splitLines(existingMemory), *extracted, recalled, longTermEnabled, sessionId);
+              co_await reconcileMemory(splitLines(existingMemory), std::move(*extracted), std::move(recalled),
+                longTermEnabled, sessionId);
             if (!reconcile) {
                 Logger::session(sessionId).warn("记忆整理失败，水位线保持 {}，下条消息将重试", chunkEndId);
                 break;
@@ -500,7 +503,7 @@ namespace insoulforge {
           processed, chunkEndId, splitLines(existingMemory).size(), longTermAdded, longTermReplaced);
 
         // 3. 好感度评分（独立请求，只针对本次滑出的记录）
-        co_await updateAffinityFromRecords(sessionId, records, processed);
+        co_await updateAffinityFromRecords(sessionId, std::move(records), processed);
 
         co_return;
     }

@@ -27,17 +27,17 @@ namespace insoulforge::AgentToolManager {
     /// @brief 执行 Python 脚本工具
     /// @param scriptContent Python脚本内容（直接存储在数据库中）
     /// @param args 传入参数
-    drogon::Task<std::string> executePythonTool(const std::string &scriptContent, const json *args);
+    drogon::Task<std::string> executePythonTool(std::string scriptContent, json args);
 
     /// @brief 执行 HTTP 工具
-    drogon::Task<std::string> executeHttpTool(const std::string &config, const json *args);
+    drogon::Task<std::string> executeHttpTool(std::string config, json args);
 
     /// @brief 获取 QQ 收藏表情列表（调用 NapCat fetch_custom_face_detail，带60秒缓存）
     /// @return 归一化后的表情数组，失败时返回空数组
     drogon::Task<json> fetchFavoriteEmojis(std::optional<uint64_t> sessionId = std::nullopt);
 
     /// @brief 在收藏表情列表中按名称查找表情（名称 = desc 或 "表情N"）
-    drogon::Task<json> findFavoriteEmoji(const std::string &name, std::optional<uint64_t> sessionId = std::nullopt);
+    drogon::Task<json> findFavoriteEmoji(std::string name, std::optional<uint64_t> sessionId = std::nullopt);
 
     /// @brief 使收藏表情缓存失效（修改/删除后调用）
     void invalidateFavoriteEmojiCache();

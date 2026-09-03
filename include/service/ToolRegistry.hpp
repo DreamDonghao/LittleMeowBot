@@ -28,10 +28,8 @@ namespace insoulforge {
     ToolContext &currentToolContext();
 
     /// @brief 异步工具处理器
-    // 注意：args 必须以指针传递。drogon Task 协程的 json 引用参数会被 clang 用来
-    // 初始化 promise 的 optional<string>（json 隐式转 string），对象参数会在协程
-    // 启动时抛 type_error 导致 unwind 崩溃
-    using ToolHandler = std::function<drogon::Task<std::string>(const json *args)>;
+    // args 按值传递：协程帧独立持有参数（规范见 docs/CODING_STYLE.md 协程参数规范）
+    using ToolHandler = std::function<drogon::Task<std::string>(json args)>;
 
     struct Tool {
         std::string name;
@@ -60,7 +58,7 @@ namespace insoulforge {
 
         /// @brief 执行工具（异步）
         [[nodiscard]] drogon::Task<std::string> executeTool(
-          const std::string &name, const json &args, uint64_t sessionId = 0) const;
+          std::string name, json args, uint64_t sessionId = 0) const;
 
         /// @brief 检查工具是否存在
         [[nodiscard]] bool hasTool(const std::string &name) const;

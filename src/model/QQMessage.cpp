@@ -12,7 +12,7 @@
 
 namespace insoulforge {
     namespace {
-        drogon::Task<std::string> getImageDescribe(const std::string &imageUrl, const uint64_t groupId) {
+        drogon::Task<std::string> getImageDescribe(std::string imageUrl, const uint64_t groupId) {
             const auto &config = Config::instance();
             // 图像描述请求不发送 reasoning_effort（图像模型不支持，保持既有行为）
             LLMApiConfig api = config.image;

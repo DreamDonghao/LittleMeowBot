@@ -39,7 +39,7 @@ namespace insoulforge {
         /// @param message QQ 消息
         /// @return 回复内容（如果需要回复）
         drogon::Task<std::optional<std::string>> process(
-          const ChatRecordManager &chatRecords, const MemoryManager &memory, const QQMessage &message);
+          const ChatRecordManager &chatRecords, const MemoryManager &memory, QQMessage message);
 
     private:
         AgentSystem() = default;

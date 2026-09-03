@@ -271,15 +271,16 @@ namespace insoulforge {
         /// @param tools 工具定义（null 表示不附带）
         /// @param sessionId 会话 ID
         /// @return 校验通过的响应 JSON；不可恢复错误或重试耗尽时返回 std::nullopt
-        drogon::Task<std::optional<json>> requestChat(const std::string &label, const std::string &usageRole,
-          const LLMApiConfig &apiConfig, const LLMModelParams &params, const json &messages, const json &tools,
+        drogon::Task<std::optional<json>> requestChat(std::string label, std::string usageRole,
+          const LLMApiConfig &apiConfig, const LLMModelParams &params, json messages, json tools,
           const uint64_t sessionId) {
             Logger::session(sessionId).debug("[Executor] {}: {}", label, apiConfig.model);
 
             for (int attempt = 0;; ++attempt) {
-                const json body = LlmClient::buildChatRequestBody(apiConfig, params, messages, tools);
-                const auto resp = co_await HttpUtil::send("[Executor]", apiConfig.baseUrl, apiConfig.path, drogon::Post,
-                  body, apiConfig.apiKey, kLlmTimeoutSeconds, sessionId);
+                const auto resp =
+                  co_await HttpUtil::send("[Executor]", apiConfig.baseUrl, apiConfig.path, drogon::Post,
+                    LlmClient::buildChatRequestBody(apiConfig, params, messages, tools), apiConfig.apiKey,
+                    kLlmTimeoutSeconds, sessionId);
 
                 if (!resp) {
                     Logger::session(sessionId).warn("[Executor] {}网络异常", label);
@@ -368,9 +369,9 @@ namespace insoulforge {
 
         /// @brief 逐个处理本轮工具调用：终端工具直接产出回复决策；其余工具经 ToolRegistry 执行并把结果
         /// 作为 tool 消息回传，CQ 码类工具的结果累积备用
-        /// @return 命中终端工具时返回决策（同轮多个终端工具以最后一个为准），否则返回空（继续下一轮）
-        drogon::Task<std::optional<ReplyDecision>> processToolCalls(
-          const json &message, json &messages, std::string &accumulatedCQCodes, const uint64_t sessionId) {
+        /// @return {终端工具决策（同轮多个以最后一个为准，未命中为 nullopt）, 回传工具结果后的消息列表, 累积的 CQ 码}
+        drogon::Task<std::tuple<std::optional<ReplyDecision>, json, std::string>> processToolCalls(
+          json message, json messages, std::string accumulatedCQCodes, const uint64_t sessionId) {
             ReplyDecision decision;
             bool hasDecision = false;
 
@@ -386,7 +387,8 @@ namespace insoulforge {
                     continue;
                 }
 
-                const std::string result = co_await ToolRegistry::instance().executeTool(name, args, sessionId);
+                const std::string result =
+                  co_await ToolRegistry::instance().executeTool(name, std::move(args), sessionId);
                 Logger::session(sessionId).debug("[Executor] 工具结果: {}", result);
                 if (isCqCodeTool(name)) {
                     accumulatedCQCodes += result;
@@ -400,9 +402,9 @@ namespace insoulforge {
             }
 
             if (hasDecision) {
-                co_return decision;
+                co_return {decision, std::move(messages), std::move(accumulatedCQCodes)};
             }
-            co_return std::nullopt;
+            co_return {std::nullopt, std::move(messages), std::move(accumulatedCQCodes)};
         }
 
         // ==================== 执行流程 ====================
@@ -410,7 +412,7 @@ namespace insoulforge {
         /// @brief 执行思考模型（不带 tools，产出回复思路）
         /// @return 思考模型输出（优先取 reasoning_content 字段）；请求失败返回 std::nullopt
         drogon::Task<std::optional<std::string>> executeThinking(
-          const json *messages, const int maxLength, const uint64_t sessionId) {
+          json messages, const int maxLength, const uint64_t sessionId) {
             const auto &config = Config::instance();
 
             // 仅替换 system prompt 为思考任务指令，其余消息原样保留
@@ -419,12 +421,12 @@ namespace insoulforge {
             systemMsg["role"] = "system";
             systemMsg["content"] = getThinkingSystemPrompt(maxLength);
             thinkingMessages.push_back(systemMsg);
-            for (size_t i = 1; i < messages->size(); ++i) {
-            thinkingMessages.push_back((*messages)[i]);
+            for (size_t i = 1; i < messages.size(); ++i) {
+                thinkingMessages.push_back(std::move(messages[i]));
             }
 
             const auto respJson = co_await requestChat("思考模型", "executorThinking", config.executorThinking,
-              config.executorThinkingParams, thinkingMessages, {}, sessionId);
+              config.executorThinkingParams, std::move(thinkingMessages), {}, sessionId);
             if (!respJson) {
                 co_return std::nullopt;
             }
@@ -473,8 +475,11 @@ namespace insoulforge {
 
                 // 有工具调用：回传 assistant 消息后逐个处理，未命中终端工具则继续下一轮
                 messages.push_back(buildAssistantToolCallMessage(message));
-                if (const auto decision = co_await processToolCalls(message, messages, accumulatedCQCodes, sessionId)) {
-                    co_return decision;
+                std::optional<ReplyDecision> roundDecision;
+                std::tie(roundDecision, messages, accumulatedCQCodes) = co_await processToolCalls(
+                  message, std::move(messages), std::move(accumulatedCQCodes), sessionId);
+                if (roundDecision) {
+                    co_return std::move(roundDecision);
                 }
             }
 
@@ -488,7 +493,7 @@ namespace insoulforge {
             Logger::session(sessionId).info("[Executor] 思考模式 - Step 1: 分析");
 
             const std::optional<std::string> thinkingResult =
-              co_await executeThinking(&messages, maxLength, sessionId);
+              co_await executeThinking(messages, maxLength, sessionId);
             if (!thinkingResult || thinkingResult->empty()) {
                 Logger::session(sessionId).warn("[Executor] 思考模型返回空，fallback");
                 co_return co_await executeWithAgent(std::move(messages), sessionId);
@@ -545,17 +550,17 @@ namespace insoulforge {
     }
 
     drogon::Task<std::optional<ReplyDecision>> execute(
-      const ChatRecordManager &chatRecords, const MemoryManager &memory, const RouterDecision &decision) {
+      const ChatRecordManager &chatRecords, const MemoryManager &memory, RouterDecision decision) {
         const uint64_t sessionId = chatRecords.getSessionId();
         Logger::session(sessionId).info("[Executor] 开始执行 | thinking={} | priority={} | maxLength={}",
           decision.enableThinking, decision.isPriority, decision.maxLength);
 
-        const json messages = buildPrompt(chatRecords, memory, decision);
+        json messages = buildPrompt(chatRecords, memory, decision);
 
         // 思考模式两阶段执行（思考模型分析 → 执行模型生成），普通模式单阶段直接生成
         if (decision.enableThinking) {
-            co_return co_await executeWithThinking(messages, decision.maxLength, sessionId);
+            co_return co_await executeWithThinking(std::move(messages), decision.maxLength, sessionId);
         }
-        co_return co_await executeWithAgent(messages, sessionId);
+        co_return co_await executeWithAgent(std::move(messages), sessionId);
     }
 } // namespace insoulforge

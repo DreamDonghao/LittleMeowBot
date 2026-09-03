@@ -183,12 +183,12 @@ namespace insoulforge {
           const ChatRecordManager &chatRecords, const bool isPrivate) {
             const auto &config = Config::instance();
 
-            const json messages = buildPrompt(chatRecords, isPrivate);
+            json messages = buildPrompt(chatRecords, isPrivate);
 
-            const json body = LlmClient::buildChatRequestBody(config.router, config.routerParams, messages);
+            json body = LlmClient::buildChatRequestBody(config.router, config.routerParams, std::move(messages));
 
             const auto resp = co_await HttpUtil::send("[Router]", config.router.baseUrl, config.router.path,
-              drogon::Post, body, config.router.apiKey, 90.0, chatRecords.getSessionId());
+              drogon::Post, std::move(body), config.router.apiKey, 90.0, chatRecords.getSessionId());
             if (!resp) {
                 co_return std::nullopt;
             }
@@ -222,7 +222,7 @@ namespace insoulforge {
         }
     } // namespace
 
-    drogon::Task<RouterDecision> route(const ChatRecordManager &chatRecords, const QQMessage &message) {
+    drogon::Task<RouterDecision> route(const ChatRecordManager &chatRecords, QQMessage message) {
         // ========== Step 1: 硬规则检查（无需 LLM）==========
 
         // 1.0 系统定时任务触发 → 高优先级回复（调度器以系统账号合成的消息，确定性放行；

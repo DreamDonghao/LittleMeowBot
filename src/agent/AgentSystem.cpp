@@ -32,7 +32,7 @@ namespace insoulforge {
     }
 
     drogon::Task<std::optional<std::string>> AgentSystem::process(
-      const ChatRecordManager &chatRecords, const MemoryManager &memory, const QQMessage &message) {
+      const ChatRecordManager &chatRecords, const MemoryManager &memory, QQMessage message) {
         if (!isRunning()) {
             co_return std::nullopt;
         }
@@ -69,10 +69,10 @@ namespace insoulforge {
         // ========== Layer 1: Router Agent（判断 + 规划）==========
         Logger::session(sessionId).info("[Router] 分析消息...");
 
-        auto decision = co_await route(chatRecords, message);
-
-        // 会话类型随决策传给 Executor（选择对应人设提示词）
-        decision.isPrivate = message.isPrivate();
+        // 会话类型随决策传给 Executor（选择对应人设提示词）；route 按值接管 message，先取出标记
+        const bool isPrivateChat = message.isPrivate();
+        auto decision = co_await route(chatRecords, std::move(message));
+        decision.isPrivate = isPrivateChat;
 
         Logger::session(sessionId).info("[Router] 结果: {} | shouldReply={} | thinking={} | maxLength={}",
           decision.action, decision.shouldReply, decision.enableThinking, decision.maxLength);
@@ -92,7 +92,7 @@ namespace insoulforge {
         // ========== Layer 2: Executor Agent（执行回复）==========
         Logger::session(sessionId).info("[Executor] 执行回复...");
 
-        const auto reply = co_await execute(chatRecords, memory, decision);
+        const auto reply = co_await execute(chatRecords, memory, std::move(decision));
 
         // 检查处理代际是否被 @消息取消
         if (!isCurrentGeneration(sessionId, generation)) {

@@ -19,12 +19,12 @@ namespace insoulforge::LongTermMemory {
     /// @param content 记忆内容文本
     /// @param sessionId 会话 ID
     /// @return 是否成功
-    drogon::Task<bool> addMemory(const std::string &content, uint64_t sessionId);
+    drogon::Task<bool> addMemory(std::string content, uint64_t sessionId);
 
     /// @brief 检索长期记忆（余弦相似度 topK）
     /// @param query 查询文本
     /// @param topK 返回结果数量
     /// @param sessionId 会话 ID
     /// @return 检索结果文本；向量化失败返回 std::nullopt，无相似记忆返回 "未找到相关信息"
-    drogon::Task<std::optional<std::string>> searchMemory(const std::string &query, int topK, uint64_t sessionId);
+    drogon::Task<std::optional<std::string>> searchMemory(std::string query, int topK, uint64_t sessionId);
 } // namespace insoulforge::LongTermMemory

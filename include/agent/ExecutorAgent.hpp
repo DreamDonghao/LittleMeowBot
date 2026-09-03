@@ -26,5 +26,5 @@ namespace insoulforge {
     /// @param decision Router 的决策结果（包含回复策略）
     /// @return 回复内容
     [[nodiscard]] drogon::Task<std::optional<ReplyDecision>> execute(
-      const ChatRecordManager &chatRecords, const MemoryManager &memory, const RouterDecision &decision);
+      const ChatRecordManager &chatRecords, const MemoryManager &memory, RouterDecision decision);
 } // namespace insoulforge

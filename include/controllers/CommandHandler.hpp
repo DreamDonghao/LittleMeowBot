@@ -8,5 +8,5 @@
 namespace insoulforge {
     [[nodiscard]] bool isCommand(const QQMessage &message);
 
-    drogon::Task<std::string> handleCommand(const QQMessage &message);
+    drogon::Task<std::string> handleCommand(QQMessage message);
 } // namespace insoulforge

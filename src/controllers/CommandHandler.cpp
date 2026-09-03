@@ -44,7 +44,7 @@ namespace insoulforge {
         return pos < rawMsg.length() && rawMsg[pos] == '/';
     }
 
-    drogon::Task<std::string> handleCommand(const QQMessage &message) {
+    drogon::Task<std::string> handleCommand(QQMessage message) {
         std::string rawMsg = message.getRawMessage();
         uint64_t sessionId = message.getSessionId(); ///< 会话 ID（群聊=群号；私聊=用户QQ号|私聊标志位）
         uint64_t senderQQ = message.getSenderQQNumber();
