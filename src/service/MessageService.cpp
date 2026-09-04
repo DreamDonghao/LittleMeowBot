@@ -3,7 +3,6 @@
 
 #include <algorithm>
 #include <config/Config.hpp>
-#include <fmt/core.h>
 #include <regex>
 #include <service/MessageService.hpp>
 #include <service/OneBotClient.hpp>
@@ -58,15 +57,17 @@ namespace insoulforge {
     namespace {
         /// @brief 发送消息后记录聊天记录、推送 WebSocket（群聊/私聊共用）
         /// @param sendTask 发送协程（OneBotClient）
+        /// @param chatRecords
         /// @param processedMessage 已完成 CQ 码转换的消息内容
         /// @param sessionId 会话 ID
         /// @param channelName 日志中的渠道名（"群消息"/"私聊消息"）
-        drogon::Task<> afterSendMessage(drogon::Task<std::optional<uint64_t>> sendTask,
+        /// @return 发送成功返回 message_id；失败不记聊天记录，返回 nullopt（已记日志）
+        drogon::Task<std::optional<uint64_t>> afterSendMessage(drogon::Task<std::optional<uint64_t>> sendTask,
           const ChatRecordManager &chatRecords, std::string processedMessage, const uint64_t sessionId,
           std::string_view channelName) {
             const auto messageId = co_await std::move(sendTask);
             if (!messageId) {
-                co_return;
+                co_return std::nullopt;
             }
 
             const auto &config = Config::instance();
@@ -93,21 +94,22 @@ namespace insoulforge {
 
             Logger::session(sessionId).info(
               "成功发送{}: {} (message_id={})", channelName, processedMessage, *messageId);
+            co_return *messageId;
         }
     } // namespace
 
-    drogon::Task<> MessageService::sendGroupMsg(
+    drogon::Task<std::optional<uint64_t>> MessageService::sendGroupMsg(
       const uint64_t groupId, std::string message, const ChatRecordManager &chatRecords) {
         // 转换 @[QQ:xxx] 为 CQ 码
         const std::string processedMessage = convertAtToCQCode(std::move(message));
-        co_await afterSendMessage(
+        co_return co_await afterSendMessage(
           OneBotClient::sendGroupMsg(groupId, processedMessage), chatRecords, processedMessage, groupId, "群消息");
     }
 
-    drogon::Task<> MessageService::sendPrivateMsg(
+    drogon::Task<std::optional<uint64_t>> MessageService::sendPrivateMsg(
       const uint64_t userId, std::string message, const ChatRecordManager &chatRecords) {
         const std::string processedMessage = convertAtToCQCode(std::move(message));
-        co_await afterSendMessage(
+        co_return co_await afterSendMessage(
           OneBotClient::sendPrivateMsg(userId, processedMessage, userId | QQMessage::kPrivateSessionFlag), chatRecords,
           processedMessage, userId | QQMessage::kPrivateSessionFlag, "私聊消息");
     }

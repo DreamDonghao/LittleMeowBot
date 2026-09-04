@@ -1,4 +1,3 @@
-#include <regex>
 #include <agent/AgentSystem.hpp>
 #include <controllers/ProcessQQMessages.hpp>
 #include <controllers/CommandHandler.hpp>
@@ -17,31 +16,11 @@ using namespace insoulforge;
 using namespace drogon;
 
 namespace {
-    /// @brief 拆分表情包 CQ 码和文字，分开发送（表情包先，文字后）
-    /// @param content 代理生成的回复内容
-    /// @return {表情包部分, 文字部分}
-    [[nodiscard]] std::pair<std::string, std::string> splitCqAndText(const std::string &content) {
-        thread_local const std::regex cqPattern(R"(\[CQ:mface,[^\]]*\]|\[CQ:image,[^\]]*sub_type=1[^\]]*\])");
-
-        std::string cqPart;
-        for (auto it = std::sregex_iterator(content.begin(), content.end(), cqPattern); it != std::sregex_iterator();
-             ++it) {
-            cqPart += it->str();
-        }
-        std::string textPart = std::regex_replace(content, cqPattern, "");
-        if (const size_t b = textPart.find_first_not_of(" \t\n\r"); b != std::string::npos) {
-            textPart = textPart.substr(b, textPart.find_last_not_of(" \t\n\r") - b + 1);
-        } else {
-            textPart.clear();
-        }
-        return {cqPart, textPart};
-    }
-
     /// @brief 按会话类型分派消息发送（群聊走 /send_group_msg，私聊走 /send_private_msg）
     /// @param message 触发回复的原始消息
     /// @param content 回复内容
     /// @param chatRecords 聊天记录管理器
-    Task<> sendReply(QQMessage message, std::string content, const ChatRecordManager &chatRecords) {
+    Task<> sendReply(const QQMessage message, std::string content, const ChatRecordManager &chatRecords) {
         if (message.isPrivate()) {
             co_await MessageService::sendPrivateMsg(message.getUserId(), std::move(content), chatRecords);
         } else {
@@ -126,16 +105,8 @@ Task<> ProcessQQMessages::receiveMessages(const HttpRequestPtr req,
         if (auto result = co_await agentSystem.process(chatRecords, memory, qqMessage);
             result && !result->empty() && agentSystem.isRunning()) {
             log.info("多层代理决定回复");
-
-            // 拆分表情包和文字，分开发送（表情包先，文字后）
-            const auto [cqPart, textPart] = splitCqAndText(result.value());
-
-            if (!cqPart.empty()) {
-                co_await sendReply(qqMessage, std::move(cqPart), chatRecords);
-            }
-            if (!textPart.empty()) {
-                co_await sendReply(qqMessage, std::move(textPart), chatRecords);
-            }
+            // 表情包已由 send_sticker 工具直接发出并记入聊天记录，这里只发送文字回复
+            co_await sendReply(qqMessage, std::move(result.value()), chatRecords);
         } else {
             log.info("多层代理决定不回复");
         }

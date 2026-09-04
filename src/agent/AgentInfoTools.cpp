@@ -165,7 +165,7 @@ namespace insoulforge {
             .description = "查看当前会话所有待触发的定时任务。当用户想确认已设置的提醒、或取消前需要获取任务编号"
                            "时使用。返回任务编号、触发时间和备忘内容。",
             .parameters = json(),
-            .handler = [](json, ToolCallContext ctx) -> drogon::Task<std::string> {
+            .handler = [](json, const ToolCallContext ctx) -> drogon::Task<std::string> {
                 const uint64_t sessionId = ctx.sessionId;
                 if (sessionId == 0)
                     co_return std::string("会话上下文缺失，无法查询定时任务");

@@ -89,4 +89,4 @@ namespace insoulforge {
 
         spdlog::info("所有配置已从数据库加载");
     }
-}
+} // namespace insoulforge

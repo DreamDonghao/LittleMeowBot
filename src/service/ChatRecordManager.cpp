@@ -28,4 +28,4 @@ namespace insoulforge {
           ChatRecordStore::getChatRecordsSince(m_sessionId, watermark, Config::instance().windowTriggerCount);
         return {records.begin(), records.end()};
     }
-}
+} // namespace insoulforge

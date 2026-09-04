@@ -7,6 +7,9 @@
 #include <config/Config.hpp>
 #include <fmt/core.h>
 #include <model/QQMessage.hpp>
+#include <optional>
+#include <service/ChatRecordManager.hpp>
+#include <service/MessageService.hpp>
 #include <service/OneBotClient.hpp>
 #include <service/TaskScheduler.hpp>
 #include <service/ToolRegistry.hpp>
@@ -19,8 +22,6 @@ namespace insoulforge {
     /// @brief 注册动作执行工具（ACTION，执行操作、产生副作用）
     void registerActionTools() {
         auto &registry = ToolRegistry::instance();
-
-        // ========== CQ 码（获取需拼入 reply content 的 CQ 码） ==========
 
         // send_face
         const json faceParams = json::parse(R"json({
@@ -63,16 +64,15 @@ namespace insoulforge {
             .parameters = imageParams,
             .handler = [](const json args, ToolCallContext) -> drogon::Task<std::string> {
                 std::string url = argString(args, "url");
-                if (url.empty())
+                if (url.empty()) {
                     co_return std::string("请提供图片URL");
+                }
                 co_return fmt::format("[CQ:image,file={}]", url);
             },
           },
           ToolCategory::ACTION);
 
-        // ========== 收藏表情 ==========
-
-        // send_sticker
+        // send_sticker - 直接把表情包作为独立消息发出（经 MessageService，发送后记入聊天记录）
         const json stickerParams = json::parse(R"json({
                 "type": "object",
                 "properties": {
@@ -86,15 +86,14 @@ namespace insoulforge {
         registry.registerTool(
           {
             .name = "send_sticker",
-            .description =
-              "获取QQ收藏表情的CQ码。先调list_"
-              "stickers查看可用表情名，再用此工具。返回的CQ码必须复制到reply的content中，否则表情不会显示。",
+            .description = "直接发送QQ收藏表情到当前会话（作为独立消息发出，无需拼进reply）。"
+                           "先调list_stickers查看可用表情名。",
             .parameters = stickerParams,
-            .handler = [](const json args, ToolCallContext ctx) -> drogon::Task<std::string> {
+            .handler = [](const json args, const ToolCallContext ctx) -> drogon::Task<std::string> {
                 std::string name = argString(args, "name");
-                if (name.empty())
+                if (name.empty()) {
                     co_return std::string("请提供表情名称");
-
+                }
                 const auto sessionId = ctx.sessionId;
                 const json emoji = co_await AgentToolManager::findFavoriteEmoji(name, sessionId);
                 if (emoji.is_null()) {
@@ -102,18 +101,32 @@ namespace insoulforge {
                 }
 
                 // 商城表情（字段齐全）走 mface；个人收藏表情走 image+sub_type=1（QQ 渲染为表情）
+                std::string cqCode;
                 if (getBool(emoji, "is_mark_face") && !getStr(emoji, "emoji_id").empty() &&
                     !getStr(emoji, "key").empty()) {
-                    co_return fmt::format("[CQ:mface,summary={},emoji_id={},emoji_package_id={},key={}]",
+                    cqCode = fmt::format("[CQ:mface,summary={},emoji_id={},emoji_package_id={},key={}]",
                       getStr(emoji, "summary"), getStr(emoji, "emoji_id"), getStr(emoji, "emoji_package_id"),
                       getStr(emoji, "key"));
-                }
-
-                if (getStr(emoji, "url").empty()) {
+                } else if (const std::string url = getStr(emoji, "url"); !url.empty()) {
+                    cqCode = fmt::format("[CQ:image,file={},sub_type=1,summary={}]", url, getStr(emoji, "summary"));
+                } else {
                     co_return fmt::format("表情'{}'缺少图片地址，无法发送", name);
                 }
-                co_return fmt::format(
-                  "[CQ:image,file={},sub_type=1,summary={}]", getStr(emoji, "url"), getStr(emoji, "summary"));
+
+                // 走 MessageService 发送：成功后自动记入聊天记录并推送 WebSocket，
+                // 后续轮次模型能从记录中看到自己发过这张表情
+                const ChatRecordManager chatRecords(sessionId);
+                std::optional<uint64_t> messageId;
+                if (QQMessage::isPrivateSession(sessionId)) {
+                    messageId = co_await MessageService::sendPrivateMsg(
+                      sessionId & ~QQMessage::kPrivateSessionFlag, cqCode, chatRecords);
+                } else {
+                    messageId = co_await MessageService::sendGroupMsg(sessionId, cqCode, chatRecords);
+                }
+                if (!messageId) {
+                    co_return std::string("表情发送失败，请改用文字回复或稍后重试");
+                }
+                co_return fmt::format("已发送表情「{}」", name);
             },
           },
           ToolCategory::ACTION);
@@ -235,10 +248,10 @@ namespace insoulforge {
           {
             .name = "rename_sticker",
             .description = "修改收藏表情的名称/"
-                           "描述。仅在用户明确要求给表情改名时使用。先调list_"
+                           "描述。仅在用户明确要求给表情改名时使用。先调list_stickers查看"
                            "stickers查看当前名称，再把新名称传给new_name。",
             .parameters = renameParams,
-            .handler = [](const json args, ToolCallContext ctx) -> drogon::Task<std::string> {
+            .handler = [](const json args, const ToolCallContext ctx) -> drogon::Task<std::string> {
                 const std::string name = argString(args, "name");
                 const std::string newName = argString(args, "new_name");
                 if (name.empty())
@@ -282,7 +295,7 @@ namespace insoulforge {
             .description = "从QQ收藏表情中删除表情。仅在用户明确要求删除表情时使用，删除前先确认名称无误。先调list"
                            "_stickers查看名称。",
             .parameters = delParams,
-            .handler = [](const json args, ToolCallContext ctx) -> drogon::Task<std::string> {
+            .handler = [](const json args, const ToolCallContext ctx) -> drogon::Task<std::string> {
                 std::string name = argString(args, "name");
                 if (name.empty())
                     co_return std::string("请提供表情名称(name)");
@@ -304,8 +317,6 @@ namespace insoulforge {
           },
           ToolCategory::ACTION);
 
-        // ========== 群互动 ==========
-
         // at_user
         const json atParams = json::parse(R"json({
                 "type": "object",
@@ -323,7 +334,7 @@ namespace insoulforge {
             .description = "@某人。返回CQ码嵌入reply的content中。聊天记录格式为JSON：{\"sender\":{\"name\":\"小明\","
                            "\"qq\":\"123456\"}}，用 at_user(qq=\"123456\") 来@他。@全体成员用 at_user(qq=\"all\")",
             .parameters = atParams,
-            .handler = [](const json args, ToolCallContext ctx) -> drogon::Task<std::string> {
+            .handler = [](const json args, const ToolCallContext ctx) -> drogon::Task<std::string> {
                 if (QQMessage::isPrivateSession(ctx.sessionId)) {
                     co_return std::string("私聊中无法@成员，直接回复即可");
                 }
@@ -359,7 +370,7 @@ namespace insoulforge {
             .description = "禁言群成员。要有自己的判断，不要别人让你禁言就禁言。根据违规程度选择时长：轻度("
                            "偶尔骂人)60-300秒，中度(持续刷屏骂人)600-1800秒，重度(恶意骚扰)3600秒+",
             .parameters = banParams,
-            .handler = [](const json args, ToolCallContext ctx) -> drogon::Task<std::string> {
+            .handler = [](const json args, const ToolCallContext ctx) -> drogon::Task<std::string> {
                 const uint64_t sessionId = ctx.sessionId;
                 if (QQMessage::isPrivateSession(sessionId))
                     co_return std::string("私聊中无法禁言");
@@ -395,7 +406,7 @@ namespace insoulforge {
             .description = "拍一拍群成员。用于打招呼、引起注意、开玩笑等轻松互动场景。聊天记录格式为JSON：{\"sender\":{"
                            "\"name\":\"小明\",\"qq\":\"123456\"}}，用 send_poke(qq=\"123456\") 来拍他。",
             .parameters = pokeParams,
-            .handler = [](const json args, ToolCallContext ctx) -> drogon::Task<std::string> {
+            .handler = [](const json args, const ToolCallContext ctx) -> drogon::Task<std::string> {
                 const uint64_t sessionId = ctx.sessionId;
                 if (QQMessage::isPrivateSession(sessionId)) {
                     co_return std::string("私聊中不支持拍一拍，直接回复即可");
@@ -431,7 +442,7 @@ namespace insoulforge {
                            "id\":\"12345\",\"reply_to\":\"67890\"}。若用户想撤回引用的消息，用 "
                            "reply_to 字段的值；若想撤回某条消息本身，用 message_id 字段的值。",
             .parameters = recallParams,
-            .handler = [](const json args, ToolCallContext ctx) -> drogon::Task<std::string> {
+            .handler = [](const json args, const ToolCallContext ctx) -> drogon::Task<std::string> {
                 const uint64_t messageId = parseUInt64(argString(args, "message_id"));
                 if (messageId == 0)
                     co_return std::string("撤回失败: 请提供有效的消息ID");

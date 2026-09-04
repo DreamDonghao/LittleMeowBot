@@ -44,7 +44,9 @@ namespace insoulforge {
             }
             prompt += "- 【重要】表情/图片的CQ码必须通过工具获取(send_sticker/send_face/send_image)。"
                       "先调工具，拿到结果后把返回的[CQ:image...]或[CQ:face...]原样拼接到reply的content中。"
-                      "禁止自己编造假CQ标签，工具返回什么就复制什么\n";
+                      "禁止自己编造假CQ标签，工具返回什么就复制什么。"
+                      "send_sticker 例外：调用后表情包直接发出（独立消息，不拼进reply），"
+                      "若表情包就是全部回复，发完调no_reply收尾\n";
 
             if (decision.isPriority) {
                 prompt += decision.isPrivate ? "\n【重要】这是紧急问题，必须回复！"
@@ -233,10 +235,8 @@ namespace insoulforge {
 
         // ==================== 工具调用 ====================
 
-        /// @brief 结果为 CQ 码、需在产出 reply 时自动拼入正文的工具
-        [[nodiscard]] bool isCqCodeTool(const std::string &name) {
-            return name == "send_sticker" || name == "send_face" || name == "send_image";
-        }
+        /// @brief 结果为内联 CQ 码、需在产出 reply 时自动拼入正文的工具（send_sticker 已直接发送，不经此路径）
+        [[nodiscard]] bool isCqCodeTool(const std::string &name) { return name == "send_face" || name == "send_image"; }
 
         /// @brief 清理回复内容，并在模型忘记拼接 CQ 码时自动补上已获取的 CQ 码
         [[nodiscard]] std::string finalizeContent(

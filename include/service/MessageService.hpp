@@ -9,7 +9,6 @@
 
 #pragma once
 #include <drogon/utils/coroutine.h>
-#include <model/QQMessage.hpp>
 #include <optional>
 #include <service/ChatRecordManager.hpp>
 #include <string>
@@ -25,13 +24,17 @@ namespace insoulforge::MessageService {
     /// @param groupId 群号
     /// @param message 消息内容
     /// @param chatRecords 聊天记录管理器（用于更新记录）
-    drogon::Task<> sendGroupMsg(uint64_t groupId, std::string message, const ChatRecordManager &chatRecords);
+    /// @return 发送成功返回 message_id，失败返回 nullopt（已记日志）
+    drogon::Task<std::optional<uint64_t>> sendGroupMsg(
+      uint64_t groupId, std::string message, const ChatRecordManager &chatRecords);
 
     /// @brief 发送私聊消息
     /// @param userId 用户QQ号
     /// @param message 消息内容
     /// @param chatRecords 聊天记录管理器（用于更新记录）
-    drogon::Task<> sendPrivateMsg(uint64_t userId, std::string message, const ChatRecordManager &chatRecords);
+    /// @return 发送成功返回 message_id，失败返回 nullopt（已记日志）
+    drogon::Task<std::optional<uint64_t>> sendPrivateMsg(
+      uint64_t userId, std::string message, const ChatRecordManager &chatRecords);
 
     /// @brief 获取并更新会话名称（群聊为群名，私聊为 QQ 昵称）
     /// @param sessionId 会话 ID（私聊带标志位）
