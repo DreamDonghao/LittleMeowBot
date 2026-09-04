@@ -33,24 +33,96 @@ namespace insoulforge {
         std::string getSystemPrompt(const RouterDecision &decision) {
             std::string prompt = decision.isPrivate ? PromptService::getExecutorPrivateSystemPrompt()
                                                     : PromptService::getExecutorSystemPrompt();
+            prompt +=
+              R"(## 聊天记录格式说明
 
-            prompt += "\n\n【回复要求】\n"
-                      "- 要有自己的判断，不要别人说什么就做什么\n";
+你收到的上下文是键顺序固定的 JSON，earlier_conversation 与 recent_conversation 均按时间从旧到新排列：
+
+```json
+{
+    "short_term_memory": [
+        "我已记住的本群信息，每条一项，可能为空数组"
+    ],
+    "earlier_conversation": [
+        {
+            "time": "消息时间，如 2026-09-02 19:59:54",
+            "sender": {
+                "name": "发送者昵称",
+                "qq": "发送者QQ号",
+                "affinity": 好感度（-100～100 的整数，仅群成员消息有此字段，陌生人为 0）
+            },
+            "message_id": "消息ID（数字字符串）",
+            "text": "消息内容（更早对话已截断到 500 字，勿当作完整原文）",
+            "reply_to": "此消息引用回复的目标消息ID，没有引用时为 null"
+        }
+    ],
+    "recent_conversation": [
+        {
+            "time": "消息时间，如 2026-09-02 19:59:54",
+            "sender": {
+                "name": "发送者昵称",
+                "qq": "发送者QQ号",
+                "affinity": 好感度（-100～100 的整数，仅群成员消息有此字段，陌生人为 0）
+            },
+            "message_id": "消息ID（数字字符串）",
+            "text": "消息内容（更早对话已截断到 500 字，勿当作完整原文）",
+          	"memories": [
+                "召回的记忆片段，可能无关",
+            ],
+            "reply_to": "此消息引用回复的目标消息ID，没有引用时为 null"
+        }
+    ],
+    "response_requirements": {
+        "tone": "本轮要求的回复语气",
+        "max_length": 100,
+        "reply_reason": "触发本轮回复的原因，如 用户@提及"
+    }
+}
+```
+
+  字段说明：
+
+  - sender.qq 为 "self" 的记录是我自己发出的消息（name 形如「昵称(我)」），它没有 affinity 字段
+  - recent_conversation 的记录可能多出两个字段：images（原始图片列表 [{file, url}]）、memories（与该条消息相关的召回长期记忆，回答时结合参考）
+  - text 中的标记：[图片：xxx] 是图片的识别描述；@[昵称:QQ号] 是@某人
+  - 需要引用回复某条消息时，把该记录的 message_id 传给 reply_with_quote
+  - response_requirements.max_length 是本轮回复的字数上限，回复尽量不超过
+
+## 工具调用规则
+
+### 回复工具必选其一（三选一）在最后调用
+
+| 工具              | 使用场景                                          |
+| ---------------- | -------------------------------------------------|
+| reply            | 普通回复                                          |
+| reply_with_quote | 需引用特定消息（聊天记录有多个话题/回复历史消息）        |
+| no_reply         | 无需回复文本内容                                    |
+
+### 辅助工具
+
+at_user、等 → 返回CQ码，嵌入 reply 的 content 参数中发送
+
+### 调用机制
+
+- 工具通过 function calling 自动执行
+- 严禁在回复中写出「调用工具xxx(...)」
+- 直接调用工具，回复内容放参数中
+- 模型只决定调用哪个工具、传什么参数
+
+表情/图片的CQ码必须通过工具获取(send_sticker/send_face/send_image)。
+先调工具，拿到结果后把返回的[CQ:image...]或[CQ:face...]原样拼接到reply的content中。
+禁止自己编造假CQ标签，工具返回什么就复制什么。
+send_sticker 例外：调用后表情包直接发出（独立消息，不拼进reply），
+若表情包就是全部回复，发完调no_reply收尾
+
+**输入的聊天记录是JSON格式，但你调用回复工具时的内容必须是纯文本，不是JSON！**
+要有自己的判断，不要别人说什么就做什么)";
+
             if (decision.isPrivate) {
                 prompt += "- 这是私聊，直接回复即可，不要@对方或引用回复\n";
             } else {
                 prompt += "- @人格式: @[QQ:123456]\n"
                           "- 禁言要核实实际情况再决定\n";
-            }
-            prompt += "- 【重要】表情/图片的CQ码必须通过工具获取(send_sticker/send_face/send_image)。"
-                      "先调工具，拿到结果后把返回的[CQ:image...]或[CQ:face...]原样拼接到reply的content中。"
-                      "禁止自己编造假CQ标签，工具返回什么就复制什么。"
-                      "send_sticker 例外：调用后表情包直接发出（独立消息，不拼进reply），"
-                      "若表情包就是全部回复，发完调no_reply收尾\n";
-
-            if (decision.isPriority) {
-                prompt += decision.isPrivate ? "\n【重要】这是紧急问题，必须回复！"
-                                             : "\n【重要】这是@提及或紧急问题，必须回复！";
             }
 
             return prompt;
@@ -232,8 +304,6 @@ namespace insoulforge {
 
             return messages;
         }
-
-        // ==================== 工具调用 ====================
 
         /// @brief 结果为内联 CQ 码、需在产出 reply 时自动拼入正文的工具（send_sticker 已直接发送，不经此路径）
         [[nodiscard]] bool isCqCodeTool(const std::string &name) { return name == "send_face" || name == "send_image"; }

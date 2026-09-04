@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <config/Config.hpp>
+#include <model/QQMessage.hpp>
 #include <regex>
 #include <service/MessageService.hpp>
 #include <service/OneBotClient.hpp>
