@@ -31,7 +31,7 @@ namespace insoulforge {
         registerInfoTools();
         registerActionTools();
 
-        spdlog::info("ToolManager: 工具注册完成（共20个内置工具）");
+        spdlog::info("ToolManager: 工具注册完成（共19个内置工具）");
     }
 
     void AgentToolManager::registerCustomTools() {
@@ -62,7 +62,7 @@ namespace insoulforge {
                     .name = tool.name,
                     .description = tool.description,
                     .parameters = params,
-                    .handler = [script = tool.scriptContent](json args) -> drogon::Task<std::string> {
+                    .handler = [script = tool.scriptContent](json args, ToolCallContext) -> drogon::Task<std::string> {
                         co_return co_await executePythonTool(script, std::move(args));
                     },
                   },
@@ -73,8 +73,9 @@ namespace insoulforge {
                     .name = tool.name,
                     .description = tool.description,
                     .parameters = params,
-                    .handler = [config = tool.executorConfig](json args) -> drogon::Task<std::string> {
-                        co_return co_await executeHttpTool(config, std::move(args));
+                    .handler = [config = tool.executorConfig](
+                                 json args, ToolCallContext ctx) -> drogon::Task<std::string> {
+                        co_return co_await executeHttpTool(config, std::move(args), ctx.sessionId);
                     },
                   },
                   ToolCategory::INFORMATION);
@@ -175,7 +176,7 @@ namespace insoulforge {
         co_return result;
     }
 
-    drogon::Task<std::string> AgentToolManager::executeHttpTool(std::string config, json args) {
+    drogon::Task<std::string> AgentToolManager::executeHttpTool(std::string config, json args, uint64_t sessionId) {
         // 解析配置
         json configJson;
         if (!tryParseJson(config, configJson)) {
@@ -207,7 +208,7 @@ namespace insoulforge {
         std::string baseUrl = proto + "://" + hostPort;
         const bool isGet = (method == "GET");
         const auto resp = co_await HttpUtil::send("[HttpTool]", baseUrl, path, isGet ? drogon::Get : drogon::Post,
-          isGet ? json() : std::move(args), "", 30.0, currentToolContext().sessionId);
+          isGet ? json() : std::move(args), "", 30.0, sessionId);
         if (!resp) {
             co_return std::string("HTTP请求失败");
         }

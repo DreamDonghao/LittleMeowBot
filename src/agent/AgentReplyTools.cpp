@@ -1,13 +1,13 @@
 /// @file AgentReplyTools.cpp
-/// @brief 回复工具注册（TERMINAL，调用即结束回合）
-/// @details handler 为占位实现：终端工具在 ExecutorAgent::processToolCalls 内拦截执行，
+/// @brief 回复工具注册（REPLY，调用即结束回合）
+/// @details handler 为占位实现：回复工具在 ExecutorAgent::processToolCalls 内拦截执行，
 ///          不经 ToolRegistry::executeTool（需要改写回复决策而非返回工具结果）
 
 #include <agent/BuiltinTools.hpp>
 #include <service/ToolRegistry.hpp>
 
 namespace insoulforge {
-    /// @brief 注册回复工具（TERMINAL，调用即结束回合）
+    /// @brief 注册回复工具（REPLY，调用即结束回合）
     void registerReplyTools() {
         auto &registry = ToolRegistry::instance();
 
@@ -17,9 +17,9 @@ namespace insoulforge {
             .name = "no_reply",
             .description = "决定不回复消息。当：话题已参与过、没人问你、刚说过话、纯表情刷屏时使用。",
             .parameters = json(),
-            .handler = [](json) -> drogon::Task<std::string> { co_return "ok"; },
+            .handler = [](json, ToolCallContext) -> drogon::Task<std::string> { co_return "ok"; },
           },
-          ToolCategory::TERMINAL);
+          ToolCategory::REPLY);
 
         // reply
         const json replyParams = json::parse(R"json({
@@ -37,11 +37,11 @@ namespace insoulforge {
             .name = "reply",
             .description = "回复消息。当：有人开启新的话题、有人问你、有人@你、有人求助时使用。",
             .parameters = replyParams,
-            .handler = [](json) -> drogon::Task<std::string> { co_return "ok"; },
+            .handler = [](json, ToolCallContext) -> drogon::Task<std::string> { co_return "ok"; },
           },
-          ToolCategory::TERMINAL);
+          ToolCategory::REPLY);
 
-        // reply_with_quote - 引用回复（TERMINAL，直接发送）
+        // reply_with_quote - 引用回复（REPLY，直接发送）
         const json quoteReplyParams = json::parse(R"json({
             "type": "object",
             "properties": {
@@ -61,11 +61,11 @@ namespace insoulforge {
             .name = "reply_with_quote",
             .description = "引用回复特定消息。当需要回复特定消息、回答特定问题、澄清上下文时使用。聊"
                            "天记录格式为JSON：{\"message_id\":\"12345\",\"text\":\"...\"}，用 "
-                           "message_id 字段的值作为参数。这是终端工具，调用后直接发送。",
+                           "message_id 字段的值作为参数。这是回复工具，调用后直接发送。",
             .parameters = quoteReplyParams,
-            .handler = [](json) -> drogon::Task<std::string> { co_return "ok"; },
+            .handler = [](json, ToolCallContext) -> drogon::Task<std::string> { co_return "ok"; },
           },
-          ToolCategory::TERMINAL);
+          ToolCategory::REPLY);
     }
 
 } // namespace insoulforge

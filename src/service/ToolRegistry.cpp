@@ -6,7 +6,6 @@
 #include <ranges>
 #include <service/ToolRegistry.hpp>
 #include <spdlog/spdlog.h>
-#include <storage/SessionStore.hpp>
 
 using insoulforge::json;
 
@@ -31,20 +30,15 @@ namespace {
 } // namespace
 
 namespace insoulforge {
-    ToolContext &currentToolContext() {
-        thread_local ToolContext ctx;
-        return ctx;
-    }
-
     ToolRegistry &ToolRegistry::instance() {
         static ToolRegistry registry;
         return registry;
     }
 
-    void ToolRegistry::registerTool(const Tool &tool, ToolCategory category) {
+    void ToolRegistry::registerTool(const Tool &tool, const ToolCategory category) {
         switch (category) {
-            case ToolCategory::TERMINAL:
-                m_terminalTools[tool.name] = tool;
+            case ToolCategory::REPLY:
+                m_replyTools[tool.name] = tool;
                 break;
             case ToolCategory::INFORMATION:
                 m_infoTools[tool.name] = tool;
@@ -59,8 +53,8 @@ namespace insoulforge {
     json ToolRegistry::getAllTools() const {
         json tools = json::array();
 
-        // 分类顺序固定（终端 → 信息 → 动作），类内按名称有序，保证 tools 数组跨重启稳定
-        for (const auto *categoryTools: {&m_terminalTools, &m_infoTools, &m_actionTools}) {
+        // 分类顺序固定（回复 → 信息 → 动作），类内按名称有序，保证 tools 数组跨重启稳定
+        for (const auto *categoryTools: {&m_replyTools, &m_infoTools, &m_actionTools}) {
             for (const auto &tool: *categoryTools | std::views::values) {
                 tools.push_back(buildToolDef(tool));
             }
@@ -69,28 +63,21 @@ namespace insoulforge {
         return tools;
     }
 
-    drogon::Task<std::string> ToolRegistry::executeTool(std::string name, json args, uint64_t sessionId) const {
-        // 设置上下文
-        auto &ctx = currentToolContext();
-        ctx.sessionId = sessionId;
-        if (sessionId != 0) {
-            ctx.groupName = SessionStore::getSessionName(sessionId);
-        }
-
-        for (const auto *categoryTools: {&m_terminalTools, &m_infoTools, &m_actionTools}) {
+    drogon::Task<std::string> ToolRegistry::executeTool(const std::string name, json args, ToolCallContext ctx) const {
+        for (const auto *categoryTools: {&m_replyTools, &m_infoTools, &m_actionTools}) {
             if (const auto it = categoryTools->find(name); it != categoryTools->end()) {
-                co_return co_await it->second.handler(std::move(args));
+                co_return co_await it->second.handler(std::move(args), std::move(ctx));
             }
         }
         co_return "工具未找到: " + name;
     }
 
     bool ToolRegistry::hasTool(const std::string &name) const {
-        return m_terminalTools.contains(name) || m_infoTools.contains(name) || m_actionTools.contains(name);
+        return m_replyTools.contains(name) || m_infoTools.contains(name) || m_actionTools.contains(name);
     }
 
     void ToolRegistry::unregisterTool(const std::string &name) {
-        m_terminalTools.erase(name);
+        m_replyTools.erase(name);
         m_infoTools.erase(name);
         m_actionTools.erase(name);
         spdlog::info("工具已注销: {}", name);
@@ -111,8 +98,8 @@ namespace insoulforge {
 
     std::string ToolRegistry::categoryToString(ToolCategory category) {
         switch (category) {
-            case ToolCategory::TERMINAL:
-                return "TERMINAL";
+            case ToolCategory::REPLY:
+                return "REPLY";
             case ToolCategory::INFORMATION:
                 return "INFORMATION";
             case ToolCategory::ACTION:

@@ -278,7 +278,7 @@ Task<> AdminController::testCustomTool(
     if (executorType == "python") {
         result = co_await AgentToolManager::executePythonTool(std::move(scriptContent), std::move(testArgs));
     } else if (executorType == "http") {
-        result = co_await AgentToolManager::executeHttpTool(std::move(executorConfig), std::move(testArgs));
+        result = co_await AgentToolManager::executeHttpTool(std::move(executorConfig), std::move(testArgs), 0);
     } else {
         result = "未知的执行类型";
     }

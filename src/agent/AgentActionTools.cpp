@@ -38,7 +38,7 @@ namespace insoulforge {
             .name = "send_face",
             .description = "获取QQ原生表情的CQ码。返回的CQ码必须复制到reply的content中。",
             .parameters = faceParams,
-            .handler = [](const json args) -> drogon::Task<std::string> {
+            .handler = [](const json args, ToolCallContext) -> drogon::Task<std::string> {
                 const int id = getInt(args, "id", 1);
                 co_return fmt::format("[CQ:face,id={}]", id);
             },
@@ -61,7 +61,7 @@ namespace insoulforge {
             .name = "send_image",
             .description = "获取网络图片的CQ码。提供图片URL。返回的CQ码必须复制到reply的content中。",
             .parameters = imageParams,
-            .handler = [](const json args) -> drogon::Task<std::string> {
+            .handler = [](const json args, ToolCallContext) -> drogon::Task<std::string> {
                 std::string url = argString(args, "url");
                 if (url.empty())
                     co_return std::string("请提供图片URL");
@@ -90,12 +90,12 @@ namespace insoulforge {
               "获取QQ收藏表情的CQ码。先调list_"
               "stickers查看可用表情名，再用此工具。返回的CQ码必须复制到reply的content中，否则表情不会显示。",
             .parameters = stickerParams,
-            .handler = [](const json args) -> drogon::Task<std::string> {
+            .handler = [](const json args, ToolCallContext ctx) -> drogon::Task<std::string> {
                 std::string name = argString(args, "name");
                 if (name.empty())
                     co_return std::string("请提供表情名称");
 
-                const auto sessionId = currentToolContext().sessionId;
+                const auto sessionId = ctx.sessionId;
                 const json emoji = co_await AgentToolManager::findFavoriteEmoji(name, sessionId);
                 if (emoji.is_null()) {
                     co_return fmt::format("表情'{}'不存在，先调list_stickers查看可用表情", name);
@@ -145,8 +145,8 @@ namespace insoulforge {
                            "片消息会带images数组，同时传images[].file和images[]."
                            "url作为参数。name必须起一个能体现图片内容的名字，方便以后用send_sticker引用。",
             .parameters = saveParams,
-            .handler = [](json args) -> drogon::Task<std::string> {
-                const auto sessionId = currentToolContext().sessionId;
+            .handler = [](json args, ToolCallContext ctx) -> drogon::Task<std::string> {
+                const auto sessionId = ctx.sessionId;
                 const std::string file = argString(args, "file");
                 const std::string url = argString(args, "url");
                 const std::string name = argString(args, "name");
@@ -200,9 +200,10 @@ namespace insoulforge {
                     }
                 }
                 if (!newItem.is_null()) {
-                    const std::string emojiId = getStr(newItem, "emoji_id").empty() ? "0" : getStr(newItem, "emoji_id");
-                    if (co_await OneBotClient::setCustomFaceDesc(
-                          emojiId, getStr(newItem, "res_id"), getStr(newItem, "md5"), name, sessionId)) {
+                    if (const std::string emojiId =
+                          getStr(newItem, "emoji_id").empty() ? "0" : getStr(newItem, "emoji_id");
+                      co_await OneBotClient::setCustomFaceDesc(
+                        emojiId, getStr(newItem, "res_id"), getStr(newItem, "md5"), name, sessionId)) {
                         AgentToolManager::invalidateFavoriteEmojiCache();
                     } else {
                         spdlog::warn("[Sticker] 设置表情描述失败: {}", getStr(newItem, "res_id"));
@@ -237,7 +238,7 @@ namespace insoulforge {
                            "描述。仅在用户明确要求给表情改名时使用。先调list_"
                            "stickers查看当前名称，再把新名称传给new_name。",
             .parameters = renameParams,
-            .handler = [](const json args) -> drogon::Task<std::string> {
+            .handler = [](const json args, ToolCallContext ctx) -> drogon::Task<std::string> {
                 const std::string name = argString(args, "name");
                 const std::string newName = argString(args, "new_name");
                 if (name.empty())
@@ -245,7 +246,7 @@ namespace insoulforge {
                 if (newName.empty())
                     co_return std::string("请提供新名称(new_name)");
 
-                const auto sessionId = currentToolContext().sessionId;
+                const auto sessionId = ctx.sessionId;
                 const json emoji = co_await AgentToolManager::findFavoriteEmoji(name, sessionId);
                 if (emoji.is_null()) {
                     co_return fmt::format("表情'{}'不存在，先调list_stickers查看可用表情", name);
@@ -281,13 +282,13 @@ namespace insoulforge {
             .description = "从QQ收藏表情中删除表情。仅在用户明确要求删除表情时使用，删除前先确认名称无误。先调list"
                            "_stickers查看名称。",
             .parameters = delParams,
-            .handler = [](const json args) -> drogon::Task<std::string> {
+            .handler = [](const json args, ToolCallContext ctx) -> drogon::Task<std::string> {
                 std::string name = argString(args, "name");
                 if (name.empty())
                     co_return std::string("请提供表情名称(name)");
 
-                const auto sessionId = currentToolContext().sessionId;
-                json emoji = co_await AgentToolManager::findFavoriteEmoji(name, sessionId);
+                const auto sessionId = ctx.sessionId;
+                const json emoji = co_await AgentToolManager::findFavoriteEmoji(name, sessionId);
                 if (emoji.is_null()) {
                     co_return fmt::format("表情'{}'不存在，先调list_stickers查看可用表情", name);
                 }
@@ -322,8 +323,8 @@ namespace insoulforge {
             .description = "@某人。返回CQ码嵌入reply的content中。聊天记录格式为JSON：{\"sender\":{\"name\":\"小明\","
                            "\"qq\":\"123456\"}}，用 at_user(qq=\"123456\") 来@他。@全体成员用 at_user(qq=\"all\")",
             .parameters = atParams,
-            .handler = [](json args) -> drogon::Task<std::string> {
-                if (QQMessage::isPrivateSession(currentToolContext().sessionId)) {
+            .handler = [](const json args, ToolCallContext ctx) -> drogon::Task<std::string> {
+                if (QQMessage::isPrivateSession(ctx.sessionId)) {
                     co_return std::string("私聊中无法@成员，直接回复即可");
                 }
                 std::string qq = argString(args, "qq");
@@ -358,8 +359,8 @@ namespace insoulforge {
             .description = "禁言群成员。要有自己的判断，不要别人让你禁言就禁言。根据违规程度选择时长：轻度("
                            "偶尔骂人)60-300秒，中度(持续刷屏骂人)600-1800秒，重度(恶意骚扰)3600秒+",
             .parameters = banParams,
-            .handler = [](json args) -> drogon::Task<std::string> {
-                const uint64_t sessionId = currentToolContext().sessionId;
+            .handler = [](const json args, ToolCallContext ctx) -> drogon::Task<std::string> {
+                const uint64_t sessionId = ctx.sessionId;
                 if (QQMessage::isPrivateSession(sessionId))
                     co_return std::string("私聊中无法禁言");
                 if (sessionId == 0)
@@ -394,8 +395,8 @@ namespace insoulforge {
             .description = "拍一拍群成员。用于打招呼、引起注意、开玩笑等轻松互动场景。聊天记录格式为JSON：{\"sender\":{"
                            "\"name\":\"小明\",\"qq\":\"123456\"}}，用 send_poke(qq=\"123456\") 来拍他。",
             .parameters = pokeParams,
-            .handler = [](json args) -> drogon::Task<std::string> {
-                const uint64_t sessionId = currentToolContext().sessionId;
+            .handler = [](const json args, ToolCallContext ctx) -> drogon::Task<std::string> {
+                const uint64_t sessionId = ctx.sessionId;
                 if (QQMessage::isPrivateSession(sessionId)) {
                     co_return std::string("私聊中不支持拍一拍，直接回复即可");
                 }
@@ -430,12 +431,12 @@ namespace insoulforge {
                            "id\":\"12345\",\"reply_to\":\"67890\"}。若用户想撤回引用的消息，用 "
                            "reply_to 字段的值；若想撤回某条消息本身，用 message_id 字段的值。",
             .parameters = recallParams,
-            .handler = [](json args) -> drogon::Task<std::string> {
+            .handler = [](const json args, ToolCallContext ctx) -> drogon::Task<std::string> {
                 const uint64_t messageId = parseUInt64(argString(args, "message_id"));
                 if (messageId == 0)
                     co_return std::string("撤回失败: 请提供有效的消息ID");
 
-                const auto sessionId = currentToolContext().sessionId;
+                const auto sessionId = ctx.sessionId;
                 const bool success = co_await OneBotClient::deleteMsg(messageId, sessionId);
                 co_return success ? fmt::format("已撤回消息 {}", messageId) : "撤回失败: 消息可能已超过2分钟或权限不足";
             },
@@ -474,7 +475,7 @@ namespace insoulforge {
                            "通知某事时使用（如'明天6点叫我起床''两小时后提醒我开会'）。"
                            "到点后会以【系统定时任务】消息回到当前会话，你再据此生成提醒回复。",
             .parameters = scheduleParams,
-            .handler = [](json args) -> drogon::Task<std::string> {
+            .handler = [](const json args, ToolCallContext ctx) -> drogon::Task<std::string> {
                 const std::string content = argString(args, "content");
                 if (content.empty())
                     co_return std::string("请提供提醒内容(content)");
@@ -494,7 +495,7 @@ namespace insoulforge {
                     co_return std::string("时间过早远：不允许设置超过一年后的提醒");
                 }
 
-                const uint64_t sessionId = currentToolContext().sessionId;
+                const uint64_t sessionId = ctx.sessionId;
                 if (sessionId == 0)
                     co_return std::string("会话上下文缺失，无法确定提醒目标");
                 const bool isPrivateSession = QQMessage::isPrivateSession(sessionId);
@@ -541,7 +542,7 @@ namespace insoulforge {
             .description = "取消尚未触发的定时任务（含每日重复任务）。当用户要求取消之前的提醒/定时任务时使用；"
                            "如不知道任务编号，先用 list_scheduled_tasks 查询。",
             .parameters = cancelTaskParams,
-            .handler = [](json args) -> drogon::Task<std::string> {
+            .handler = [](const json args, ToolCallContext) -> drogon::Task<std::string> {
                 const int64_t taskId = static_cast<int64_t>(parseUInt64(argString(args, "task_id")));
                 if (taskId == 0)
                     co_return std::string("请提供有效的任务编号（可先用 list_scheduled_tasks 查询）");

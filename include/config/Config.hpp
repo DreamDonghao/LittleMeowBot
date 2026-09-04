@@ -45,7 +45,7 @@ namespace insoulforge {
         std::string accessToken;
         std::uint64_t selfQQNumber = 0;
         std::string qqHttpHost;
-        std::string botName = "小喵";
+        std::string botName;
 
         static Config &instance();
 

@@ -4,6 +4,7 @@
 #include <agent/ExecutorAgent.hpp>
 #include <config/Config.hpp>
 #include <fmt/core.h>
+#include <model/QQMessage.hpp>
 #include <ranges>
 #include <regex>
 #include <service/ChatRecordManager.hpp>
@@ -13,6 +14,7 @@
 #include <service/ToolRegistry.hpp>
 #include <spdlog/spdlog.h>
 #include <storage/AffinityStore.hpp>
+#include <storage/SessionStore.hpp>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -26,8 +28,6 @@ namespace insoulforge {
     namespace {
         /// @brief 工具调用循环最大轮数（防止模型无限循环调用工具）
         constexpr int kMaxToolRounds = 6;
-
-        // ==================== Prompt 构建 ====================
 
         /// @brief 获取系统提示词（私聊与群聊使用各自的人设提示词，差异行按会话类型拼接）
         std::string getSystemPrompt(const RouterDecision &decision) {
@@ -185,7 +185,8 @@ namespace insoulforge {
 
         /// @brief 构建 Executor 消息列表（system + 单条 user）
         /// @details 上下文组装为键序固定的单个 JSON 对象（ordered_json 按插入顺序序列化）作为单条
-        /// user 消息：short_term_memory → earlier_conversation → recent_conversation → response_requirements，
+        /// user 消息：session → short_term_memory → earlier_conversation → recent_conversation →
+        /// response_requirements，
         /// 避免连续多条 user（部分 OpenAI 兼容后端不支持）
         [[nodiscard]] json buildPrompt(
           const ChatRecordManager &chatRecords, const MemoryManager &memory, const RouterDecision &decision) {
@@ -199,6 +200,20 @@ namespace insoulforge {
             auto [earlierRecords, recentRecords] = buildChatContext(chatRecords);
 
             json context;
+            // 会话详情放最前：群名/群号供模型直接取用，无需再向工具查询
+            const uint64_t sessionId = chatRecords.getSessionId();
+            json sessionInfo;
+            if (QQMessage::isPrivateSession(sessionId)) {
+                sessionInfo["type"] = "private";
+                sessionInfo["qq"] = QQMessage::parseSessionTarget(sessionId).second;
+            } else {
+                sessionInfo["type"] = "group";
+                sessionInfo["group_id"] = sessionId;
+                if (const std::string groupName = SessionStore::getSessionName(sessionId); !groupName.empty()) {
+                    sessionInfo["group_name"] = groupName;
+                }
+            }
+            context["session"] = std::move(sessionInfo);
             context["short_term_memory"] = splitMemoryLines(memory.getMemory());
             context["earlier_conversation"] = std::move(earlierRecords);
             context["recent_conversation"] = std::move(recentRecords);
@@ -233,9 +248,9 @@ namespace insoulforge {
             return content;
         }
 
-        /// @brief 处理终端工具（no_reply / reply / reply_with_quote），把决策写入 decision
-        /// @return 是否为终端工具；参数缺失时不产生决策也不回传工具结果（终端工具不降级为普通工具执行）
-        [[nodiscard]] bool applyTerminalTool(
+        /// @brief 处理回复工具（no_reply / reply / reply_with_quote），把决策写入 decision
+        /// @return 是否为回复工具；参数缺失时不产生决策也不回传工具结果（回复工具不降级为普通工具执行）
+        [[nodiscard]] bool applyReplyTool(
           const std::string &name, const json &args, const std::string &accumulatedCQCodes, ReplyDecision &decision) {
             if (name == "no_reply") {
                 decision.shouldReply = false;
@@ -256,7 +271,7 @@ namespace insoulforge {
                 }
                 return true;
             }
-            return false; // 非终端工具，交由 ToolRegistry 执行
+            return false; // 非回复工具，交由 ToolRegistry 执行
         }
 
         /// @brief 把模型返回的 tool_calls 转为需回传以补全上下文的 assistant 消息
@@ -278,9 +293,9 @@ namespace insoulforge {
             return assistantMsg;
         }
 
-        /// @brief 逐个处理本轮工具调用：终端工具直接产出回复决策；其余工具经 ToolRegistry 执行并把结果
+        /// @brief 逐个处理本轮工具调用：回复工具直接产出回复决策；其余工具经 ToolRegistry 执行并把结果
         /// 作为 tool 消息回传，CQ 码类工具的结果累积备用
-        /// @return {终端工具决策（同轮多个以最后一个为准，未命中为 nullopt）, 回传工具结果后的消息列表, 累积的 CQ 码}
+        /// @return {回复工具决策（同轮多个以最后一个为准，未命中为 nullopt）, 回传工具结果后的消息列表, 累积的 CQ 码}
         drogon::Task<std::tuple<std::optional<ReplyDecision>, json, std::string>> processToolCalls(
           json message, json messages, std::string accumulatedCQCodes, const uint64_t sessionId) {
             ReplyDecision decision;
@@ -293,21 +308,24 @@ namespace insoulforge {
                 json args;
                 std::ignore = tryParseJson(jsonToString(atOrNull(atOrNull(toolCall, "function"), "arguments")), args);
 
-                if (applyTerminalTool(name, args, accumulatedCQCodes, decision)) {
-                    hasDecision = true; // 终端工具：结束本轮，不回传工具结果
+                if (applyReplyTool(name, args, accumulatedCQCodes, decision)) {
+                    hasDecision = true; // 回复工具：结束本轮，不回传工具结果
                     continue;
                 }
 
-                // 把 system 之后的完整消息列表放进工具上下文，deep_think 等需要会话上下文的工具在
-                // handler 入口读取；每次调用前设置，避免协程交错时读到其他会话的上下文
-                json conversationContext = json::array();
-                for (size_t i = 1; i < messages.size(); ++i) {
-                    conversationContext.push_back(messages[i]);
+                // deep_think 以会话上下文为参考材料：快照 system 之后的完整消息列表（含已获取的工具结果）
+                // 随调用传给 handler；其余工具不拷贝这份上下文
+                ToolCallContext ctx;
+                ctx.sessionId = sessionId;
+                if (name == "deep_think") {
+                    ctx.conversationContext = json::array();
+                    for (size_t i = 1; i < messages.size(); ++i) {
+                        ctx.conversationContext.push_back(messages[i]);
+                    }
                 }
-                currentToolContext().conversationContext = std::move(conversationContext);
 
                 const std::string result =
-                  co_await ToolRegistry::instance().executeTool(name, std::move(args), sessionId);
+                  co_await ToolRegistry::instance().executeTool(name, std::move(args), std::move(ctx));
                 Logger::session(sessionId).debug("[Executor] 工具结果: {}", result);
                 if (isCqCodeTool(name)) {
                     accumulatedCQCodes += result;
@@ -325,8 +343,6 @@ namespace insoulforge {
             }
             co_return {std::nullopt, std::move(messages), std::move(accumulatedCQCodes)};
         }
-
-        // ==================== 执行流程 ====================
 
         /// @brief Agent 模式执行（带 tools）：循环「请求模型 → 处理工具调用」，直到产出回复决策或达最大轮数
         drogon::Task<std::optional<ReplyDecision>> executeWithAgent(json messages, const uint64_t sessionId) {
@@ -359,7 +375,7 @@ namespace insoulforge {
                     co_return decision;
                 }
 
-                // 有工具调用：回传 assistant 消息后逐个处理，未命中终端工具则继续下一轮
+                // 有工具调用：回传 assistant 消息后逐个处理，未命中回复工具则继续下一轮
                 messages.push_back(buildAssistantToolCallMessage(message));
                 std::optional<ReplyDecision> roundDecision;
                 std::tie(roundDecision, messages, accumulatedCQCodes) =

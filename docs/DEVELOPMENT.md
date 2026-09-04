@@ -146,8 +146,8 @@ MessageService::sendGroupMsg → OneBot API
 ### 工具系统
 
 - `ToolRegistry` 按类别管理工具，LLM 调用时按类别分组注入 prompt：
-    - `TERMINAL`：终结工具（`reply` / `no_reply` / `reply_with_quote`），调用后结束本轮处理
-    - `INFORMATION`：信息工具（`recall_memory` / `get_group_name` / `list_stickers`），获取数据
+    - `REPLY`：回复工具（`reply` / `no_reply` / `reply_with_quote`），调用后结束本轮处理
+    - `INFORMATION`：信息工具（`recall_memory` / `list_stickers` / `deep_think`），获取数据
     - `ACTION`：动作工具（`send_face` / `send_image` / `send_sticker` / `save_sticker` / `rename_sticker` /
       `delete_sticker` / `at_user` / `ban_user` / `send_poke` / `recall_message`），执行操作
 - 内置工具在 `src/agent/AgentToolManager.cpp` 注册；自定义工具注册为 `INFORMATION` 类别

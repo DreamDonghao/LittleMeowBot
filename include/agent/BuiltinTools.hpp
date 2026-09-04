@@ -11,7 +11,7 @@
 #include <util/JsonUtil.hpp>
 
 namespace insoulforge {
-    /// @brief 注册回复工具（TERMINAL，调用即结束回合）
+    /// @brief 注册回复工具（REPLY，调用即结束回合）
     void registerReplyTools();
 
     /// @brief 注册内容获取工具（INFORMATION，查询数据、获取答案，不产生副作用）

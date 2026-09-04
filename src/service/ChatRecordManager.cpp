@@ -8,7 +8,7 @@
 #include <storage/MemoryStore.hpp>
 
 namespace insoulforge {
-    ChatRecordManager::ChatRecordManager(uint64_t sessionId) : m_sessionId(sessionId) {}
+    ChatRecordManager::ChatRecordManager(const uint64_t sessionId) : m_sessionId(sessionId) {}
 
     uint64_t ChatRecordManager::getSessionId() const { return m_sessionId; }
 
@@ -28,4 +28,4 @@ namespace insoulforge {
           ChatRecordStore::getChatRecordsSince(m_sessionId, watermark, Config::instance().windowTriggerCount);
         return {records.begin(), records.end()};
     }
-} // namespace insoulforge
+}

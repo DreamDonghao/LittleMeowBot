@@ -43,8 +43,8 @@ namespace insoulforge {
             .name = "list_stickers",
             .description = "获取QQ收藏表情中所有可用的表情名称列表。",
             .parameters = json(),
-            .handler = [](json) -> drogon::Task<std::string> {
-                const auto sessionId = currentToolContext().sessionId;
+            .handler = [](json, ToolCallContext ctx) -> drogon::Task<std::string> {
+                const auto sessionId = ctx.sessionId;
                 const json emojis = co_await AgentToolManager::fetchFavoriteEmojis(sessionId);
                 if (emojis.empty()) {
                     co_return std::string("表情库为空（QQ收藏表情列表获取失败或没有收藏表情）");
@@ -76,15 +76,15 @@ namespace insoulforge {
         registry.registerTool(
           {
             .name = "recall_memory",
-            .description = "从长期记忆库中回忆信息（如果需要可以先获取当前群聊的名称）。当想不起某人"
+            .description = "从长期记忆库中回忆信息。当想不起某人"
                            "喜好、某群习惯、过去的约定时使用。模拟人类回忆过程。",
             .parameters = memoryParams,
-            .handler = [](const json args) -> drogon::Task<std::string> {
+            .handler = [](const json args, ToolCallContext ctx) -> drogon::Task<std::string> {
                 const std::string query = argString(args, "query");
                 if (query.empty())
                     co_return std::string("请提供回忆关键词");
 
-                const uint64_t sessionId = currentToolContext().sessionId;
+                const uint64_t sessionId = ctx.sessionId;
                 const auto result = co_await LongTermMemory::searchMemory(query, 3, sessionId);
                 if (!result || result->empty()) {
                     co_return "想不起来了，没有找到相关记忆";
@@ -94,37 +94,14 @@ namespace insoulforge {
           },
           ToolCategory::INFORMATION);
 
-        // get_group_name
-        registry.registerTool(
-          {
-            .name = "get_group_name",
-            .description = "获取当前群聊的名称。当需要知道群名或确认当前群时使用。",
-            .parameters = json(),
-            .handler = [](json) -> drogon::Task<std::string> {
-                const uint64_t sessionId = currentToolContext().sessionId;
-                const std::string groupName = currentToolContext().groupName;
-                if (QQMessage::isPrivateSession(sessionId)) {
-                    co_return std::string("当前是私聊，没有群名");
-                }
-                if (sessionId == 0) {
-                    co_return "无法获取群信息";
-                }
-                if (!groupName.empty()) {
-                    co_return fmt::format("当前群：{}（群号：{}）", groupName, sessionId);
-                }
-                co_return fmt::format("当前群号：{}", sessionId);
-            },
-          },
-          ToolCategory::INFORMATION);
-
-        // deep_think - 调用深度思考模型求解。上下文由 Executor 在每次工具调用前写入
-        // ToolContext（system 之后的完整消息列表，含已获取的工具结果）
+        // deep_think - 调用深度思考模型求解。上下文由 Executor 随 ToolCallContext 传入
+        // （system 之后的完整消息列表，含已获取的工具结果）
         const json thinkParams = json::parse(R"json({
                 "type": "object",
                 "properties": {
                     "question": {
                         "type": "string",
-                        "description": "用一两句话描述需要深入分析的问题或重点，如“分析这道题的解法”“对比两个方案的优劣”"
+                        "description": "用一两句话描述需要深入分析的具体问题”"
                     }
                 },
                 "required": ["question"]
@@ -136,12 +113,12 @@ namespace insoulforge {
                            "深度思考模型会结合当前对话上下文给出准确的答案或解法，"
                            "拿到答案后据此组织回复。简单闲聊、日常对话禁止调用。",
             .parameters = thinkParams,
-            .handler = [](json args) -> drogon::Task<std::string> {
-                const uint64_t sessionId = currentToolContext().sessionId;
+            .handler = [](json args, ToolCallContext ctx) -> drogon::Task<std::string> {
+                const uint64_t sessionId = ctx.sessionId;
                 const std::string question = argString(args, "question");
 
-                // 上下文在 handler 入口取出，避免 co_await 期间被其他会话的处理覆盖
-                json context = std::move(currentToolContext().conversationContext);
+                // 上下文随调用参数传入，由协程帧持有，co_await 期间不会被其他会话覆盖
+                json context = std::move(ctx.conversationContext);
                 if (!context.is_array() || context.empty()) {
                     co_return std::string("会话上下文缺失，无法深度思考");
                 }
@@ -188,8 +165,8 @@ namespace insoulforge {
             .description = "查看当前会话所有待触发的定时任务。当用户想确认已设置的提醒、或取消前需要获取任务编号"
                            "时使用。返回任务编号、触发时间和备忘内容。",
             .parameters = json(),
-            .handler = [](json) -> drogon::Task<std::string> {
-                const uint64_t sessionId = currentToolContext().sessionId;
+            .handler = [](json, ToolCallContext ctx) -> drogon::Task<std::string> {
+                const uint64_t sessionId = ctx.sessionId;
                 if (sessionId == 0)
                     co_return std::string("会话上下文缺失，无法查询定时任务");
                 const auto [sessionType, targetId] = QQMessage::parseSessionTarget(sessionId);
