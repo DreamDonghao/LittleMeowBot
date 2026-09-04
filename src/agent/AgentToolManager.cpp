@@ -31,7 +31,7 @@ namespace insoulforge {
         registerInfoTools();
         registerActionTools();
 
-        spdlog::info("ToolManager: 工具注册完成（共19个内置工具）");
+        spdlog::info("ToolManager: 工具注册完成（共20个内置工具）");
     }
 
     void AgentToolManager::registerCustomTools() {

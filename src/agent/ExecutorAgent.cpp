@@ -27,7 +27,7 @@
 namespace insoulforge {
     namespace {
         /// @brief 工具调用循环最大轮数（防止模型无限循环调用工具）
-        constexpr int kMaxToolRounds = 6;
+        constexpr int kMaxToolRounds = 8;
 
         /// @brief 获取系统提示词（私聊与群聊使用各自的人设提示词，差异行按会话类型拼接）
         std::string getSystemPrompt(const RouterDecision &decision) {
@@ -114,6 +114,10 @@ at_user、等 → 返回CQ码，嵌入 reply 的 content 参数中发送
 禁止自己编造假CQ标签，工具返回什么就复制什么。
 send_sticker 例外：调用后表情包直接发出（独立消息，不拼进reply），
 若表情包就是全部回复，发完调no_reply收尾
+
+reply_and_continue 例外：发送过程消息后回合不结束（可先说「稍等，我去查一下」再调耗时工具）。
+仅用于耗时操作（如搜索）前告知用户，或明确要连续发送多条消息，发送后必须继续：调用工具获取结果，最终用 reply/no_reply 收尾；
+即使耗时操作失败也要用 reply 告知结果，不能没有下文。禁止当作普通回复，谨慎使用
 
 **输入的聊天记录是JSON格式，但你调用回复工具时的内容必须是纯文本，不是JSON！**
 要有自己的判断，不要别人说什么就做什么)";

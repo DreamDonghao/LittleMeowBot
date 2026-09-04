@@ -3,6 +3,7 @@
 
 #include <agent/AgentToolManager.hpp>
 #include <agent/BuiltinTools.hpp>
+#include <agent/ExecutorAgent.hpp>
 #include <chrono>
 #include <config/Config.hpp>
 #include <fmt/core.h>
@@ -37,7 +38,7 @@ namespace insoulforge {
         registry.registerTool(
           {
             .name = "send_face",
-            .description = "获取QQ原生表情的CQ码。返回的CQ码必须复制到reply的content中。",
+            .description = "获取QQ原生表情的CQ码。返回的CQ码必须复制到reply的content中，非必要不使用",
             .parameters = faceParams,
             .handler = [](const json args, ToolCallContext) -> drogon::Task<std::string> {
                 const int id = getInt(args, "id", 1);
@@ -127,6 +128,50 @@ namespace insoulforge {
                     co_return std::string("表情发送失败，请改用文字回复或稍后重试");
                 }
                 co_return fmt::format("已发送表情「{}」", name);
+            },
+          },
+          ToolCategory::ACTION);
+
+        // reply_and_continue - 发送过程消息，回合不结束，最终回复仍由 reply/no_reply 收尾
+        const json continueParams = json::parse(R"json({
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "string",
+                        "description": "过程消息内容，简短一句话，如：稍等，我去查一下"
+                    }
+                },
+                "required": ["content"]
+            })json");
+        registry.registerTool(
+          {
+            .name = "reply_and_continue",
+            .description = "发送过程消息后继续处理（发送后回合不结束）前，如即将执行耗时操作（如网络搜索）前。或明确要发送多条消息时使用。"
+                           "用一句简短的话告知用户，随后必须继续调用工具获取结果，最终回复仍用 reply 给出"
+                           "（即使操作失败也要 reply 告知用户，不能没有下文）。日常回复直接用 reply，禁止把本工具"
+                           "当作最终回复。",
+            .parameters = continueParams,
+            .handler = [](const json args, const ToolCallContext ctx) -> drogon::Task<std::string> {
+                const std::string content = cleanReplyContent(argString(args, "content"));
+                if (content.empty()) {
+                    co_return std::string("请提供要发送的过程消息内容");
+                }
+
+                // 与 send_sticker 相同：经 MessageService 发送，成功后记入聊天记录并推送 WebSocket
+                const auto sessionId = ctx.sessionId;
+                const ChatRecordManager chatRecords(sessionId);
+                std::optional<uint64_t> messageId;
+                if (QQMessage::isPrivateSession(sessionId)) {
+                    messageId = co_await MessageService::sendPrivateMsg(
+                      sessionId & ~QQMessage::kPrivateSessionFlag, content, chatRecords);
+                } else {
+                    messageId = co_await MessageService::sendGroupMsg(sessionId, content, chatRecords);
+                }
+                if (!messageId) {
+                    co_return std::string("过程消息发送失败，请直接继续完成最终回复");
+                }
+                co_return std::string(
+                  "过程消息已发送，请继续后续处理；最终回复仍用 reply 工具给出，操作失败也要 reply 告知用户");
             },
           },
           ToolCategory::ACTION);

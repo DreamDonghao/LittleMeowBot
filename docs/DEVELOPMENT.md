@@ -147,12 +147,15 @@ MessageService::sendGroupMsg → OneBot API
 
 - `ToolRegistry` 按类别管理工具，LLM 调用时按类别分组注入 prompt：
     - `REPLY`：回复工具（`reply` / `no_reply` / `reply_with_quote`），调用后结束本轮处理
-    - `INFORMATION`：信息工具（`recall_memory` / `list_stickers` / `deep_think`），获取数据
+    - `INFORMATION`：信息工具（`recall_memory` / `list_stickers` / `deep_think` / `list_scheduled_tasks`），获取数据
     - `ACTION`：动作工具（`send_face` / `send_image` / `send_sticker` / `save_sticker` / `rename_sticker` /
-      `delete_sticker` / `at_user` / `ban_user` / `send_poke` / `recall_message`），执行操作
-- 内置工具在 `src/agent/AgentToolManager.cpp` 注册；自定义工具注册为 `INFORMATION` 类别
+      `reply_and_continue` / `delete_sticker` / `at_user` / `ban_user` / `send_poke` / `recall_message` /
+      `create_scheduled_task` / `cancel_scheduled_task`），执行操作
+- 内置工具共 20 个，注册代码按类别拆分在 `src/agent/AgentReplyTools.cpp` / `AgentInfoTools.cpp` /
+  `AgentActionTools.cpp`（由 `AgentToolManager::registerAllTools()` 调用）；全部工具的参数与行为详见
+  [TOOLS.md](./TOOLS.md)。自定义工具注册为 `INFORMATION` 类别
 - 自定义工具（Python 脚本 / HTTP 接口）存储于数据库，启动时加载；Python 工具通过 `sys.argv[1]` 传入参数 JSON 文件路径
-- 拍一拍、撤回、引用回复、表情包收发均由上述工具实现，由 Executor 根据上下文自动决策调用；天气、搜索、随机数、时间等能力来自
+- 拍一拍、撤回、引用回复、表情包收发、定时任务均由上述工具实现，由 Executor 根据上下文自动决策调用；天气、搜索、随机数、时间等能力来自
   `agentTools/` 目录的可导入自定义工具
 
 ### 记忆系统
@@ -191,7 +194,8 @@ sqlite3 data/insoulforge.db ".tables"
 
 ### 添加 C++ 内置工具
 
-编辑 `src/agent/AgentToolManager.cpp`，在 `initialize()` 中注册：
+按类别编辑 `src/agent/AgentReplyTools.cpp` / `AgentInfoTools.cpp` / `AgentActionTools.cpp` 注册（共享的参数 Schema
+辅助函数在 `include/agent/BuiltinTools.hpp`）：
 
 ```cpp
 registry.registerTool(
@@ -199,7 +203,7 @@ registry.registerTool(
         .name = "my_tool",
         .description = "工具描述，LLM 据此判断何时调用",
         .parameters = paramsJson,   // JSON Schema 格式
-        .handler = [](json args) -> drogon::Task<std::string> {
+        .handler = [](const json args, ToolCallContext ctx) -> drogon::Task<std::string> {
             co_return "结果";
         },
     }, ToolCategory::ACTION);
