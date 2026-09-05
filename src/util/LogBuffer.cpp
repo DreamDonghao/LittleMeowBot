@@ -7,6 +7,7 @@
 #include <fmt/chrono.h>
 #include <fmt/format.h>
 #include <fstream>
+#include <iterator>
 #include <regex>
 #include <service/LogWebSocketManager.hpp>
 #include <spdlog/details/log_msg.h>
@@ -30,29 +31,41 @@ namespace insoulforge {
     }
 
     void LogBuffer::loadFromDirectory(const std::string &directory) {
+        // 启动热路径：缓冲区只留最后 kMaxEntries 条。按新→旧读文件，每个文件只补足缺口，凑够即停，
+        // 别把 6×10MB 滚动日志全量解析一遍拖慢启动
         std::vector<LogEntry> loaded;
-        for (int index = 5; index >= 0; --index) {
+        for (int index = 0; index <= 5 && loaded.size() < kMaxEntries; ++index) {
+            // spdlog 滚动文件保留扩展名：bot.log / bot.1.log / bot.2.log ...
             const auto path =
-              std::filesystem::path(directory) / (index == 0 ? "bot.log" : fmt::format("bot.log.{}", index));
+              std::filesystem::path(directory) / (index == 0 ? "bot.log" : fmt::format("bot.{}.log", index));
             std::ifstream file(path);
             if (!file) {
                 continue;
             }
 
+            // 文件内是旧→新序；老文件只取最新的缺口条数，接到已收集内容（更新）之前
+            std::vector<LogEntry> fileEntries;
             std::string line;
             while (std::getline(file, line)) {
                 if (auto entry = parseLine(line)) {
-                    loaded.push_back(std::move(*entry));
+                    fileEntries.push_back(std::move(*entry));
                 }
             }
+
+            const size_t keep = std::min(fileEntries.size(), kMaxEntries - loaded.size());
+            const auto first = fileEntries.size() - keep;
+            loaded.insert(loaded.begin(), std::make_move_iterator(fileEntries.begin() + first),
+              std::make_move_iterator(fileEntries.end()));
         }
 
         std::lock_guard lock(m_mutex);
         m_entries.clear();
-        const auto first = loaded.size() > kMaxEntries ? loaded.size() - kMaxEntries : 0;
-        for (size_t index = first; index < loaded.size(); ++index) {
-            loaded[index].id = m_nextId++;
-            m_entries.push_back(std::move(loaded[index]));
+        m_entries.reserve(loaded.size());
+        for (auto &entry: loaded) {
+            // 会话 ID 靠正则提取，只对最终保留的条目做，加载阶段不付这笔开销
+            entry.sessionId = extractSessionId(entry.message);
+            entry.id = m_nextId++;
+            m_entries.push_back(std::move(entry));
         }
     }
 
@@ -141,19 +154,28 @@ namespace insoulforge {
     }
 
     std::optional<LogEntry> LogBuffer::parseLine(const std::string &line) {
-        static const std::regex pattern(
-          R"(^\[([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3})\] \[([a-z]+)\] (.*)$)",
-          std::regex::icase);
-        std::smatch match;
-        if (!std::regex_match(line, match, pattern)) {
+        // 固定格式 [YYYY-MM-DD HH:MM:SS.mmm] [level] message（Logger 文件 sink 的 pattern），
+        // 手工解析比 std::regex 快约两个数量级，这里是启动加载热路径
+        constexpr size_t kStampWidth = 23; // 2026-09-04 22:21:00.123
+        if (line.size() < kStampWidth + 5 || line[0] != '[' || line[kStampWidth + 1] != ']' ||
+            line[kStampWidth + 2] != ' ' || line[kStampWidth + 3] != '[') {
+            return std::nullopt;
+        }
+
+        const size_t levelEnd = line.find(']', kStampWidth + 4);
+        if (levelEnd == std::string::npos || levelEnd + 2 > line.size() || line[levelEnd + 1] != ' ') {
             return std::nullopt;
         }
 
         LogEntry entry;
-        entry.timestamp = match[1].str();
-        entry.level = match[2].str();
-        entry.message = match[3].str();
-        entry.sessionId = extractSessionId(entry.message);
+        entry.timestamp = line.substr(1, kStampWidth);
+        entry.level = line.substr(kStampWidth + 4, levelEnd - (kStampWidth + 4));
+        // 与 append 的等级归一化保持一致，否则重启后历史日志对不上前端的级别过滤
+        if (entry.level == "warning")
+            entry.level = "warn";
+        if (entry.level == "err")
+            entry.level = "error";
+        entry.message = line.substr(levelEnd + 2);
         return entry;
     }
 
