@@ -450,9 +450,10 @@ namespace insoulforge {
         registry.registerTool(
           {
             .name = "send_poke",
-            .description = "中途拍一拍群成员（发出后回合不结束，最终仍用reply/no_reply收尾）。用于打招呼、引起注意、"
-                           "开玩笑等轻松互动场景。聊天记录格式为JSON：{\"sender\":{\"name\":\"小明\",\"qq\":\"123456\"}}，"
-                           "用 send_poke(qq=\"123456\") 来拍他。",
+            .description =
+              "中途拍一拍群成员（发出后回合不结束，最终仍用reply/no_reply收尾）。用于打招呼、引起注意、"
+              "开玩笑等轻松互动场景。聊天记录格式为JSON：{\"sender\":{\"name\":\"小明\",\"qq\":\"123456\"}}，"
+              "用 send_poke(qq=\"123456\") 来拍他。",
             .parameters = pokeParams,
             .handler = [](const json args, const ToolCallContext ctx) -> drogon::Task<std::string> {
                 const uint64_t sessionId = ctx.sessionId;

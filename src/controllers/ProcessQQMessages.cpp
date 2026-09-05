@@ -1,16 +1,21 @@
 #include <agent/AgentSystem.hpp>
-#include <controllers/ProcessQQMessages.hpp>
+#include <atomic>
+#include <config/Config.hpp>
 #include <controllers/CommandHandler.hpp>
+#include <controllers/ProcessQQMessages.hpp>
+#include <ctime>
+#include <model/QQMessage.hpp>
 #include <service/ChatRecordManager.hpp>
 #include <service/MemoryManager.hpp>
-#include <model/QQMessage.hpp>
-#include <service/SessionConfigManager.hpp>
 #include <service/MemoryService.hpp>
 #include <service/MessageService.hpp>
+#include <service/OneBotClient.hpp>
+#include <service/SessionConfigManager.hpp>
 #include <service/WebSocketManager.hpp>
 #include <spdlog/spdlog.h>
-#include <util/Logger.hpp>
 #include <storage/SessionStore.hpp>
+#include <util/CommonUtil.hpp>
+#include <util/Logger.hpp>
 
 using namespace insoulforge;
 using namespace drogon;
@@ -27,11 +32,92 @@ namespace {
             co_await MessageService::sendGroupMsg(message.getGroupId(), std::move(content), chatRecords);
         }
     }
+
+    /// @brief 是否为拍一拍 notice 事件（OneBot: notice_type=notify, sub_type=poke；user_id=戳人者，target_id=被戳者）
+    bool isPokeNotice(const json &body) {
+        return getStr(body, "notice_type") == "notify" && getStr(body, "sub_type") == "poke" &&
+               getUInt(body, "user_id", 0) != 0 && getUInt(body, "target_id", 0) != 0;
+    }
+
+    /// @brief 解析拍一拍参与者的昵称：notice 事件不带昵称，先查消息累积的映射表，未知时实时查资料补齐
+    Task<std::string> resolvePokeName(const uint64_t qq, const uint64_t sessionId) {
+        if (std::string name = QQMessage::getQQName(qq); name != "未知") {
+            co_return name;
+        }
+        const auto resp = co_await OneBotClient::getStrangerInfo(qq, sessionId);
+        std::string name = getStr(atOrNull(resp, "data"), "nickname");
+        if (name.empty()) {
+            name = "未知";
+        }
+        co_return name;
+    }
+
+    /// @brief 处理拍一拍 notice 事件（群聊带 group_id；私聊仅双方，即戳机器人）
+    ///        - 机器人自己拍的：send_poke 工具已记入聊天记录，忽略
+    ///        - 戳其他人的拍一拍：仅记入群聊天记录并推送 WebSocket，不触发回复
+    ///        - 戳机器人的拍一拍：合成为真实戳者发送的文本消息事件，按普通消息走完整管线（Router 正常决策）
+    /// @return 需要走消息管线的合成事件；仅记录或忽略时返回 null
+    Task<json> handlePokeNotice(json notice) {
+        const auto &config = Config::instance();
+        const uint64_t pokerId = getUInt(notice, "user_id", 0);
+        const uint64_t targetId = getUInt(notice, "target_id", 0);
+        const uint64_t groupId = getUInt(notice, "group_id", 0);
+        if (pokerId == config.selfQQNumber) {
+            co_return json(); // 机器人自己拍的已由 send_poke 工具记录
+        }
+
+        // 会话：群拍一拍记入群会话；私聊拍一拍（戳机器人）记入对应私聊会话
+        const uint64_t sessionId = groupId != 0 ? groupId : pokerId | QQMessage::kPrivateSessionFlag;
+        const std::string pokerName = co_await resolvePokeName(pokerId, sessionId);
+        const std::string text =
+          fmt::format("[拍一拍：{}({})]", co_await resolvePokeName(targetId, sessionId), targetId);
+
+        if (targetId != config.selfQQNumber) {
+            if (groupId == 0) {
+                co_return json(); // 私聊仅双方，理论上不存在，防御性忽略
+            }
+            // 其他人拍其他人：只记入聊天记录，不触发回复（拍一拍记录与 send_poke 一致，不带 message_id）
+            json recordJson;
+            recordJson["time"] = currentDateTime();
+            recordJson["sender"]["name"] = pokerName;
+            recordJson["sender"]["qq"] = std::to_string(pokerId);
+            recordJson["text"] = text;
+            recordJson["reply_to"] = nullptr;
+            const ChatRecordManager chatRecords(groupId);
+            chatRecords.addUserRecord(dumpJson(recordJson));
+            WebSocketManager::instance().pushMessage(groupId, "user", text);
+            co_return json();
+        }
+
+        // 戳的是机器人：合成戳者发出的消息事件（合成 ID 用远离真实 ID 的固定区段，与 TaskScheduler 的 9000000000
+        // 区段错开）
+        static std::atomic<int64_t> s_syntheticMsgId{0};
+        json event;
+        event["post_type"] = "message";
+        event["self_id"] = config.selfQQNumber;
+        event["time"] = static_cast<int64_t>(std::time(nullptr));
+        event["message_id"] = fmt::to_string(9100000000LL + s_syntheticMsgId.fetch_add(1));
+        event["raw_message"] = text;
+        event["sender"]["user_id"] = pokerId;
+        event["sender"]["nickname"] = pokerName;
+        if (groupId != 0) {
+            event["message_type"] = "group";
+            event["group_id"] = groupId;
+        } else {
+            event["message_type"] = "private";
+            event["user_id"] = pokerId;
+        }
+        json item;
+        item["type"] = "text";
+        item["data"]["text"] = text;
+        event["message"].push_back(item);
+        co_return event;
+    }
 } // namespace
 
-Task<> ProcessQQMessages::receiveMessages(const HttpRequestPtr req,
-                                          std::function<void(const HttpResponsePtr &)> callback) {
-    const auto body = parseJsonBody(req);
+Task<> ProcessQQMessages::receiveMessages(
+  const HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) {
+    auto body = parseJsonBody(req);
     if (!body) {
         auto resp = HttpResponse::newHttpResponse();
         resp->setStatusCode(k400BadRequest);
@@ -39,23 +125,27 @@ Task<> ProcessQQMessages::receiveMessages(const HttpRequestPtr req,
         callback(resp);
         co_return;
     }
-    // 检查 post_type 字段
-    if (getStr(*body, "post_type") != "message") {
-        json resp;
-        resp["status"] = "ok";
-        callback(jsonResponse(resp));
-        co_return;
-    }
-    // 返回响应
+    // 返回响应（拍一拍等事件的处理放在应答之后，昵称补齐等异步操作不阻塞上报方）
     json respJson;
     respJson["status"] = "ok";
     callback(jsonResponse(respJson));
+
+    // 检查 post_type：message 直通；拍一拍 notice 转换/记录；其余事件忽略
+    if (getStr(*body, "post_type") != "message") {
+        if (!isPokeNotice(*body)) {
+            co_return;
+        }
+        *body = co_await handlePokeNotice(std::move(*body));
+        if (body->is_null()) {
+            co_return;
+        }
+    }
 
     if (!AgentSystem::instance().isRunning()) {
         co_return;
     }
 
-    QQMessage qqMessage(*body);
+    QQMessage qqMessage(std::move(*body));
     const uint64_t sessionId = qqMessage.getSessionId(); ///< 会话 ID（群聊=群号；私聊=用户QQ号|私聊标志位）
     // 确保会话配置存在
     if (!SessionConfigManager::contains(sessionId)) {
@@ -103,7 +193,7 @@ Task<> ProcessQQMessages::receiveMessages(const HttpRequestPtr req,
     // 使用二层代理处理消息（顶层兜底，任何异常不让其逃逸到框架层）
     try {
         if (auto result = co_await agentSystem.process(chatRecords, memory, qqMessage);
-            result && !result->empty() && agentSystem.isRunning()) {
+          result && !result->empty() && agentSystem.isRunning()) {
             log.info("多层代理决定回复");
             // 表情包已由 send_sticker 工具直接发出并记入聊天记录，这里只发送文字回复
             co_await sendReply(qqMessage, std::move(result.value()), chatRecords);

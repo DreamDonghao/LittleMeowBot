@@ -124,7 +124,7 @@ namespace insoulforge {
     void AgentSystem::cancelNonPriorityProcessing(const uint64_t sessionId) {
         std::lock_guard lock(m_processingMutex);
         if (const auto it = m_processingSessions.find(sessionId);
-            it != m_processingSessions.end() && !it->second.isPriority) {
+          it != m_processingSessions.end() && !it->second.isPriority) {
             ++it->second.generation; // 递增代际，通知当前处理者中断（优先消息在处理则不打断，调用方排队等待）
         }
     }
