@@ -123,9 +123,11 @@ OneBot HTTP POST /
     ▼
 ProcessQQMessages::receiveMessages
     │ 1. 解析 JSON，校验 post_type == "message"
-    │ 2. 命令消息（@Bot + /xxx）→ CommandHandler，不受群启用状态影响
-    │ 3. 非命令消息：群未启用则丢弃
-    │ 4. QQMessage::formatMessage 格式化（@ 转换、图片识别等）
+    │ 2. notice 拍一拍：仅在会话已启用时合成消息或记入聊天记录
+    │ 3. 命令消息（@Bot + /xxx）→ CommandHandler，不受群启用状态影响
+    │ 4. 非命令消息：群未启用则丢弃
+    │ 5. QQMessage::formatMessage 格式化（@ 转换、图片识别等高成本处理）
+    │ 6. 写入聊天记录并推送管理后台 WebSocket
     ▼
 AgentSystem::process
     │ 组内互斥（同群消息串行处理，防止上下文并发污染）
@@ -143,6 +145,13 @@ MessageService::sendGroupMsg → OneBot API
 
 关键数据结构见 `include/agent/AgentTypes.hpp`（`RouterDecision`、`ReplyDecision`）。
 
+消息处理的几个约束：
+
+- 命令先于启用检查处理，因此管理员可以在禁用会话中继续使用 `/enable`、`/status` 等管理命令。
+- `QQMessage::formatMessage` 放在启用检查之后，避免禁用会话触发图片识别等 LLM 调用。
+- 同一会话串行处理。普通消息处理期间到达的普通消息会跳过；@ 机器人、私聊、系统定时任务等高优先级消息会尝试打断正在处理的普通消息。高优先级消息之间不互相打断，只排队等待。
+- 拍一拍 notice 不是普通消息；禁用会话直接跳过，已启用会话中再根据目标决定“合成普通消息”或“仅写聊天记录”。
+
 ### 工具系统
 
 - `ToolRegistry` 按类别管理工具，LLM 调用时按类别分组注入 prompt：
@@ -157,6 +166,13 @@ MessageService::sendGroupMsg → OneBot API
 - 自定义工具（Python 脚本 / HTTP 接口）存储于数据库，启动时加载；Python 工具通过 `sys.argv[1]` 传入参数 JSON 文件路径
 - 拍一拍、撤回、引用回复、表情包收发、定时任务均由上述工具实现，由 Executor 根据上下文自动决策调用；天气、搜索、随机数、时间等能力来自
   `agentTools/` 目录的可导入自定义工具
+
+工具执行的几个约束：
+
+- `reply` / `reply_with_quote` / `no_reply` 是回复工具，调用后结束本轮处理；它们在 `ExecutorAgent::processToolCalls` 中被拦截，不走普通工具返回值路径。
+- `send_sticker` / `send_poke` / `reply_and_continue` 是中途动作，执行后本轮不结束，最终仍需用回复工具收尾；一次对话需要连续多条消息时，用 `reply_and_continue` 发送前置消息，再用 `reply` 或 `no_reply` 收尾。
+- `send_sticker` 与 `reply_and_continue` 通过 `MessageService` 直接发送，成功后自动写入聊天记录并推送 WebSocket；主流程只负责发送最终文字回复。
+- `deep_think` 是信息工具，不是全局思考模式。Executor 只在复杂问题需要额外推理时调用，工具结果再回到 Executor 组织成聊天回复。
 
 ### 记忆系统
 
@@ -260,7 +276,8 @@ registry.registerTool(
 ## 调试
 
 - **日志**：`spdlog` 输出到控制台与 `logs/bot.log`，模块间通过 `util/Logger.hpp` 封装。排查消息流水线问题时先看日志中
-  Router 决策与 Executor 输出
+  Router 决策与 Executor 输出。管理后台读取 `LogBuffer` 的内存缓冲，启动时按 `bot.log`、`bot.1.log`、`bot.2.log` 从新到旧补足最近
+  5000 条记录，避免全量解析滚动日志拖慢启动
 - **协程**：所有异步 I/O 使用 `drogon::Task<T>` / `co_await`，注意 `co_await` 后对象生命周期（捕获 `shared_ptr` 而非裸指针）
 - **组内互斥**：`AgentSystem` 保证同一群的消息串行处理，新增消息处理逻辑时不要绕过该机制
 - **前端**：`npm run dev` + 浏览器 DevTools；后端日志会打印收到的 OneBot 原始 JSON
