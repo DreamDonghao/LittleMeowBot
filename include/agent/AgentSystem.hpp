@@ -47,17 +47,25 @@ namespace insoulforge {
         bool m_initialized = false;
         std::atomic_bool m_running{true};
 
-        // 正在处理中的会话（sessionId → generation），用于防止并发处理
-        // @消息/私聊消息到达时递增代际，其余消息在关键点检查代际是否被取消
-        std::unordered_map<uint64_t, uint64_t> m_processingSessions;
+        /// @brief 会话处理状态
+        struct ProcessingState {
+            uint64_t generation; // 代际号，被抢占取消时递增
+            bool isPriority; // 在处理的消息是否优先（@/私聊/系统定时任务）；优先消息互不打断，只排队
+        };
+
+        // 正在处理中的会话，用于防止并发处理
+        // 优先消息到达时：在跑的是普通消息则递增代际打断，是优先消息则排队等待；
+        // 被打断的处理在关键点检查代际确认取消
+        std::unordered_map<uint64_t, ProcessingState> m_processingSessions;
         std::mutex m_processingMutex;
 
         /// @brief 尝试开始处理会话消息
+        /// @param isPriority 本次要处理的消息是否优先
         /// @return 代际号（>0 成功），0 表示会话正在处理中
-        uint64_t tryStartProcessing(uint64_t sessionId);
+        uint64_t tryStartProcessing(uint64_t sessionId, bool isPriority);
 
-        /// @brief 取消会话当前处理（@消息/私聊新消息到达时调用，递增代际通知当前处理者中断）
-        void cancelProcessing(uint64_t sessionId);
+        /// @brief 取消会话当前的非优先处理（递增代际通知中断；优先消息在处理时不打断，调用方排队等待）
+        void cancelNonPriorityProcessing(uint64_t sessionId);
 
         /// @brief 检查代际是否仍然有效
         bool isCurrentGeneration(uint64_t sessionId, uint64_t generation);

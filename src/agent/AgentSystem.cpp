@@ -43,14 +43,16 @@ namespace insoulforge {
             co_return std::nullopt;
         }
 
-        auto generation = tryStartProcessing(sessionId);
+        const bool isPriority = message.isPriorityMessage();
+        auto generation = tryStartProcessing(sessionId, isPriority);
         if (generation == 0) {
-            // 高优先级消息（@/私聊/系统定时任务）：取消当前非优先消息的处理，排队等待
-            if (message.isPriorityMessage()) {
-                cancelProcessing(sessionId);
+            // 高优先级消息（@/私聊/系统定时任务）排队等待：在跑的是普通消息则打断，是优先消息则不打断。
+            // 每轮重试都尝试打断，堵住旧处理退出后普通消息插队抢先的漏洞
+            if (isPriority) {
                 do {
+                    cancelNonPriorityProcessing(sessionId);
                     co_await drogon::sleepCoro(drogon::app().getLoop(), std::chrono::milliseconds(50));
-                    generation = tryStartProcessing(sessionId);
+                    generation = tryStartProcessing(sessionId, isPriority);
                 } while (generation == 0);
             } else {
                 Logger::session(sessionId).debug("正在处理中，跳过");
@@ -109,27 +111,28 @@ namespace insoulforge {
         co_return cleanReplyContent(reply->content);
     }
 
-    uint64_t AgentSystem::tryStartProcessing(const uint64_t sessionId) {
+    uint64_t AgentSystem::tryStartProcessing(const uint64_t sessionId, const bool isPriority) {
         std::lock_guard lock(m_processingMutex);
         if (const auto it = m_processingSessions.find(sessionId); it != m_processingSessions.end()) {
             return 0; // 会话正在处理中
         }
         constexpr uint64_t gen = 1;
-        m_processingSessions[sessionId] = gen;
+        m_processingSessions[sessionId] = {.generation = gen, .isPriority = isPriority};
         return gen;
     }
 
-    void AgentSystem::cancelProcessing(const uint64_t sessionId) {
+    void AgentSystem::cancelNonPriorityProcessing(const uint64_t sessionId) {
         std::lock_guard lock(m_processingMutex);
-        if (const auto it = m_processingSessions.find(sessionId); it != m_processingSessions.end()) {
-            ++it->second; // 递增代际，通知当前处理者中断
+        if (const auto it = m_processingSessions.find(sessionId);
+            it != m_processingSessions.end() && !it->second.isPriority) {
+            ++it->second.generation; // 递增代际，通知当前处理者中断（优先消息在处理则不打断，调用方排队等待）
         }
     }
 
     bool AgentSystem::isCurrentGeneration(const uint64_t sessionId, const uint64_t generation) {
         std::lock_guard lock(m_processingMutex);
         const auto it = m_processingSessions.find(sessionId);
-        return it != m_processingSessions.end() && it->second == generation;
+        return it != m_processingSessions.end() && it->second.generation == generation;
     }
 
     void AgentSystem::finishProcessing(const uint64_t sessionId) {
