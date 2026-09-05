@@ -135,6 +135,13 @@ Task<> ProcessQQMessages::receiveMessages(
         if (!isPokeNotice(*body)) {
             co_return;
         }
+        // 拍一拍不会成为管理命令；禁用会话无需解析昵称、写入聊天记录或合成消息。
+        const uint64_t groupId = getUInt(*body, "group_id", 0);
+        const uint64_t pokerId = getUInt(*body, "user_id", 0);
+        const uint64_t sessionId = groupId != 0 ? groupId : pokerId | QQMessage::kPrivateSessionFlag;
+        if (!SessionStore::isSessionEnabled(sessionId)) {
+            co_return;
+        }
         *body = co_await handlePokeNotice(std::move(*body));
         if (body->is_null()) {
             co_return;
@@ -151,8 +158,6 @@ Task<> ProcessQQMessages::receiveMessages(
     if (!SessionConfigManager::contains(sessionId)) {
         SessionConfigManager::addConfig(sessionId);
     }
-    // 格式化消息
-    co_await qqMessage.formatMessage();
 
     // 检查是否是命令消息（群聊需 @ 且以 / 开头，私聊直接以 / 开头）- 不受启用状态影响
     const auto log = Logger::session(sessionId);
@@ -171,6 +176,9 @@ Task<> ProcessQQMessages::receiveMessages(
     if (!SessionStore::isSessionEnabled(sessionId)) {
         co_return;
     }
+
+    // 格式化消息（含图片识别 LLM 调用，开销大，放在启用检查之后避免禁用会话白跑）
+    co_await qqMessage.formatMessage();
 
     // 创建聊天记录和记忆管理器
     ChatRecordManager chatRecords(sessionId);
