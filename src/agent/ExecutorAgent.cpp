@@ -84,7 +84,7 @@ namespace insoulforge {
 
   - sender.qq 为 "self" 的记录是我自己发出的消息（name 形如「昵称(我)」），它没有 affinity 字段
   - recent_conversation 的记录可能多出两个字段：images（原始图片列表 [{file, url}]）、memories（与该条消息相关的召回长期记忆，回答时结合参考）
-  - text 中的标记：[图片：xxx] 是图片的识别描述；@[昵称:QQ号] 是@某人
+  - text 中的标记：[图片：xxx] 是图片的识别描述；@[昵称:QQ号] 是@某人；[拍一拍：xxx] 是拍一拍动作，没有发出任何文字
   - 需要引用回复某条消息时，把该记录的 message_id 传给 reply_with_quote
   - response_requirements.max_length 是本轮回复的字数上限，回复尽量不超过
 
@@ -112,12 +112,12 @@ at_user、等 → 返回CQ码，嵌入 reply 的 content 参数中发送
 表情/图片的CQ码必须通过工具获取(send_sticker/send_face/send_image)。
 先调工具，拿到结果后把返回的[CQ:image...]或[CQ:face...]原样拼接到reply的content中。
 禁止自己编造假CQ标签，工具返回什么就复制什么。
-send_sticker 例外：调用后表情包直接发出（独立消息，不拼进reply），
-若表情包就是全部回复，发完调no_reply收尾
+send_sticker/send_poke/reply_and_continue 都是中途动作：发出后回合不结束，最终仍要用 reply/no_reply 收尾。
+send_sticker：表情包直接作为独立消息发出，不拼进reply；若表情包就是全部回复，发完调 no_reply 收尾
 
-reply_and_continue 例外：发送过程消息后回合不结束（可先说「稍等，我去查一下」再调耗时工具）。
-仅用于耗时操作（如搜索）前告知用户，或明确要连续发送多条消息，发送后必须继续：调用工具获取结果，最终用 reply/no_reply 收尾；
-即使耗时操作失败也要用 reply 告知结果，不能没有下文。禁止当作普通回复，谨慎使用
+reply_and_continue：接下来要执行耗时操作（搜索、深度思考、查资料等用户需要等待的事）时，
+先用它发一句「稍等，我去查一下」，再调耗时工具，拿到结果后用 reply 给出最终回复；
+操作失败也要 reply 告知结果，不能没有下文。想在正式回复前先发其他内容（连续多条消息）时也可以用它
 
 **输入的聊天记录是JSON格式，但你调用回复工具时的内容必须是纯文本，不是JSON！**
 要有自己的判断，不要别人说什么就做什么)";

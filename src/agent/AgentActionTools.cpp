@@ -14,6 +14,7 @@
 #include <service/OneBotClient.hpp>
 #include <service/TaskScheduler.hpp>
 #include <service/ToolRegistry.hpp>
+#include <service/WebSocketManager.hpp>
 #include <set>
 #include <spdlog/spdlog.h>
 #include <storage/TaskStore.hpp>
@@ -87,8 +88,8 @@ namespace insoulforge {
         registry.registerTool(
           {
             .name = "send_sticker",
-            .description = "直接发送QQ收藏表情到当前会话（作为独立消息发出，无需拼进reply）。"
-                           "先调list_stickers查看可用表情名。",
+            .description = "中途发送一张QQ收藏表情包（独立消息直接发出，不经reply；发出后回合不结束，"
+                           "最终仍用reply/no_reply收尾）。先调list_stickers查看可用表情名。",
             .parameters = stickerParams,
             .handler = [](const json args, const ToolCallContext ctx) -> drogon::Task<std::string> {
                 std::string name = argString(args, "name");
@@ -146,10 +147,11 @@ namespace insoulforge {
         registry.registerTool(
           {
             .name = "reply_and_continue",
-            .description = "发送过程消息后继续处理（发送后回合不结束）前，如即将执行耗时操作（如网络搜索）前。或明确要发送多条消息时使用。"
-                           "用一句简短的话告知用户，随后必须继续调用工具获取结果，最终回复仍用 reply 给出"
-                           "（即使操作失败也要 reply 告知用户，不能没有下文）。日常回复直接用 reply，禁止把本工具"
-                           "当作最终回复。",
+            .description = "中途发送一条文字消息（发出后回合不结束，最终仍用reply/no_reply收尾）。两个场景："
+                           "1) 接下来要执行耗时操作（搜索、深度思考、查资料等用户需要等待的事），先发一句"
+                           "「稍等，我去查一下」，再调用耗时工具，拿到结果后用 reply 给出最终回复"
+                           "（操作失败也要 reply 说明）；2) 想在正式回复前先发其他内容（连续多条消息）。"
+                           "日常单条回复直接用 reply。",
             .parameters = continueParams,
             .handler = [](const json args, const ToolCallContext ctx) -> drogon::Task<std::string> {
                 const std::string content = cleanReplyContent(argString(args, "content"));
@@ -448,8 +450,9 @@ namespace insoulforge {
         registry.registerTool(
           {
             .name = "send_poke",
-            .description = "拍一拍群成员。用于打招呼、引起注意、开玩笑等轻松互动场景。聊天记录格式为JSON：{\"sender\":{"
-                           "\"name\":\"小明\",\"qq\":\"123456\"}}，用 send_poke(qq=\"123456\") 来拍他。",
+            .description = "中途拍一拍群成员（发出后回合不结束，最终仍用reply/no_reply收尾）。用于打招呼、引起注意、"
+                           "开玩笑等轻松互动场景。聊天记录格式为JSON：{\"sender\":{\"name\":\"小明\",\"qq\":\"123456\"}}，"
+                           "用 send_poke(qq=\"123456\") 来拍他。",
             .parameters = pokeParams,
             .handler = [](const json args, const ToolCallContext ctx) -> drogon::Task<std::string> {
                 const uint64_t sessionId = ctx.sessionId;
@@ -464,7 +467,23 @@ namespace insoulforge {
                     co_return std::string("拍一拍失败: 请提供有效的QQ号");
 
                 const bool success = co_await OneBotClient::sendPoke(sessionId, userId);
-                co_return success ? fmt::format("已拍一拍用户 {}", userId) : "拍一拍失败: 权限不足或用户不存在";
+                if (!success) {
+                    co_return std::string("拍一拍失败: 权限不足或用户不存在");
+                }
+
+                // 拍一拍不是消息（无 message_id），手动记入聊天记录并推送 WebSocket：
+                // 后续轮次模型能从记录中看到自己拍过谁，避免重复拍。
+                // 用 [拍一拍：xxx] 标记而非纯文本，防止模型误认为自己发过这条文字消息
+                const std::string pokeText = fmt::format("[拍一拍：{}({})]", QQMessage::getQQName(userId), userId);
+                json msgJson;
+                msgJson["time"] = currentDateTime();
+                msgJson["sender"]["name"] = Config::instance().botName + "(我)";
+                msgJson["sender"]["qq"] = "self";
+                msgJson["text"] = pokeText;
+                const ChatRecordManager chatRecords(sessionId);
+                chatRecords.addAssistantRecord(dumpJson(msgJson));
+                WebSocketManager::instance().pushMessage(sessionId, "assistant", pokeText);
+                co_return fmt::format("已拍一拍用户 {}", userId);
             },
           },
           ToolCategory::ACTION);

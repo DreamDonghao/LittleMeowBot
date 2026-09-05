@@ -35,7 +35,7 @@ LLM 调用时工具按类别分组注入 prompt；自定义工具（Python / HTT
 
 | 工具 | 参数 | 说明 |
 |------|------|------|
-| `reply_and_continue` | `content` | 发送过程消息后**回合不结束**：内容经 `cleanReplyContent` 净化后由 `MessageService` 发送并记入聊天记录，工具结果回传后循环继续。仅用于耗时操作（如搜索）前告知用户一句简短的话，最终回复仍由 `reply` / `no_reply` 收尾 |
+| `reply_and_continue` | `content` | 发送一条文字过程消息，**回合不结束**：内容经 `cleanReplyContent` 净化后由 `MessageService` 发送并记入聊天记录，工具结果回传后循环继续。用于耗时操作（如搜索）前告知用户一句简短的话，或正式回复前先发其他内容；最终回复仍由 `reply` / `no_reply` 收尾 |
 
 ### 表情包
 
@@ -56,7 +56,7 @@ LLM 调用时工具按类别分组注入 prompt；自定义工具（Python / HTT
 |------|------|------|
 | `at_user` | `qq` | @某人的 CQ 码（拼进 reply 用），`"all"` 为 @全体成员；私聊中禁用 |
 | `ban_user` | `qq`, `duration?` | 禁言群成员，默认 600 秒、0 为解禁；描述要求模型自行判断违规程度选时长（轻度 60-300 秒 / 中度 600-1800 秒 / 重度 3600 秒+），不盲从指令 |
-| `send_poke` | `qq` | 拍一拍群成员，打招呼、引起注意等轻松互动；私聊中禁用 |
+| `send_poke` | `qq` | 拍一拍群成员，打招呼、引起注意等轻松互动；私聊中禁用。拍一拍不是消息（无 message_id），成功后手动记入聊天记录（`sender.qq="self"`，text 为标记 `[拍一拍：昵称(QQ号)]`，表明没发出任何文字）并推送 WebSocket，后续轮次模型能看到自己拍过谁 |
 | `recall_message` | `message_id` | 撤回消息：撤引用的消息用 `reply_to` 字段值，撤某条消息本身用 `message_id` 字段值 |
 
 ### 定时任务
