@@ -9,6 +9,7 @@
 #include <message/MessageMiddleware.hpp>
 #include <message/MessageMiddlewareCatalog.hpp>
 #include <message/MessagePipeline.hpp>
+#include <util/Logger.hpp>
 
 namespace insoulforge {
     MessagePipeline &MessagePipeline::instance() {
@@ -54,8 +55,20 @@ namespace insoulforge {
         }
         MessageContext context(std::move(event));
         for (const auto &middleware: m_middlewares) {
-            // Stop 是正常的短路结果，例如非消息事件、命令或禁用会话。
-            if (co_await middleware->handle(context) == MessageFlow::Stop) {
+            try {
+                // Stop 是正常的短路结果，例如非消息事件、命令或禁用会话。
+                if (co_await middleware->handle(context) == MessageFlow::Stop) {
+                    co_return;
+                }
+            } catch (const std::exception &error) {
+                Logger::session(context.logSessionId())
+                  .error("[MessagePipeline] 节点 {} 处理失败: message_id={}, error={}", middleware->id(),
+                    context.logMessageId(), error.what());
+                co_return;
+            } catch (...) {
+                Logger::session(context.logSessionId())
+                  .error("[MessagePipeline] 节点 {} 处理失败: message_id={}, 未知异常", middleware->id(),
+                    context.logMessageId());
                 co_return;
             }
         }

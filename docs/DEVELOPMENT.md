@@ -163,6 +163,7 @@ MessageService::sendGroupMsg → OneBot API
 - 同一会话串行处理。普通消息处理期间到达的普通消息会跳过；@ 机器人、私聊、系统定时任务等高优先级消息会尝试打断正在处理的普通消息。高优先级消息之间不互相打断，只排队等待。
 - 拍一拍 notice 不是普通消息；禁用会话直接跳过，已启用会话中再根据目标决定“合成普通消息”或“仅写聊天记录”。
 - 中间件按 `MessageMiddlewareCatalog` 中的注册顺序执行；每个节点只负责一个阶段，并通过 `MessageFlow::Stop` 短路后续处理。
+- 每个中间件调用均由 `MessagePipeline` 捕获异常；异常日志包含节点标识、会话 ID 和消息 ID，随后终止本次链路，不会再执行后续节点。
 
 新增消息处理阶段时，在 `include/message/middleware/` 与 `src/message/middleware/` 中实现一个 `MessageMiddleware`，
 再将其加入 `MessageMiddlewareCatalog`。中间件标识必须全局唯一；`MessagePipeline` 会在初始化时校验内置节点，避免因空节点或

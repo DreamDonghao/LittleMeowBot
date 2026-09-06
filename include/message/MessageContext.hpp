@@ -43,6 +43,16 @@ namespace insoulforge {
         /// @return 群号，或带私聊标志位的用户 QQ 号
         [[nodiscard]] uint64_t sessionId() const;
 
+        /// @brief 获取用于异常日志关联的会话 ID
+        /// @return 已创建消息时返回其会话 ID；否则从原始事件提取，无法识别时返回 0
+        /// @details 可在 MessageSetupMiddleware 之前安全调用，不依赖 createMessage()。
+        [[nodiscard]] uint64_t logSessionId() const;
+
+        /// @brief 获取用于异常日志关联的消息 ID
+        /// @return 已创建消息时返回其消息 ID；否则从原始事件提取，缺失时返回 0
+        /// @details 可在 MessageSetupMiddleware 之前安全调用，不依赖 createMessage()。
+        [[nodiscard]] uint64_t logMessageId() const;
+
         /// @brief 获取当前会话的聊天记录管理器，首次调用时构造
         /// @pre 已调用 createMessage()。
         /// @return 当前会话的聊天记录管理器

@@ -20,6 +20,23 @@ namespace insoulforge {
 
     uint64_t MessageContext::sessionId() const { return message().getSessionId(); }
 
+    uint64_t MessageContext::logSessionId() const {
+        if (m_message) {
+            return m_message->getSessionId();
+        }
+
+        const uint64_t groupId = getUInt(m_event, "group_id", 0);
+        if (groupId != 0) {
+            return groupId;
+        }
+        const uint64_t userId = getUInt(m_event, "user_id", getUInt(atOrNull(m_event, "sender"), "user_id", 0));
+        return userId == 0 ? 0 : userId | QQMessage::kPrivateSessionFlag;
+    }
+
+    uint64_t MessageContext::logMessageId() const {
+        return m_message ? m_message->getMessageId() : getUInt(m_event, "message_id", 0);
+    }
+
     ChatRecordManager &MessageContext::chatRecords() {
         if (!m_chatRecords) {
             // 命令、格式化失败或被短路的消息无需构造记录管理器。
