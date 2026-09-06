@@ -15,13 +15,20 @@ namespace insoulforge {
     }
 
     void EventBus::initialize() {
+        initialize([](EventBus &eventBus) { EventSubscriberCatalog::registerBuiltinSubscribers(eventBus); });
+    }
+
+    void EventBus::initialize(std::function<void(EventBus &)> registrar) {
         if (m_initialized) {
             return;
+        }
+        if (!registrar) {
+            throw std::invalid_argument("领域事件订阅者注册器不能为空");
         }
 
         m_initializing = true;
         try {
-            EventSubscriberCatalog::registerBuiltinSubscribers(*this);
+            registrar(*this);
             m_initialized = true;
         } catch (...) {
             for (auto &handlers: m_handlers) {

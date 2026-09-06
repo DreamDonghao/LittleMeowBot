@@ -27,6 +27,13 @@ namespace insoulforge {
         /// @pre 必须在 HTTP 服务开始接收请求前调用。
         void initialize();
 
+        /// @brief 使用指定中间件列表初始化处理链路
+        /// @param middlewares 按执行顺序排列的中间件列表
+        /// @throws std::invalid_argument 中间件为空、标识为空或标识重复时抛出
+        /// @pre 必须在 HTTP 服务开始接收请求前调用。
+        /// @details 用于自定义组合和契约测试；重复调用无副作用。
+        void initialize(std::vector<std::unique_ptr<MessageMiddleware>> middlewares);
+
         /// @brief 添加一个自定义中间件
         /// @throws std::invalid_argument 中间件为空、标识为空或与已有节点重名时抛出
         /// @throws std::logic_error 内置中间件尚未初始化时抛出

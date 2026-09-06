@@ -92,6 +92,13 @@ cd frontend && npm run type-check
 `./build/insoulforge/exe/insoulforge`，读取的是根目录的 `data/`；如果直接进入 `build/insoulforge/` 运行，则会在
 `build/insoulforge/` 下生成数据目录。
 
+契约测试默认不参与常规构建。执行测试时先显式构建测试目标，再运行 CTest：
+
+```bash
+cmake --build cmake-build-debug --target insoulforge_contract_tests -j8
+ctest --test-dir cmake-build-debug --output-on-failure
+```
+
 ## 项目结构
 
 ```

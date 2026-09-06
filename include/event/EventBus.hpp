@@ -29,6 +29,13 @@ namespace insoulforge {
         /// @pre 必须在消息处理链路开始前调用。
         void initialize();
 
+        /// @brief 使用指定注册器初始化事件总线
+        /// @param registrar 向当前事件总线注册订阅者的函数
+        /// @throws std::invalid_argument 注册器为空、订阅者无效或标识重复时抛出
+        /// @pre 必须在消息处理链路开始前调用。
+        /// @details 用于自定义组合和契约测试；重复调用无副作用。
+        void initialize(std::function<void(EventBus &)> registrar);
+
         /// @brief 为指定事件类型注册订阅者
         /// @tparam Event 事件载荷类型
         /// @tparam Handler 接收 `const Event &` 并返回 `drogon::Task<>` 的可调用对象

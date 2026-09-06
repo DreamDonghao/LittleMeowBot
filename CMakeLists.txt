@@ -66,6 +66,34 @@ if (SQLITE3_STATIC_LIB)
     target_link_libraries(${PROJECT_NAME} PRIVATE ${SQLITE3_STATIC_LIB})
 endif ()
 
+include(CTest)
+if (BUILD_TESTING)
+    set(TESTABLE_SRC_FILES ${SRC_FILES})
+    list(FILTER TESTABLE_SRC_FILES EXCLUDE REGEX "/src/main\\.cpp$")
+
+    add_executable(insoulforge_contract_tests EXCLUDE_FROM_ALL
+            tests/MessageEventContractTests.cpp
+            ${TESTABLE_SRC_FILES})
+    target_compile_features(insoulforge_contract_tests PRIVATE cxx_std_23)
+    target_include_directories(insoulforge_contract_tests PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            include)
+    target_link_libraries(insoulforge_contract_tests PRIVATE
+            Drogon::Drogon
+            spdlog::spdlog_header_only
+            fmt::fmt-header-only
+            SQLite3_lib)
+    if (nlohmann_json_FOUND)
+        target_link_libraries(insoulforge_contract_tests PRIVATE nlohmann_json::nlohmann_json)
+    else ()
+        target_include_directories(insoulforge_contract_tests PRIVATE ${NLOHMANN_JSON_INCLUDE_DIR})
+    endif ()
+    if (SQLITE3_STATIC_LIB)
+        target_link_libraries(insoulforge_contract_tests PRIVATE ${SQLITE3_STATIC_LIB})
+    endif ()
+    add_test(NAME message_event_contracts COMMAND insoulforge_contract_tests)
+endif ()
+
 # 前端构建 (Vue3) - 前端源码变化时自动重新构建，输出到 build/insoulforge/public
 find_program(NPM_EXECUTABLE NAMES npm npm.cmd REQUIRED)
 file(GLOB_RECURSE FRONTEND_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/frontend/src/*)

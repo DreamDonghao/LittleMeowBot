@@ -18,12 +18,15 @@ namespace insoulforge {
     }
 
     void MessagePipeline::initialize() {
+        initialize(MessageMiddlewareCatalog::createBuiltinMiddlewares());
+    }
+
+    void MessagePipeline::initialize(std::vector<std::unique_ptr<MessageMiddleware>> middlewares) {
         if (m_initialized) {
             return;
         }
 
         // 先在局部容器中完成全部校验，校验失败时不污染正在使用的链路。
-        auto middlewares = MessageMiddlewareCatalog::createBuiltinMiddlewares();
         std::unordered_set<std::string_view> ids;
         for (const auto &middleware: middlewares) {
             if (!middleware || middleware->id().empty() || !ids.insert(middleware->id()).second) {
