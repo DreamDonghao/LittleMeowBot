@@ -5,10 +5,10 @@
 #include <config/Config.hpp>
 #include <ctime>
 #include <event/DomainEvent.hpp>
-#include <event/EventBus.hpp>
 #include <fmt/format.h>
 #include <message/MessageContext.hpp>
 #include <message/middleware/EventNormalizationMiddleware.hpp>
+#include <message/runtime/MessageRuntime.hpp>
 #include <service/OneBotClient.hpp>
 #include <storage/SessionStore.hpp>
 #include <util/CommonUtil.hpp>
@@ -48,7 +48,7 @@ namespace insoulforge {
         /// @brief 处理拍一拍事件，必要时合成为一条普通文本消息
         /// @param notice 已通过 isPokeNotice() 校验且会话已启用的事件
         /// @return 戳机器人时返回合成消息；已处理或需忽略时返回 null JSON
-        drogon::Task<json> normalizePokeNotice(json notice) {
+        drogon::Task<json> normalizePokeNotice(MessageContext &context, json notice) {
             const auto &config = Config::instance();
             const uint64_t pokerId = getUInt(notice, "user_id", 0);
             const uint64_t targetId = getUInt(notice, "target_id", 0);
@@ -75,7 +75,7 @@ namespace insoulforge {
                 const std::string recordContent = dumpJson(record);
                 const ChatRecordManager chatRecords(groupId);
                 chatRecords.addUserRecord(recordContent);
-                co_await EventBus::instance().publish(MessageRecordedEvent{
+                co_await context.runtime().publish(MessageRecordedEvent{
                   .sessionId = groupId,
                   .messageId = 0,
                   .role = MessageRole::User,
@@ -118,7 +118,7 @@ namespace insoulforge {
             co_return MessageFlow::Stop;
         }
 
-        event = co_await normalizePokeNotice(std::move(event));
+        event = co_await normalizePokeNotice(context, std::move(event));
         co_return event.is_null() ? MessageFlow::Stop : MessageFlow::Continue;
     }
 } // namespace insoulforge

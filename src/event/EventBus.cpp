@@ -50,9 +50,8 @@ namespace insoulforge {
         }
 
         auto &handlers = m_handlers[static_cast<size_t>(eventType)];
-        if (std::any_of(handlers.begin(), handlers.end(), [subscriberId](const RegisteredHandler &registered) {
-                return registered.id == subscriberId;
-            })) {
+        if (std::any_of(handlers.begin(), handlers.end(),
+              [subscriberId](const RegisteredHandler &registered) { return registered.id == subscriberId; })) {
             throw std::invalid_argument("同一领域事件的订阅者标识重复");
         }
         handlers.emplace_back(std::string(subscriberId), std::move(handler));
@@ -75,13 +74,11 @@ namespace insoulforge {
             try {
                 co_await registered.handler(event);
             } catch (const std::exception &error) {
-                Logger::session(sessionId)
-                  .error("[EventBus] 事件 {} 的订阅者 {} 处理失败: message_id={}, error={}",
-                    domainEventTypeName(eventType), registered.id, messageId, error.what());
+                Logger::session(sessionId).error("[EventBus] 事件 {} 的订阅者 {} 处理失败: message_id={}, error={}",
+                  domainEventTypeName(eventType), registered.id, messageId, error.what());
             } catch (...) {
-                Logger::session(sessionId)
-                  .error("[EventBus] 事件 {} 的订阅者 {} 处理失败: message_id={}, 未知异常",
-                    domainEventTypeName(eventType), registered.id, messageId);
+                Logger::session(sessionId).error("[EventBus] 事件 {} 的订阅者 {} 处理失败: message_id={}, 未知异常",
+                  domainEventTypeName(eventType), registered.id, messageId);
             }
         }
     }

@@ -2,9 +2,9 @@
 /// @brief 聊天记录持久化中间件实现
 
 #include <event/DomainEvent.hpp>
-#include <event/EventBus.hpp>
 #include <message/MessageContext.hpp>
 #include <message/middleware/RecordMessageMiddleware.hpp>
+#include <message/runtime/MessageRuntime.hpp>
 
 namespace insoulforge {
     std::string_view RecordMessageMiddleware::id() const noexcept { return "record_message"; }
@@ -19,7 +19,7 @@ namespace insoulforge {
         } else {
             context.chatRecords().addUserRecord(formattedMessage);
         }
-        co_await EventBus::instance().publish(MessageRecordedEvent{
+        co_await context.runtime().publish(MessageRecordedEvent{
           .sessionId = context.sessionId(),
           .messageId = context.message().getMessageId(),
           .role = role,

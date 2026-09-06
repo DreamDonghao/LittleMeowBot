@@ -111,7 +111,8 @@ insoulforge/
 │   ├── controllers/          # ProcessQQMessages / AdminController / AdminWebSocket / LogWebSocket / CommandHandler
 │   ├── event/                # 领域事件：EventBus / 事件载荷 / subscribers 订阅者
 │   ├── message/              # 消息链路：MessagePipeline / MessageContext / MessageMiddleware
-│   │   └── middleware/       # 具体处理节点：事件、命令、会话、记录、Agent 与后处理
+│   │   ├── middleware/       # 具体处理节点：事件、命令、会话、记录、Agent 与后处理
+│   │   └── runtime/          # 消息域运行时接口与生产适配器
 │   ├── config/               # Config：从数据库加载全部配置的单例
 │   ├── model/                # 数据模型：QQMessage
 │   ├── service/              # 服务层：MessageService / MemoryService / LlmClient / OneBotClient / LongTermMemory / ToolRegistry / ChatRecordManager / MemoryManager / SessionConfigManager 等
@@ -171,6 +172,9 @@ MessageService::sendGroupMsg → OneBot API
 - 拍一拍 notice 不是普通消息；禁用会话直接跳过，已启用会话中再根据目标决定“合成普通消息”或“仅写聊天记录”。
 - 中间件按 `MessageMiddlewareCatalog` 中的注册顺序执行；每个节点只负责一个阶段，并通过 `MessageFlow::Stop` 短路后续处理。
 - 每个中间件调用均由 `MessagePipeline` 捕获异常；异常日志包含节点标识、会话 ID 和消息 ID，随后终止本次链路，不会再执行后续节点。
+- `MessagePipeline` 通过 `MessageRuntime` 获取 Agent 状态与处理、回复发送和领域事件发布能力。默认初始化会注入
+  `createBuiltinMessageRuntime()`，其内部适配既有的 `AgentSystem`、`MessageService` 与 `EventBus`；嵌入式部署或测试可通过
+  `initialize(runtime, middlewares)` 注入替代实现，无需改动中间件或访问全局单例。
 
 ### 领域事件
 

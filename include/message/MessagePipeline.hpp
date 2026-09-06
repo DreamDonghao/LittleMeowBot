@@ -13,6 +13,7 @@
 
 namespace insoulforge {
     class MessageMiddleware;
+    class MessageRuntime;
 
     /// @brief 按固定顺序执行入站消息中间件
     /// @details 初始化后可通过 addMiddleware 扩展链路；内置链路由 MessageMiddlewareCatalog 显式注册。
@@ -33,6 +34,15 @@ namespace insoulforge {
         /// @pre 必须在 HTTP 服务开始接收请求前调用。
         /// @details 用于自定义组合和契约测试；重复调用无副作用。
         void initialize(std::vector<std::unique_ptr<MessageMiddleware>> middlewares);
+
+        /// @brief 使用指定运行时和中间件列表初始化处理链路
+        /// @param runtime 提供 Agent、回复和事件能力的消息域运行时
+        /// @param middlewares 按执行顺序排列的中间件列表
+        /// @throws std::invalid_argument runtime 为空、中间件为空、标识为空或标识重复时抛出
+        /// @pre 必须在 HTTP 服务开始接收请求前调用；MessagePipeline 通过 shared_ptr 持有 runtime。
+        /// @details 用于嵌入式部署与测试替换；重复调用无副作用。
+        void initialize(
+          std::shared_ptr<const MessageRuntime> runtime, std::vector<std::unique_ptr<MessageMiddleware>> middlewares);
 
         /// @brief 添加一个自定义中间件
         /// @throws std::invalid_argument 中间件为空、标识为空或与已有节点重名时抛出
@@ -82,6 +92,7 @@ namespace insoulforge {
         [[nodiscard]] size_t findMiddlewareIndex(std::string_view anchorId) const;
 
         std::vector<std::unique_ptr<MessageMiddleware>> m_middlewares; ///< 固定执行顺序的中间件列表
+        std::shared_ptr<const MessageRuntime> m_runtime; ///< 中间件共享的消息域依赖
         bool m_initialized{false}; ///< 内置节点是否已通过校验并完整注册
     };
 } // namespace insoulforge

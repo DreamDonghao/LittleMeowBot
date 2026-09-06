@@ -12,17 +12,24 @@
 #include <service/MemoryManager.hpp>
 
 namespace insoulforge {
+    class MessageRuntime;
+
     /// @brief 在中间件之间传递一次入站消息的处理状态
     /// @details 聊天记录与短期记忆仅在实际需要时创建，避免被短路的事件访问数据库。
     class MessageContext {
     public:
         /// @brief 使用 OneBot 原始事件创建上下文
         /// @param event OneBot 原始事件或由中间件合成的消息事件
-        explicit MessageContext(json event);
+        /// @param runtime 本次处理使用的消息域运行时，调用期间必须保持有效
+        MessageContext(json event, const MessageRuntime &runtime);
 
         /// @brief 获取当前可变事件
         /// @return 在消息模型创建前可由归一化中间件替换的事件 JSON
         [[nodiscard]] json &event();
+
+        /// @brief 获取本次处理使用的消息域运行时
+        /// @return 注入到所属 MessagePipeline 的运行时
+        [[nodiscard]] const MessageRuntime &runtime() const noexcept;
 
         /// @brief 用归一化后的事件创建 QQ 消息模型
         /// @pre 事件已被归一化为 `post_type=message`。
@@ -73,5 +80,6 @@ namespace insoulforge {
         std::optional<QQMessage> m_message; ///< MessageSetupMiddleware 创建的消息模型
         std::optional<ChatRecordManager> m_chatRecords; ///< 按需创建的聊天记录管理器
         std::optional<MemoryManager> m_memory; ///< 按需创建的短期记忆管理器
+        const MessageRuntime &m_runtime; ///< 当前链路注入的消息域依赖
     };
 } // namespace insoulforge

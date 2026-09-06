@@ -23,12 +23,12 @@ namespace insoulforge {
     /// @return 适合日志与诊断输出的事件名称
     [[nodiscard]] constexpr std::string_view domainEventTypeName(const DomainEventType type) {
         switch (type) {
-        case DomainEventType::MessageRecorded:
-            return "message_recorded";
-        case DomainEventType::MessageProcessingCompleted:
-            return "message_processing_completed";
-        case DomainEventType::Count:
-            return "unknown";
+            case DomainEventType::MessageRecorded:
+                return "message_recorded";
+            case DomainEventType::MessageProcessingCompleted:
+                return "message_processing_completed";
+            case DomainEventType::Count:
+                return "unknown";
         }
         return "unknown";
     }

@@ -9,6 +9,7 @@
 #include <message/MessageMiddleware.hpp>
 #include <message/MessageMiddlewareCatalog.hpp>
 #include <message/MessagePipeline.hpp>
+#include <message/runtime/MessageRuntime.hpp>
 #include <util/Logger.hpp>
 
 namespace insoulforge {
@@ -18,12 +19,20 @@ namespace insoulforge {
     }
 
     void MessagePipeline::initialize() {
-        initialize(MessageMiddlewareCatalog::createBuiltinMiddlewares());
+        initialize(createBuiltinMessageRuntime(), MessageMiddlewareCatalog::createBuiltinMiddlewares());
     }
 
     void MessagePipeline::initialize(std::vector<std::unique_ptr<MessageMiddleware>> middlewares) {
+        initialize(createBuiltinMessageRuntime(), std::move(middlewares));
+    }
+
+    void MessagePipeline::initialize(
+      std::shared_ptr<const MessageRuntime> runtime, std::vector<std::unique_ptr<MessageMiddleware>> middlewares) {
         if (m_initialized) {
             return;
+        }
+        if (!runtime) {
+            throw std::invalid_argument("消息运行时不能为空");
         }
 
         // 先在局部容器中完成全部校验，校验失败时不污染正在使用的链路。
@@ -34,6 +43,7 @@ namespace insoulforge {
             }
         }
         m_middlewares = std::move(middlewares);
+        m_runtime = std::move(runtime);
         m_initialized = true;
     }
 
@@ -67,9 +77,8 @@ namespace insoulforge {
         if (!middleware || middleware->id().empty()) {
             throw std::invalid_argument("消息中间件及其标识不能为空");
         }
-        if (std::any_of(m_middlewares.begin(), m_middlewares.end(), [&middleware](const auto &existing) {
-                return existing->id() == middleware->id();
-            })) {
+        if (std::any_of(m_middlewares.begin(), m_middlewares.end(),
+              [&middleware](const auto &existing) { return existing->id() == middleware->id(); })) {
             throw std::invalid_argument("消息中间件标识重复");
         }
     }
@@ -78,9 +87,8 @@ namespace insoulforge {
         if (anchorId.empty()) {
             throw std::invalid_argument("中间件锚点标识不能为空");
         }
-        const auto it = std::find_if(m_middlewares.begin(), m_middlewares.end(), [anchorId](const auto &middleware) {
-            return middleware->id() == anchorId;
-        });
+        const auto it = std::find_if(m_middlewares.begin(), m_middlewares.end(),
+          [anchorId](const auto &middleware) { return middleware->id() == anchorId; });
         if (it == m_middlewares.end()) {
             throw std::out_of_range("未找到中间件锚点");
         }
@@ -89,7 +97,7 @@ namespace insoulforge {
 
     drogon::Task<> MessagePipeline::process(json event) const {
         ensureInitialized();
-        MessageContext context(std::move(event));
+        MessageContext context(std::move(event), *m_runtime);
         for (const auto &middleware: m_middlewares) {
             try {
                 // Stop 是正常的短路结果，例如非消息事件、命令或禁用会话。

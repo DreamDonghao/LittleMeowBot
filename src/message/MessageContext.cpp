@@ -2,12 +2,15 @@
 /// @brief 入站消息处理链路上下文实现
 
 #include <message/MessageContext.hpp>
-#include <service/MessageService.hpp>
+#include <message/runtime/MessageRuntime.hpp>
 
 namespace insoulforge {
-    MessageContext::MessageContext(json event) : m_event(std::move(event)) {}
+    MessageContext::MessageContext(json event, const MessageRuntime &runtime) :
+        m_event(std::move(event)), m_runtime(runtime) {}
 
     json &MessageContext::event() { return m_event; }
+
+    const MessageRuntime &MessageContext::runtime() const noexcept { return m_runtime; }
 
     void MessageContext::createMessage() {
         // 事件归一化完成后不再需要原始 JSON，转移其所有权以避免复制消息段。
@@ -54,10 +57,6 @@ namespace insoulforge {
     }
 
     drogon::Task<> MessageContext::sendReply(std::string content) {
-        if (message().isPrivate()) {
-            co_await MessageService::sendPrivateMsg(message().getUserId(), std::move(content), chatRecords());
-        } else {
-            co_await MessageService::sendGroupMsg(message().getGroupId(), std::move(content), chatRecords());
-        }
+        co_await m_runtime.sendReply(message(), chatRecords(), std::move(content));
     }
 } // namespace insoulforge

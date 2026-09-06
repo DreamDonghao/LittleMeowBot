@@ -1,13 +1,16 @@
 /// @file MessageEventContractTests.cpp
 /// @brief 消息链路与领域事件的契约测试
 
+#include <cstddef>
 #include <drogon/utils/coroutine.h>
 #include <event/EventBus.hpp>
 #include <exception>
 #include <iostream>
+#include <memory>
 #include <message/MessageMiddleware.hpp>
 #include <message/MessagePipeline.hpp>
-#include <memory>
+#include <message/middleware/AgentAvailabilityMiddleware.hpp>
+#include <message/runtime/MessageRuntime.hpp>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -24,13 +27,40 @@ namespace {
         }
     }
 
-#define CHECK(testName, expression) check((expression), #expression, testName)
+    /// @brief 用于验证管线依赖注入的无副作用消息运行时
+    class TestMessageRuntime final : public insoulforge::MessageRuntime {
+    public:
+        explicit TestMessageRuntime(const bool agentRunning) : m_agentRunning(agentRunning) {}
+
+        [[nodiscard]] bool isAgentRunning() const override {
+            ++m_availabilityChecks;
+            return m_agentRunning;
+        }
+
+        drogon::Task<std::optional<std::string>> processAgent(insoulforge::ChatRecordManager &,
+          insoulforge::MemoryManager &, const insoulforge::QQMessage &) const override {
+            co_return std::nullopt;
+        }
+
+        drogon::Task<> sendReply(
+          const insoulforge::QQMessage &, const insoulforge::ChatRecordManager &, std::string) const override {
+            co_return;
+        }
+
+        drogon::Task<> publish(insoulforge::DomainEvent) const override { co_return; }
+
+        [[nodiscard]] size_t availabilityChecks() const { return m_availabilityChecks; }
+
+    private:
+        bool m_agentRunning;
+        mutable size_t m_availabilityChecks{0};
+    };
 
     class RecordingMiddleware final : public insoulforge::MessageMiddleware {
     public:
         RecordingMiddleware(std::string id, std::vector<std::string> &trace,
-          const insoulforge::MessageFlow flow = insoulforge::MessageFlow::Continue, const bool throws = false)
-            : m_id(std::move(id)), m_trace(trace), m_flow(flow), m_throws(throws) {}
+          const insoulforge::MessageFlow flow = insoulforge::MessageFlow::Continue, const bool throws = false) :
+            m_id(std::move(id)), m_trace(trace), m_flow(flow), m_throws(throws) {}
 
         [[nodiscard]] std::string_view id() const noexcept override { return m_id; }
 
@@ -49,9 +79,9 @@ namespace {
         bool m_throws;
     };
 
-    [[nodiscard]] std::unique_ptr<RecordingMiddleware> recordingMiddleware(
-      std::string id, std::vector<std::string> &trace,
-      const insoulforge::MessageFlow flow = insoulforge::MessageFlow::Continue, const bool throws = false) {
+    [[nodiscard]] std::unique_ptr<RecordingMiddleware> recordingMiddleware(std::string id,
+      std::vector<std::string> &trace, const insoulforge::MessageFlow flow = insoulforge::MessageFlow::Continue,
+      const bool throws = false) {
         return std::make_unique<RecordingMiddleware>(std::move(id), trace, flow, throws);
     }
 
@@ -63,12 +93,13 @@ namespace {
         middlewares.push_back(recordingMiddleware("first", trace));
         middlewares.push_back(recordingMiddleware("anchor", trace));
         middlewares.push_back(recordingMiddleware("last", trace));
-        pipeline.initialize(std::move(middlewares));
+        pipeline.initialize(std::make_shared<TestMessageRuntime>(true), std::move(middlewares));
         pipeline.insertBefore("anchor", recordingMiddleware("before", trace));
         pipeline.insertAfter("anchor", recordingMiddleware("after", trace));
 
         drogon::sync_wait(pipeline.process(insoulforge::json::object()));
-        CHECK(kTestName, trace == std::vector<std::string>({"first", "before", "anchor", "after", "last"}));
+        check(trace == std::vector<std::string>({"first", "before", "anchor", "after", "last"}), "execution order",
+          kTestName);
     }
 
     void testMiddlewareStopShortCircuits() {
@@ -79,10 +110,10 @@ namespace {
         middlewares.push_back(recordingMiddleware("first", trace));
         middlewares.push_back(recordingMiddleware("stop", trace, insoulforge::MessageFlow::Stop));
         middlewares.push_back(recordingMiddleware("last", trace));
-        pipeline.initialize(std::move(middlewares));
+        pipeline.initialize(std::make_shared<TestMessageRuntime>(true), std::move(middlewares));
 
         drogon::sync_wait(pipeline.process(insoulforge::json::object()));
-        CHECK(kTestName, trace == std::vector<std::string>({"first", "stop"}));
+        check(trace == std::vector<std::string>({"first", "stop"}), "short circuit trace", kTestName);
     }
 
     void testMiddlewareExceptionStopsChain() {
@@ -93,10 +124,25 @@ namespace {
         middlewares.push_back(recordingMiddleware("first", trace));
         middlewares.push_back(recordingMiddleware("failing", trace, insoulforge::MessageFlow::Continue, true));
         middlewares.push_back(recordingMiddleware("last", trace));
-        pipeline.initialize(std::move(middlewares));
+        pipeline.initialize(std::make_shared<TestMessageRuntime>(true), std::move(middlewares));
 
         drogon::sync_wait(pipeline.process(insoulforge::json::object()));
-        CHECK(kTestName, trace == std::vector<std::string>({"first", "failing"}));
+        check(trace == std::vector<std::string>({"first", "failing"}), "exception isolation trace", kTestName);
+    }
+
+    void testPipelineUsesInjectedRuntime() {
+        constexpr std::string_view kTestName = "pipeline uses injected runtime";
+        std::vector<std::string> trace;
+        auto runtime = std::make_shared<TestMessageRuntime>(false);
+        insoulforge::MessagePipeline pipeline;
+        std::vector<std::unique_ptr<insoulforge::MessageMiddleware>> middlewares;
+        middlewares.push_back(std::make_unique<insoulforge::AgentAvailabilityMiddleware>());
+        middlewares.push_back(recordingMiddleware("after_agent_check", trace));
+        pipeline.initialize(runtime, std::move(middlewares));
+
+        drogon::sync_wait(pipeline.process(insoulforge::json::object()));
+        check(runtime->availabilityChecks() == 1, "runtime availability check count", kTestName);
+        check(trace.empty(), "later middleware was short circuited", kTestName);
     }
 
     void testEventSubscriberExceptionDoesNotStopDispatch() {
@@ -129,7 +175,7 @@ namespace {
           .recordContent = "record",
           .displayContent = "display",
         }));
-        CHECK(kTestName, trace == std::vector<std::string>({"first", "failing", "last"}));
+        check(trace == std::vector<std::string>({"first", "failing", "last"}), "subscriber dispatch trace", kTestName);
     }
 } // namespace
 
@@ -137,6 +183,7 @@ int main() {
     testMiddlewareInsertionOrder();
     testMiddlewareStopShortCircuits();
     testMiddlewareExceptionStopsChain();
+    testPipelineUsesInjectedRuntime();
     testEventSubscriberExceptionDoesNotStopDispatch();
 
     if (failures == 0) {
