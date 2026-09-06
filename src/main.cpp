@@ -13,6 +13,7 @@
 #include <agent/runtime/AgentSystem.hpp>
 #include <config/Config.hpp>
 #include <drogon/drogon.h>
+#include <event/EventBus.hpp>
 #include <iostream>
 #include <iterator>
 #include <message/MessagePipeline.hpp>
@@ -40,6 +41,7 @@ int main() {
 
         // 初始化 Agent 系统
         AgentSystem::instance().initialize();
+        EventBus::instance().initialize();
         MessagePipeline::instance().initialize();
 
         // 启动定时任务调度器

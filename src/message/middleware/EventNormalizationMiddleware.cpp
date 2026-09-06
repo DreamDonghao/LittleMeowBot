@@ -4,11 +4,12 @@
 #include <atomic>
 #include <config/Config.hpp>
 #include <ctime>
+#include <event/DomainEvent.hpp>
+#include <event/EventBus.hpp>
 #include <fmt/format.h>
 #include <message/MessageContext.hpp>
 #include <message/middleware/EventNormalizationMiddleware.hpp>
 #include <service/OneBotClient.hpp>
-#include <service/WebSocketManager.hpp>
 #include <storage/SessionStore.hpp>
 #include <util/CommonUtil.hpp>
 
@@ -71,9 +72,16 @@ namespace insoulforge {
                 record["sender"]["qq"] = std::to_string(pokerId);
                 record["text"] = text;
                 record["reply_to"] = nullptr;
+                const std::string recordContent = dumpJson(record);
                 const ChatRecordManager chatRecords(groupId);
-                chatRecords.addUserRecord(dumpJson(record));
-                WebSocketManager::instance().pushMessage(groupId, "user", text);
+                chatRecords.addUserRecord(recordContent);
+                co_await EventBus::instance().publish(MessageRecordedEvent{
+                  .sessionId = groupId,
+                  .messageId = 0,
+                  .role = MessageRole::User,
+                  .recordContent = recordContent,
+                  .displayContent = text,
+                });
                 co_return json();
             }
 

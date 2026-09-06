@@ -102,8 +102,9 @@ insoulforge/
 │   │   ├── runtime/          # Agent 编排：AgentSystem / RouterAgent / ExecutorAgent / AgentTypes
 │   │   └── tools/            # 工具运行时、插件契约与 plugins/ 具体工具插件
 │   ├── controllers/          # ProcessQQMessages / AdminController / AdminWebSocket / LogWebSocket / CommandHandler
+│   ├── event/                # 领域事件：EventBus / 事件载荷 / subscribers 订阅者
 │   ├── message/              # 消息链路：MessagePipeline / MessageContext / MessageMiddleware
-│   │   └── middleware/       # 具体处理节点：事件、命令、会话、记录、Agent、统计和记忆
+│   │   └── middleware/       # 具体处理节点：事件、命令、会话、记录、Agent 与后处理
 │   ├── config/               # Config：从数据库加载全部配置的单例
 │   ├── model/                # 数据模型：QQMessage
 │   ├── service/              # 服务层：MessageService / MemoryService / LlmClient / OneBotClient / LongTermMemory / ToolRegistry / ChatRecordManager / MemoryManager / SessionConfigManager 等
@@ -135,10 +136,9 @@ MessagePipeline
     │ 4. Command：命令消息交给 CommandHandler 后终止
     │ 5. SessionEnabled：非命令消息的会话开关检查
     │ 6. FormatMessage：@ 转换、图片识别等高成本格式化
-    │ 7. RecordMessage：写入聊天记录并推送管理后台 WebSocket
+    │ 7. RecordMessage：写入聊天记录并发布 MessageRecordedEvent
     │ 8. AgentReply：调用两层 Agent 并按需发送文字回复
-    │ 9. SessionStatistics：更新会话统计
-    │ 10. MemoryMaintenance：触发记忆提取与窗口滑动
+    │ 9. PostProcess：发布 MessageProcessingCompletedEvent
     ▼
 AgentSystem::process
     │ 组内互斥（同群消息串行处理，防止上下文并发污染）
@@ -164,6 +164,18 @@ MessageService::sendGroupMsg → OneBot API
 - 拍一拍 notice 不是普通消息；禁用会话直接跳过，已启用会话中再根据目标决定“合成普通消息”或“仅写聊天记录”。
 - 中间件按 `MessageMiddlewareCatalog` 中的注册顺序执行；每个节点只负责一个阶段，并通过 `MessageFlow::Stop` 短路后续处理。
 - 每个中间件调用均由 `MessagePipeline` 捕获异常；异常日志包含节点标识、会话 ID 和消息 ID，随后终止本次链路，不会再执行后续节点。
+
+### 领域事件
+
+`EventBus` 将消息主流程与非核心副作用解耦。事件发布者不依赖订阅者实现；订阅者按注册顺序执行，单个订阅者失败仅记录事件类型、
+订阅者标识、会话 ID 与消息 ID，不会阻断其他订阅者或消息主处理。
+
+- `MessageRecordedEvent`：消息记录写入者发布；`MessageWebSocketSubscriber` 推送管理后台消息。
+- `MessageProcessingCompletedEvent`：`PostProcessMiddleware` 发布；`SessionStatisticsSubscriber` 更新会话统计，
+  `MemoryMaintenanceSubscriber` 触发记忆提取与窗口滑动。
+
+新增事件时，在 `include/event/DomainEvent.hpp` 添加强类型载荷，再实现 `EventSubscriber` 并在
+`EventSubscriberCatalog` 显式注册。总线必须在消息链路初始化前完成 `EventBus::initialize()`。
 
 新增消息处理阶段时，在 `include/message/middleware/` 与 `src/message/middleware/` 中实现一个 `MessageMiddleware`，
 再将其加入 `MessageMiddlewareCatalog`。中间件标识必须全局唯一；`MessagePipeline` 会在初始化时校验内置节点，避免因空节点或

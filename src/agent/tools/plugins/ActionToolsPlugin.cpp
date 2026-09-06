@@ -7,6 +7,8 @@
 #include <agent/tools/plugins/ActionToolsPlugin.hpp>
 #include <chrono>
 #include <config/Config.hpp>
+#include <event/DomainEvent.hpp>
+#include <event/EventBus.hpp>
 #include <fmt/core.h>
 #include <model/QQMessage.hpp>
 #include <optional>
@@ -15,7 +17,6 @@
 #include <service/OneBotClient.hpp>
 #include <service/TaskScheduler.hpp>
 #include <service/ToolRegistry.hpp>
-#include <service/WebSocketManager.hpp>
 #include <set>
 #include <spdlog/spdlog.h>
 #include <storage/TaskStore.hpp>
@@ -475,7 +476,7 @@ namespace insoulforge {
                     co_return std::string("拍一拍失败: 权限不足或用户不存在");
                 }
 
-                // 拍一拍不是消息（无 message_id），手动记入聊天记录并推送 WebSocket：
+                // 拍一拍不是消息（无 message_id），手动记入聊天记录并发布事件：
                 // 后续轮次模型能从记录中看到自己拍过谁，避免重复拍。
                 // 用 [拍一拍：xxx] 标记而非纯文本，防止模型误认为自己发过这条文字消息
                 const std::string pokeText = fmt::format("[拍一拍：{}({})]", QQMessage::getQQName(userId), userId);
@@ -485,8 +486,15 @@ namespace insoulforge {
                 msgJson["sender"]["qq"] = "self";
                 msgJson["text"] = pokeText;
                 const ChatRecordManager chatRecords(sessionId);
-                chatRecords.addAssistantRecord(dumpJson(msgJson));
-                WebSocketManager::instance().pushMessage(sessionId, "assistant", pokeText);
+                const std::string recordContent = dumpJson(msgJson);
+                chatRecords.addAssistantRecord(recordContent);
+                co_await EventBus::instance().publish(MessageRecordedEvent{
+                  .sessionId = sessionId,
+                  .messageId = 0,
+                  .role = MessageRole::Assistant,
+                  .recordContent = recordContent,
+                  .displayContent = pokeText,
+                });
                 co_return fmt::format("已拍一拍用户 {}", userId);
             },
             .scope = ToolScope::GROUP_ONLY,

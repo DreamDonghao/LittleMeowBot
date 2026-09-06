@@ -3,11 +3,12 @@
 
 #include <algorithm>
 #include <config/Config.hpp>
+#include <event/DomainEvent.hpp>
+#include <event/EventBus.hpp>
 #include <model/QQMessage.hpp>
 #include <regex>
 #include <service/MessageService.hpp>
 #include <service/OneBotClient.hpp>
-#include <service/WebSocketManager.hpp>
 #include <storage/SessionStore.hpp>
 #include <util/JsonUtil.hpp>
 #include <util/Logger.hpp>
@@ -90,8 +91,13 @@ namespace insoulforge {
             // 更新聊天记录（保存JSON格式）
             chatRecords.addAssistantRecord(formattedMsg);
 
-            // WebSocket推送（推送原始文本）
-            WebSocketManager::instance().pushMessage(sessionId, "assistant", processedMessage);
+            co_await EventBus::instance().publish(MessageRecordedEvent{
+              .sessionId = sessionId,
+              .messageId = *messageId,
+              .role = MessageRole::Assistant,
+              .recordContent = formattedMsg,
+              .displayContent = processedMessage,
+            });
 
             Logger::session(sessionId).info(
               "成功发送{}: {} (message_id={})", channelName, processedMessage, *messageId);
