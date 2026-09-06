@@ -35,9 +35,32 @@ namespace insoulforge {
     }
 
     void MessagePipeline::addMiddleware(std::unique_ptr<MessageMiddleware> middleware) {
+        ensureInitialized();
+        validateMiddleware(middleware);
+        m_middlewares.push_back(std::move(middleware));
+    }
+
+    void MessagePipeline::insertBefore(const std::string_view anchorId, std::unique_ptr<MessageMiddleware> middleware) {
+        ensureInitialized();
+        validateMiddleware(middleware);
+        const size_t index = findMiddlewareIndex(anchorId);
+        m_middlewares.insert(m_middlewares.begin() + static_cast<std::ptrdiff_t>(index), std::move(middleware));
+    }
+
+    void MessagePipeline::insertAfter(const std::string_view anchorId, std::unique_ptr<MessageMiddleware> middleware) {
+        ensureInitialized();
+        validateMiddleware(middleware);
+        const size_t index = findMiddlewareIndex(anchorId);
+        m_middlewares.insert(m_middlewares.begin() + static_cast<std::ptrdiff_t>(index + 1), std::move(middleware));
+    }
+
+    void MessagePipeline::ensureInitialized() const {
         if (!m_initialized) {
             throw std::logic_error("必须先初始化内置消息中间件");
         }
+    }
+
+    void MessagePipeline::validateMiddleware(const std::unique_ptr<MessageMiddleware> &middleware) const {
         if (!middleware || middleware->id().empty()) {
             throw std::invalid_argument("消息中间件及其标识不能为空");
         }
@@ -46,13 +69,23 @@ namespace insoulforge {
             })) {
             throw std::invalid_argument("消息中间件标识重复");
         }
-        m_middlewares.push_back(std::move(middleware));
+    }
+
+    size_t MessagePipeline::findMiddlewareIndex(const std::string_view anchorId) const {
+        if (anchorId.empty()) {
+            throw std::invalid_argument("中间件锚点标识不能为空");
+        }
+        const auto it = std::find_if(m_middlewares.begin(), m_middlewares.end(), [anchorId](const auto &middleware) {
+            return middleware->id() == anchorId;
+        });
+        if (it == m_middlewares.end()) {
+            throw std::out_of_range("未找到中间件锚点");
+        }
+        return static_cast<size_t>(it - m_middlewares.begin());
     }
 
     drogon::Task<> MessagePipeline::process(json event) const {
-        if (!m_initialized) {
-            throw std::logic_error("消息处理链路尚未初始化");
-        }
+        ensureInitialized();
         MessageContext context(std::move(event));
         for (const auto &middleware: m_middlewares) {
             try {

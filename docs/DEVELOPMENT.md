@@ -167,8 +167,9 @@ MessageService::sendGroupMsg → OneBot API
 
 新增消息处理阶段时，在 `include/message/middleware/` 与 `src/message/middleware/` 中实现一个 `MessageMiddleware`，
 再将其加入 `MessageMiddlewareCatalog`。中间件标识必须全局唯一；`MessagePipeline` 会在初始化时校验内置节点，避免因空节点或
-重复标识启动半初始化的处理链路。自定义节点仅可在 `MessagePipeline::initialize()` 之后、HTTP 服务开始接收请求前通过
-`addMiddleware()` 追加。
+重复标识启动半初始化的处理链路。自定义节点仅可在 `MessagePipeline::initialize()` 之后、HTTP 服务开始接收请求前注册：
+`addMiddleware()` 追加到末尾，`insertBefore(anchorId, ...)` 或 `insertAfter(anchorId, ...)` 按内置或已有节点标识定位插入。
+例如在 `format_message` 前插入内容检查节点，或在 `record_message` 后插入审计节点。
 
 ### 工具系统
 
