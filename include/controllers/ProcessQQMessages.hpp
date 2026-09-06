@@ -9,10 +9,8 @@
 #include <drogon/utils/coroutine.h>
 
 namespace insoulforge {
-    /// @brief QQ 消息处理控制器
-    /// @details 接收来自 OneBot 协议的 QQ 消息，通过两层 Agent 架构处理：
-    ///          1. Router Agent - 判断是否需要回复并规划回复策略
-    ///          2. Executor Agent - 生成回复并调用工具
+    /// @brief QQ 消息 HTTP 入口控制器
+    /// @details 只负责 OneBot 请求解析与确认，业务处理委托给 MessagePipeline。
     class ProcessQQMessages : public drogon::HttpController<ProcessQQMessages> {
     public:
         ProcessQQMessages() = default;
@@ -26,13 +24,7 @@ namespace insoulforge {
         /// @brief 接收并处理 QQ 消息
         /// @param req HTTP 请求，包含 OneBot 协议的 JSON 消息
         /// @param callback HTTP 响应回调
-        /// @details 处理流程：
-        ///          1. 解析消息格式
-        ///          2. 检查是否为命令
-        ///          3. 检查群是否启用
-        ///          4. 记录聊天记录
-        ///          5. 调用 Agent 系统生成回复
-        ///          6. 触发记忆生成（如果达到阈值）
+        /// @details 有效请求会先返回成功响应，再异步执行消息中间件链路。
         static drogon::Task<> receiveMessages(
           drogon::HttpRequestPtr req, std::function<void(const drogon::HttpResponsePtr &)> callback);
     };

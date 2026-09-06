@@ -15,6 +15,7 @@
 #include <drogon/drogon.h>
 #include <iostream>
 #include <iterator>
+#include <message/MessagePipeline.hpp>
 #include <model/QQMessage.hpp>
 #include <service/TaskScheduler.hpp>
 #include <spdlog/spdlog.h>
@@ -39,6 +40,7 @@ int main() {
 
         // 初始化 Agent 系统
         AgentSystem::instance().initialize();
+        MessagePipeline::instance().initialize();
 
         // 启动定时任务调度器
         TaskScheduler::instance().start();

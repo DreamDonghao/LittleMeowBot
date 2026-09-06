@@ -102,6 +102,8 @@ insoulforge/
 │   │   ├── runtime/          # Agent 编排：AgentSystem / RouterAgent / ExecutorAgent / AgentTypes
 │   │   └── tools/            # 工具运行时、插件契约与 plugins/ 具体工具插件
 │   ├── controllers/          # ProcessQQMessages / AdminController / AdminWebSocket / LogWebSocket / CommandHandler
+│   ├── message/              # 消息链路：MessagePipeline / MessageContext / MessageMiddleware
+│   │   └── middleware/       # 具体处理节点：事件、命令、会话、记录、Agent、统计和记忆
 │   ├── config/               # Config：从数据库加载全部配置的单例
 │   ├── model/                # 数据模型：QQMessage
 │   ├── service/              # 服务层：MessageService / MemoryService / LlmClient / OneBotClient / LongTermMemory / ToolRegistry / ChatRecordManager / MemoryManager / SessionConfigManager 等
@@ -124,12 +126,19 @@ OneBot HTTP POST /
     │
     ▼
 ProcessQQMessages::receiveMessages
-    │ 1. 解析 JSON，校验 post_type == "message"
-    │ 2. notice 拍一拍：仅在会话已启用时合成消息或记入聊天记录
-    │ 3. 命令消息（@Bot + /xxx）→ CommandHandler，不受群启用状态影响
-    │ 4. 非命令消息：群未启用则丢弃
-    │ 5. QQMessage::formatMessage 格式化（@ 转换、图片识别等高成本处理）
-    │ 6. 写入聊天记录并推送管理后台 WebSocket
+    │ 解析 JSON 并立即确认 HTTP 请求
+    ▼
+MessagePipeline
+    │ 1. EventNormalization：普通消息直通；拍一拍归一化、记录或忽略
+    │ 2. AgentAvailability：Agent 未运行时终止
+    │ 3. MessageSetup：创建 QQMessage 和会话配置
+    │ 4. Command：命令消息交给 CommandHandler 后终止
+    │ 5. SessionEnabled：非命令消息的会话开关检查
+    │ 6. FormatMessage：@ 转换、图片识别等高成本格式化
+    │ 7. RecordMessage：写入聊天记录并推送管理后台 WebSocket
+    │ 8. AgentReply：调用两层 Agent 并按需发送文字回复
+    │ 9. SessionStatistics：更新会话统计
+    │ 10. MemoryMaintenance：触发记忆提取与窗口滑动
     ▼
 AgentSystem::process
     │ 组内互斥（同群消息串行处理，防止上下文并发污染）
@@ -153,6 +162,12 @@ MessageService::sendGroupMsg → OneBot API
 - `QQMessage::formatMessage` 放在启用检查之后，避免禁用会话触发图片识别等 LLM 调用。
 - 同一会话串行处理。普通消息处理期间到达的普通消息会跳过；@ 机器人、私聊、系统定时任务等高优先级消息会尝试打断正在处理的普通消息。高优先级消息之间不互相打断，只排队等待。
 - 拍一拍 notice 不是普通消息；禁用会话直接跳过，已启用会话中再根据目标决定“合成普通消息”或“仅写聊天记录”。
+- 中间件按 `MessageMiddlewareCatalog` 中的注册顺序执行；每个节点只负责一个阶段，并通过 `MessageFlow::Stop` 短路后续处理。
+
+新增消息处理阶段时，在 `include/message/middleware/` 与 `src/message/middleware/` 中实现一个 `MessageMiddleware`，
+再将其加入 `MessageMiddlewareCatalog`。中间件标识必须全局唯一；`MessagePipeline` 会在初始化时校验内置节点，避免因空节点或
+重复标识启动半初始化的处理链路。自定义节点仅可在 `MessagePipeline::initialize()` 之后、HTTP 服务开始接收请求前通过
+`addMiddleware()` 追加。
 
 ### 工具系统
 

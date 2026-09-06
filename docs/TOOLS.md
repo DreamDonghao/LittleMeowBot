@@ -68,7 +68,7 @@ Executor（`ExecutorAgent`）在单个 Agent 循环中通过工具调用生成�
 | `send_poke`      | `qq`              | 拍一拍群成员，打招呼、引起注意等轻松互动；私聊中禁用。拍一拍不是消息（无 message_id），成功后手动记入聊天记录（`sender.qq="self"`，text 为标记 `[拍一拍：昵称(QQ号)]`，表明没发出任何文字）并推送 WebSocket，后续轮次模型能看到自己拍过谁 |
 | `recall_message` | `message_id`      | 撤回消息：撤引用的消息用 `reply_to` 字段值，撤某条消息本身用 `message_id` 字段值                                                                                                                                                          |
 
-拍一拍的接收：OneBot notice 事件（`notice_type=notify, sub_type=poke`）由 `ProcessQQMessages`
+拍一拍的接收：OneBot notice 事件（`notice_type=notify, sub_type=poke`）由 `MessagePipeline` 的事件归一化中间件
 处理。禁用会话会提前跳过，不解析昵称、不写聊天记录、不合成消息；已启用会话中，戳机器人的拍一拍合成为戳者发出的 **普通消息**
 （text 为标记 `[拍一拍：机器人昵称(QQ号)]`，昵称先查映射表、未知时实时 `get_stranger_info` 补齐）走完整管线，Router
 正常决策是否回应；其他人拍其他人仅记入群聊天记录（`sender`=戳人者）并推送 WebSocket，不触发回复；机器人自己拍的已由
