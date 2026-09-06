@@ -26,16 +26,21 @@ find_library(SQLITE3_STATIC_LIB NAMES libsqlite3.a)
 
 # 集中所有源文件（src 目录）
 file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS src/*.cpp)
+set(BACKEND_SRC_FILES ${SRC_FILES})
+list(FILTER BACKEND_SRC_FILES EXCLUDE REGEX "/src/main\\.cpp$")
 
-add_executable(${PROJECT_NAME} ${SRC_FILES})
+add_library(${PROJECT_NAME}_backend OBJECT ${BACKEND_SRC_FILES})
+target_compile_features(${PROJECT_NAME}_backend PRIVATE cxx_std_23)
+target_include_directories(${PROJECT_NAME}_backend PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        include
+)
+
+add_executable(${PROJECT_NAME}
+        src/main.cpp
+        $<TARGET_OBJECTS:${PROJECT_NAME}_backend>
+)
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
-
-# 静态链接 C++ 标准库和 GCC 运行时
-if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND NOT APPLE)
-    set_target_properties(${PROJECT_NAME} PROPERTIES
-            LINK_FLAGS "-static-libgcc -static-libstdc++"
-    )
-endif ()
 
 target_include_directories(${PROJECT_NAME} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
@@ -49,9 +54,23 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
         fmt::fmt-header-only
         SQLite3_lib
 )
+target_link_libraries(${PROJECT_NAME}_backend PRIVATE
+        Drogon::Drogon
+        spdlog::spdlog_header_only
+        fmt::fmt-header-only
+        SQLite3_lib
+)
+
+# 静态链接 C++ 标准库和 GCC 运行时
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND NOT APPLE)
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+            LINK_FLAGS "-static-libgcc -static-libstdc++"
+    )
+endif ()
 
 # nlohmann/json（header-only）：优先 CMake 包，Homebrew 纯头文件安装时退化为包含目录
 if (nlohmann_json_FOUND)
+    target_link_libraries(${PROJECT_NAME}_backend PRIVATE nlohmann_json::nlohmann_json)
     target_link_libraries(${PROJECT_NAME} PRIVATE nlohmann_json::nlohmann_json)
 else ()
     find_path(NLOHMANN_JSON_INCLUDE_DIR NAMES nlohmann/json.hpp
@@ -59,6 +78,7 @@ else ()
     if (NOT NLOHMANN_JSON_INCLUDE_DIR)
         message(FATAL_ERROR "未找到 nlohmann/json.hpp：macOS 执行 `brew install nlohmann-json`，Debian/Ubuntu 执行 `apt install nlohmann-json3-dev`")
     endif ()
+    target_include_directories(${PROJECT_NAME}_backend PRIVATE ${NLOHMANN_JSON_INCLUDE_DIR})
     target_include_directories(${PROJECT_NAME} PRIVATE ${NLOHMANN_JSON_INCLUDE_DIR})
 endif ()
 
@@ -68,12 +88,9 @@ endif ()
 
 include(CTest)
 if (BUILD_TESTING)
-    set(TESTABLE_SRC_FILES ${SRC_FILES})
-    list(FILTER TESTABLE_SRC_FILES EXCLUDE REGEX "/src/main\\.cpp$")
-
     add_executable(insoulforge_contract_tests EXCLUDE_FROM_ALL
             tests/MessageEventContractTests.cpp
-            ${TESTABLE_SRC_FILES})
+            $<TARGET_OBJECTS:${PROJECT_NAME}_backend>)
     target_compile_features(insoulforge_contract_tests PRIVATE cxx_std_23)
     target_include_directories(insoulforge_contract_tests PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}

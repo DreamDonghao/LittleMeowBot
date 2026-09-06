@@ -60,6 +60,9 @@ make -j    # Linux 可用 -j$(nproc)
 - 可执行文件 → `build/insoulforge/exe/insoulforge`
 - 前端静态文件 → `build/insoulforge/public/`（CMake 会在前端源码变化时自动执行 `npm run build`）
 
+后端源码由 CMake 的 `${PROJECT_NAME}_backend` 对象库统一编译，主程序和契约测试复用同一组对象文件；新增后端 `.cpp`
+仍由 `src/` 的自动发现规则纳入构建，无需分别维护两个目标的源文件清单。
+
 ### 日常开发
 
 推荐使用 CLion（`cmake-build-debug/` 目录）或 IDE 内建 CMake 支持。VSCode 可安装 CMake Tools 与 clangd 插件。
@@ -187,6 +190,8 @@ MessageService::sendGroupMsg → OneBot API
 
 新增事件时，在 `include/event/DomainEvent.hpp` 添加强类型载荷，再实现 `EventSubscriber` 并在
 `EventSubscriberCatalog` 显式注册。总线必须在消息链路初始化前完成 `EventBus::initialize()`。
+`EventSubscriberCatalog` 是订阅者的组合根：内置订阅者只接收自身所需的最小副作用回调（消息推送、统计记录或记忆维护），
+不直接依赖静态服务。新增订阅者时，应在目录注入生产回调；测试可传入无副作用替身来验证事件载荷和注册行为。
 
 新增消息处理阶段时，在 `include/message/middleware/` 与 `src/message/middleware/` 中实现一个 `MessageMiddleware`，
 再将其加入 `MessageMiddlewareCatalog`。中间件标识必须全局唯一；`MessagePipeline` 会在初始化时校验内置节点，避免因空节点或

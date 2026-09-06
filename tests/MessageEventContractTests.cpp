@@ -4,6 +4,9 @@
 #include <cstddef>
 #include <drogon/utils/coroutine.h>
 #include <event/EventBus.hpp>
+#include <event/subscribers/MemoryMaintenanceSubscriber.hpp>
+#include <event/subscribers/MessageWebSocketSubscriber.hpp>
+#include <event/subscribers/SessionStatisticsSubscriber.hpp>
 #include <exception>
 #include <iostream>
 #include <memory>
@@ -177,6 +180,47 @@ namespace {
         }));
         check(trace == std::vector<std::string>({"first", "failing", "last"}), "subscriber dispatch trace", kTestName);
     }
+
+    void testEventSubscribersUseInjectedDependencies() {
+        constexpr std::string_view kTestName = "event subscribers use injected dependencies";
+        std::vector<std::string> trace;
+        insoulforge::EventBus eventBus;
+        eventBus.initialize([&trace](insoulforge::EventBus &bus) {
+            insoulforge::MessageWebSocketSubscriber messageWebSocketSubscriber(
+              [&trace](const insoulforge::MessageRecordedEvent &event) {
+                  trace.push_back("push:" + std::to_string(event.sessionId) + ":" + event.displayContent);
+              });
+            insoulforge::SessionStatisticsSubscriber sessionStatisticsSubscriber(
+              [&trace](const insoulforge::MessageProcessingCompletedEvent &event) {
+                  trace.push_back("statistics:" + std::to_string(event.contentSize));
+              });
+            insoulforge::MemoryMaintenanceSubscriber memoryMaintenanceSubscriber(
+              [&trace](const insoulforge::MessageProcessingCompletedEvent &event) -> drogon::Task<> {
+                  trace.push_back("memory:" + std::to_string(event.sessionId));
+                  co_return;
+              });
+
+            messageWebSocketSubscriber.registerHandlers(bus);
+            sessionStatisticsSubscriber.registerHandlers(bus);
+            memoryMaintenanceSubscriber.registerHandlers(bus);
+        });
+
+        drogon::sync_wait(eventBus.publish(insoulforge::MessageRecordedEvent{
+          .sessionId = 42,
+          .messageId = 7,
+          .role = insoulforge::MessageRole::User,
+          .recordContent = "record",
+          .displayContent = "display",
+        }));
+        drogon::sync_wait(eventBus.publish(insoulforge::MessageProcessingCompletedEvent{
+          .sessionId = 42,
+          .messageId = 7,
+          .contentSize = 12,
+        }));
+
+        check(trace == std::vector<std::string>({"push:42:display", "statistics:12", "memory:42"}),
+          "injected side effect trace", kTestName);
+    }
 } // namespace
 
 int main() {
@@ -185,6 +229,7 @@ int main() {
     testMiddlewareExceptionStopsChain();
     testPipelineUsesInjectedRuntime();
     testEventSubscriberExceptionDoesNotStopDispatch();
+    testEventSubscribersUseInjectedDependencies();
 
     if (failures == 0) {
         std::cout << "All message and event contract tests passed\n";
