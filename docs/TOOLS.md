@@ -1,15 +1,21 @@
 # 内置工具参考
 
-Executor（`ExecutorAgent`）在单个 Agent 循环中通过工具调用生成回复。所有内置工具经 `ToolRegistry` 注册，按类别分为三组，注册代码按类别拆分在
+Executor（`ExecutorAgent`）在单个 Agent 循环中通过工具调用生成回复。所有内置工具经 `ToolRegistry`
+的进程内插件注册，按类别分为三组，注册代码按类别拆分在
 `src/agent/` 的三个文件中：
 
-| 类别          | 注册文件               | 语义                         |
-|---------------|------------------------|------------------------------|
-| `REPLY`       | `AgentReplyTools.cpp`  | 回复工具，调用即结束回合     |
-| `INFORMATION` | `AgentInfoTools.cpp`   | 查询数据、获取答案，无副作用 |
-| `ACTION`      | `AgentActionTools.cpp` | 执行操作、产生副作用         |
+| 类别          | 插件实现文件                          | 语义                         |
+|---------------|---------------------------------------|------------------------------|
+| `REPLY`       | `tools/plugins/ReplyToolsPlugin.cpp`  | 回复工具，调用即结束回合     |
+| `INFORMATION` | `tools/plugins/InfoToolsPlugin.cpp`   | 查询数据、获取答案，无副作用 |
+| `ACTION`      | `tools/plugins/ActionToolsPlugin.cpp` | 执行操作、产生副作用         |
 
-LLM 调用时工具按类别分组注入 prompt；自定义工具（Python / HTTP）加载后统一注册为 `INFORMATION`。
+内置三组分别归属 `builtin.reply`、`builtin.info`、`builtin.action` 插件，由 `ToolPluginCatalog`
+显式加载；自定义工具（Python / HTTP）归属 `custom` 插件并统一注册为 `INFORMATION`。同名工具不能跨插件覆盖；刷新自定义工具只会替换
+`custom` 的工具。
+
+注入顺序固定为“类别 → `promptOrder` → 工具名”，避免重启或刷新后顺序漂移。私聊注入时会排除仅群聊的 `at_user`、`ban_user`、
+`send_poke`；工具本身仍保留会话校验作为防线。
 
 > `REPLY` 类工具的 handler 只是占位：它们在 `ExecutorAgent::processToolCalls` 内被拦截执行（需要改写回复决策而非返回工具结果），不经
 > `ToolRegistry::executeTool`。
@@ -26,7 +32,7 @@ LLM 调用时工具按类别分组注入 prompt；自定义工具（Python / HTT
 
 | 工具                   | 参数       | 说明                                                                                                                                                                                                                                                                            |
 |------------------------|------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `list_stickers`        | 无         | 列出 QQ 收藏表情名称（`AgentToolManager::fetchFavoriteEmojis`，带缓存）                                                                                                                                                                                                         |
+| `list_stickers`        | 无         | 列出 QQ 收藏表情名称（`ToolRuntime::fetchFavoriteEmojis`，带缓存）                                                                                                                                                                                                              |
 | `recall_memory`        | `query`    | 长期记忆检索：`LongTermMemory::searchMemory` 按 Brute-Force 余弦相似度（阈值 0.3）取 top-3，返回"回忆起：…"或"想不起来"                                                                                                                                                         |
 | `deep_think`           | `question` | 深度思考：调用 `executorThinking` 配置的模型求解。上下文由 Executor 经 `ToolCallContext.conversationContext` 传入（system 之后的完整消息列表，含已获取的工具结果），拼上专家求解 system prompt（只产出问题答案，不组织聊天回复）；模型 content 为空时兜底取 `reasoning_content` |
 | `list_scheduled_tasks` | 无         | 列出当前会话待触发的定时任务（编号 / 触发时间 / 备忘内容），取消前查询用                                                                                                                                                                                                        |
@@ -35,8 +41,8 @@ LLM 调用时工具按类别分组注入 prompt；自定义工具（Python / HTT
 
 ### 过程消息
 
-| 工具                 | 参数      | 说明                                                                                                                                                                                                                                                  |
-|----------------------|-----------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 工具                 | 参数      | 说明                                                                                                                                                                                                                                                                      |
+|----------------------|-----------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `reply_and_continue` | `content` | 发送一条文字过程消息，**回合不结束**：内容经 `cleanReplyContent` 净化后由 `MessageService` 发送并记入聊天记录，工具结果回传后循环继续。用于耗时操作（如搜索）前告知用户一句简短的话，或在一次回复中先发其他内容、形成多条连续消息；最终回复仍由 `reply` / `no_reply` 收尾 |
 
 ### 表情包
@@ -62,8 +68,9 @@ LLM 调用时工具按类别分组注入 prompt；自定义工具（Python / HTT
 | `send_poke`      | `qq`              | 拍一拍群成员，打招呼、引起注意等轻松互动；私聊中禁用。拍一拍不是消息（无 message_id），成功后手动记入聊天记录（`sender.qq="self"`，text 为标记 `[拍一拍：昵称(QQ号)]`，表明没发出任何文字）并推送 WebSocket，后续轮次模型能看到自己拍过谁 |
 | `recall_message` | `message_id`      | 撤回消息：撤引用的消息用 `reply_to` 字段值，撤某条消息本身用 `message_id` 字段值                                                                                                                                                          |
 
-拍一拍的接收：OneBot notice 事件（`notice_type=notify, sub_type=poke`）由 `ProcessQQMessages` 处理。禁用会话会提前跳过，不解析昵称、不写聊天记录、不合成消息；已启用会话中，戳机器人的拍一拍合成为戳者发出的
-**普通消息**（text 为标记 `[拍一拍：机器人昵称(QQ号)]`，昵称先查映射表、未知时实时 `get_stranger_info` 补齐）走完整管线，Router
+拍一拍的接收：OneBot notice 事件（`notice_type=notify, sub_type=poke`）由 `ProcessQQMessages`
+处理。禁用会话会提前跳过，不解析昵称、不写聊天记录、不合成消息；已启用会话中，戳机器人的拍一拍合成为戳者发出的 **普通消息**
+（text 为标记 `[拍一拍：机器人昵称(QQ号)]`，昵称先查映射表、未知时实时 `get_stranger_info` 补齐）走完整管线，Router
 正常决策是否回应；其他人拍其他人仅记入群聊天记录（`sender`=戳人者）并推送 WebSocket，不触发回复；机器人自己拍的已由
 `send_poke` 工具记录，忽略。
 
@@ -82,4 +89,5 @@ LLM 调用时工具按类别分组注入 prompt；自定义工具（Python / HTT
   `message_id` / `reply_to` 等字段，工具描述中写明了格式示例
 - **宽容取值**：参数读取统一走 `argString` / `getInt` / `getUInt` / `getBool`（见 `include/util/JsonUtil.hpp`
   ），缺参数返回引导性错误提示而非异常
-- **注册方式**：见 `include/agent/BuiltinTools.hpp` 与 [DEVELOPMENT.md](./DEVELOPMENT.md) 开发指南
+- **注册方式**：见 `include/agent/tools/plugins/*ToolsPlugin.hpp`、`include/agent/tools/ToolArgument.hpp`
+  与 [DEVELOPMENT.md](./DEVELOPMENT.md) 开发指南

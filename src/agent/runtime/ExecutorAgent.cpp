@@ -1,7 +1,7 @@
 /// @file ExecutorAgent.cpp
 /// @brief Executor Agent - 实现
 
-#include <agent/ExecutorAgent.hpp>
+#include <agent/runtime/ExecutorAgent.hpp>
 #include <config/Config.hpp>
 #include <fmt/core.h>
 #include <model/QQMessage.hpp>
@@ -421,7 +421,8 @@ reply_and_continue：接下来要执行耗时操作（搜索、深度思考、�
         /// @brief Agent 模式执行（带 tools）：循环「请求模型 → 处理工具调用」，直到产出回复决策或达最大轮数
         drogon::Task<std::optional<ReplyDecision>> executeWithAgent(json messages, const uint64_t sessionId) {
             const auto &config = Config::instance();
-            const json tools = ToolRegistry::instance().getAllTools();
+            const json tools =
+              ToolRegistry::instance().getTools({.isPrivateSession = QQMessage::isPrivateSession(sessionId)});
             if (tools.empty()) {
                 Logger::session(sessionId).error("[Executor] 未注册工具");
                 co_return std::nullopt;

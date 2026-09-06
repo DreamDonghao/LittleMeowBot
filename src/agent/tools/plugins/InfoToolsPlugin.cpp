@@ -1,8 +1,9 @@
-/// @file AgentInfoTools.cpp
-/// @brief 内容获取工具注册（INFORMATION，查询数据、获取答案，不产生副作用）
+/// @file InfoToolsPlugin.cpp
+/// @brief 信息工具插件实现（INFORMATION，查询数据、获取答案，不产生副作用）
 
-#include <agent/AgentToolManager.hpp>
-#include <agent/BuiltinTools.hpp>
+#include <agent/tools/ToolArgument.hpp>
+#include <agent/tools/ToolRuntime.hpp>
+#include <agent/tools/plugins/InfoToolsPlugin.hpp>
 #include <algorithm>
 #include <config/Config.hpp>
 #include <fmt/core.h>
@@ -33,9 +34,10 @@ namespace insoulforge {
 
     } // namespace
 
+    std::string_view InfoToolsPlugin::id() const noexcept { return "builtin.info"; }
+
     /// @brief 注册内容获取工具（INFORMATION，查询数据、获取答案，不产生副作用）
-    void registerInfoTools() {
-        auto &registry = ToolRegistry::instance();
+    void InfoToolsPlugin::registerTools(ToolRegistry &registry) const {
 
         // list_stickers
         registry.registerTool(
@@ -45,7 +47,7 @@ namespace insoulforge {
             .parameters = json(),
             .handler = [](json, ToolCallContext ctx) -> drogon::Task<std::string> {
                 const auto sessionId = ctx.sessionId;
-                const json emojis = co_await AgentToolManager::fetchFavoriteEmojis(sessionId);
+                const json emojis = co_await ToolRuntime::fetchFavoriteEmojis(sessionId);
                 if (emojis.empty()) {
                     co_return std::string("表情库为空（QQ收藏表情列表获取失败或没有收藏表情）");
                 }

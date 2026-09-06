@@ -4,10 +4,10 @@
 ///          Router: 判断是否回复 + 规划策略
 ///          Executor: 执行回复
 
-#include <agent/AgentSystem.hpp>
-#include <agent/AgentToolManager.hpp>
-#include <agent/ExecutorAgent.hpp>
-#include <agent/RouterAgent.hpp>
+#include <agent/runtime/AgentSystem.hpp>
+#include <agent/runtime/ExecutorAgent.hpp>
+#include <agent/runtime/RouterAgent.hpp>
+#include <agent/tools/ToolRuntime.hpp>
 #include <chrono>
 #include <drogon/HttpAppFramework.h>
 #include <service/PromptService.hpp>
@@ -25,8 +25,8 @@ namespace insoulforge {
     void AgentSystem::setRunning(const bool running) noexcept { m_running.store(running, std::memory_order_release); }
 
     void AgentSystem::initialize() {
-        AgentToolManager::registerAllTools();
-        AgentToolManager::registerCustomTools();
+        ToolRuntime::registerBuiltinTools();
+        ToolRuntime::reloadCustomTools();
         PromptService::initialize();
         m_initialized = true;
     }

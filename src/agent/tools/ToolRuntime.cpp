@@ -1,5 +1,5 @@
-/// @file AgentToolManager.cpp
-/// @brief Agent 工具管理器 - 实现
+/// @file ToolRuntime.cpp
+/// @brief 工具运行时门面实现
 /// @author donghao
 /// @date 2026-04-02
 
@@ -8,8 +8,8 @@
 #define pclose _pclose
 #endif
 
-#include <agent/AgentToolManager.hpp>
-#include <agent/BuiltinTools.hpp>
+#include <agent/tools/ToolPluginCatalog.hpp>
+#include <agent/tools/ToolRuntime.hpp>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -25,71 +25,78 @@
 #include <util/JsonUtil.hpp>
 
 namespace insoulforge {
+    namespace {
+        /// @brief 解析并规范化自定义工具的参数 Schema
+        json parseCustomToolParameters(const ToolStore::CustomTool &tool) {
+            json parameters;
+            if (!tool.parameters.empty()) {
+                std::ignore = tryParseJson(tool.parameters, parameters);
+            }
+            if (!parameters.is_null() && !parameters.contains("type")) {
+                parameters["type"] = "object";
+            }
+            return parameters;
+        }
 
-    void AgentToolManager::registerAllTools() {
-        registerReplyTools();
-        registerInfoTools();
-        registerActionTools();
+        /// @brief 按执行器类型构建自定义工具定义
+        std::optional<Tool> makeCustomTool(const ToolStore::CustomTool &tool, json parameters) {
+            if (tool.executorType == "python") {
+                return Tool{
+                  .name = tool.name,
+                  .description = tool.description,
+                  .parameters = std::move(parameters),
+                  .handler = [script = tool.scriptContent](json args, ToolCallContext) -> drogon::Task<std::string> {
+                      co_return co_await ToolRuntime::executePythonTool(script, std::move(args));
+                  },
+                };
+            }
+            if (tool.executorType == "http") {
+                return Tool{
+                  .name = tool.name,
+                  .description = tool.description,
+                  .parameters = std::move(parameters),
+                  .handler = [config = tool.executorConfig](
+                               json args, ToolCallContext ctx) -> drogon::Task<std::string> {
+                      co_return co_await ToolRuntime::executeHttpTool(config, std::move(args), ctx.sessionId);
+                  },
+                };
+            }
+            return std::nullopt;
+        }
+    } // namespace
 
-        spdlog::info("ToolManager: 工具注册完成（共20个内置工具）");
+    void ToolRuntime::registerBuiltinTools() {
+        ToolPluginCatalog::registerBuiltinPlugins();
+
+        spdlog::info("ToolRuntime: 内置工具注册完成（共20个）");
     }
 
-    void AgentToolManager::registerCustomTools() {
+    void ToolRuntime::reloadCustomTools() {
         auto &registry = ToolRegistry::instance();
 
-        // 先清除所有已注册的自定义工具
-        registry.clearAllCustomTools();
-
-
-        // 只注册启用的工具
+        // 只注册启用的工具；重载只影响 custom 插件，不会触碰内置工具。
         const auto tools = ToolStore::getEnabledCustomTools();
         int count = 0;
 
-        for (const auto &tool: tools) {
-            json params;
-            if (!tool.parameters.empty()) {
-                std::ignore = tryParseJson(tool.parameters, params);
-                // 确保顶层 type 为 object（OpenAI function calling 要求）
-                if (!params.is_null() && !params.contains("type")) {
-                    params["type"] = "object";
+        registry.registerPlugin("custom", [&tools, &count](ToolRegistry &pluginRegistry) {
+            for (const auto &tool: tools) {
+                auto definition = makeCustomTool(tool, parseCustomToolParameters(tool));
+                if (!definition) {
+                    spdlog::warn("ToolRuntime: 跳过不支持的自定义工具 '{}' ({})", tool.name, tool.executorType);
+                    continue;
+                }
+
+                if (pluginRegistry.registerTool(*definition, ToolCategory::INFORMATION)) {
+                    ++count;
+                    spdlog::info("ToolRuntime: 注册自定义工具 '{}' ({})", tool.name, tool.executorType);
                 }
             }
+        });
 
-            // 根据执行类型注册不同的 handler
-            if (tool.executorType == "python") {
-                registry.registerTool(
-                  {
-                    .name = tool.name,
-                    .description = tool.description,
-                    .parameters = params,
-                    .handler = [script = tool.scriptContent](json args, ToolCallContext) -> drogon::Task<std::string> {
-                        co_return co_await executePythonTool(script, std::move(args));
-                    },
-                  },
-                  ToolCategory::INFORMATION);
-            } else if (tool.executorType == "http") {
-                registry.registerTool(
-                  {
-                    .name = tool.name,
-                    .description = tool.description,
-                    .parameters = params,
-                    .handler = [config = tool.executorConfig](
-                                 json args, ToolCallContext ctx) -> drogon::Task<std::string> {
-                        co_return co_await executeHttpTool(config, std::move(args), ctx.sessionId);
-                    },
-                  },
-                  ToolCategory::INFORMATION);
-            }
-
-            registry.recordCustomTool(tool.name);
-            count++;
-            spdlog::info("ToolManager: 注册自定义工具 '{}' ({})", tool.name, tool.executorType);
-        }
-
-        spdlog::info("ToolManager: 自定义工具注册完成（共{}个）", count);
+        spdlog::info("ToolRuntime: 自定义工具重载完成（共{}个）", count);
     }
 
-    drogon::Task<std::string> AgentToolManager::executePythonTool(std::string scriptContent, json args) {
+    drogon::Task<std::string> ToolRuntime::executePythonTool(std::string scriptContent, json args) {
         if (scriptContent.empty()) {
             co_return std::string("脚本内容为空");
         }
@@ -176,7 +183,7 @@ namespace insoulforge {
         co_return result;
     }
 
-    drogon::Task<std::string> AgentToolManager::executeHttpTool(std::string config, json args, uint64_t sessionId) {
+    drogon::Task<std::string> ToolRuntime::executeHttpTool(std::string config, json args, uint64_t sessionId) {
         // 解析配置
         json configJson;
         if (!tryParseJson(config, configJson)) {
@@ -231,7 +238,7 @@ namespace insoulforge {
         }
     } // namespace
 
-    drogon::Task<json> AgentToolManager::fetchFavoriteEmojis(const std::optional<uint64_t> sessionId) {
+    drogon::Task<json> ToolRuntime::fetchFavoriteEmojis(const std::optional<uint64_t> sessionId) {
         using namespace std::chrono_literals;
         {
             std::lock_guard lock(g_favEmojiCacheMutex);
@@ -272,7 +279,7 @@ namespace insoulforge {
         co_return result;
     }
 
-    drogon::Task<json> AgentToolManager::findFavoriteEmoji(std::string name, const std::optional<uint64_t> sessionId) {
+    drogon::Task<json> ToolRuntime::findFavoriteEmoji(std::string name, const std::optional<uint64_t> sessionId) {
         for (const json emojis = co_await fetchFavoriteEmojis(sessionId); const auto &emoji: emojis) {
             if (getStr(emoji, "name") == name || getStr(emoji, "summary") == name) {
                 co_return emoji;
@@ -281,7 +288,7 @@ namespace insoulforge {
         co_return json(nullptr);
     }
 
-    void AgentToolManager::invalidateFavoriteEmojiCache() {
+    void ToolRuntime::invalidateFavoriteEmojiCache() {
         std::lock_guard lock(g_favEmojiCacheMutex);
         g_favEmojiCache = json(nullptr);
     }

@@ -1,9 +1,10 @@
-/// @file AgentActionTools.cpp
-/// @brief 动作执行工具注册（ACTION，执行操作、产生副作用）
+/// @file ActionToolsPlugin.cpp
+/// @brief 动作工具插件实现（ACTION，执行操作、产生副作用）
 
-#include <agent/AgentToolManager.hpp>
-#include <agent/BuiltinTools.hpp>
-#include <agent/ExecutorAgent.hpp>
+#include <agent/runtime/ExecutorAgent.hpp>
+#include <agent/tools/ToolArgument.hpp>
+#include <agent/tools/ToolRuntime.hpp>
+#include <agent/tools/plugins/ActionToolsPlugin.hpp>
 #include <chrono>
 #include <config/Config.hpp>
 #include <fmt/core.h>
@@ -21,9 +22,10 @@
 #include <util/CommonUtil.hpp>
 
 namespace insoulforge {
+    std::string_view ActionToolsPlugin::id() const noexcept { return "builtin.action"; }
+
     /// @brief 注册动作执行工具（ACTION，执行操作、产生副作用）
-    void registerActionTools() {
-        auto &registry = ToolRegistry::instance();
+    void ActionToolsPlugin::registerTools(ToolRegistry &registry) const {
 
         // send_face
         const json faceParams = json::parse(R"json({
@@ -97,7 +99,7 @@ namespace insoulforge {
                     co_return std::string("请提供表情名称");
                 }
                 const auto sessionId = ctx.sessionId;
-                const json emoji = co_await AgentToolManager::findFavoriteEmoji(name, sessionId);
+                const json emoji = co_await ToolRuntime::findFavoriteEmoji(name, sessionId);
                 if (emoji.is_null()) {
                     co_return fmt::format("表情'{}'不存在，先调list_stickers查看可用表情", name);
                 }
@@ -237,9 +239,9 @@ namespace insoulforge {
                 }
 
                 // Step 3: 记录保存前的 res_id 集合，用于保存后定位新表情
-                AgentToolManager::invalidateFavoriteEmojiCache();
+                ToolRuntime::invalidateFavoriteEmojiCache();
                 std::set<std::string> beforeIds;
-                for (const auto &e: co_await AgentToolManager::fetchFavoriteEmojis(sessionId)) {
+                for (const auto &e: co_await ToolRuntime::fetchFavoriteEmojis(sessionId)) {
                     if (const std::string rid = getStr(e, "res_id"); !rid.empty()) {
                         beforeIds.insert(rid);
                     }
@@ -251,9 +253,9 @@ namespace insoulforge {
                 }
 
                 // Step 5: 定位新表情并设置描述
-                AgentToolManager::invalidateFavoriteEmojiCache();
+                ToolRuntime::invalidateFavoriteEmojiCache();
                 json newItem;
-                for (const auto &e: co_await AgentToolManager::fetchFavoriteEmojis(sessionId)) {
+                for (const auto &e: co_await ToolRuntime::fetchFavoriteEmojis(sessionId)) {
                     if (const std::string rid = getStr(e, "res_id"); !rid.empty() && !beforeIds.contains(rid)) {
                         newItem = e;
                         break;
@@ -264,7 +266,7 @@ namespace insoulforge {
                           getStr(newItem, "emoji_id").empty() ? "0" : getStr(newItem, "emoji_id");
                       co_await OneBotClient::setCustomFaceDesc(
                         emojiId, getStr(newItem, "res_id"), getStr(newItem, "md5"), name, sessionId)) {
-                        AgentToolManager::invalidateFavoriteEmojiCache();
+                        ToolRuntime::invalidateFavoriteEmojiCache();
                     } else {
                         spdlog::warn("[Sticker] 设置表情描述失败: {}", getStr(newItem, "res_id"));
                     }
@@ -307,7 +309,7 @@ namespace insoulforge {
                     co_return std::string("请提供新名称(new_name)");
 
                 const auto sessionId = ctx.sessionId;
-                const json emoji = co_await AgentToolManager::findFavoriteEmoji(name, sessionId);
+                const json emoji = co_await ToolRuntime::findFavoriteEmoji(name, sessionId);
                 if (emoji.is_null()) {
                     co_return fmt::format("表情'{}'不存在，先调list_stickers查看可用表情", name);
                 }
@@ -318,7 +320,7 @@ namespace insoulforge {
                     co_return std::string("改名失败");
                 }
 
-                AgentToolManager::invalidateFavoriteEmojiCache();
+                ToolRuntime::invalidateFavoriteEmojiCache();
                 spdlog::info("[Sticker] 表情改名: {} -> {}", name, newName);
                 co_return fmt::format("已改名为: {}", newName);
             },
@@ -348,7 +350,7 @@ namespace insoulforge {
                     co_return std::string("请提供表情名称(name)");
 
                 const auto sessionId = ctx.sessionId;
-                const json emoji = co_await AgentToolManager::findFavoriteEmoji(name, sessionId);
+                const json emoji = co_await ToolRuntime::findFavoriteEmoji(name, sessionId);
                 if (emoji.is_null()) {
                     co_return fmt::format("表情'{}'不存在，先调list_stickers查看可用表情", name);
                 }
@@ -357,7 +359,7 @@ namespace insoulforge {
                     co_return std::string("删除失败");
                 }
 
-                AgentToolManager::invalidateFavoriteEmojiCache();
+                ToolRuntime::invalidateFavoriteEmojiCache();
                 spdlog::info("[Sticker] 已删除收藏表情: {}", name);
                 co_return fmt::format("已删除表情: {}", name);
             },
@@ -393,6 +395,7 @@ namespace insoulforge {
                 }
                 co_return fmt::format("[CQ:at,qq={}]", qq);
             },
+            .scope = ToolScope::GROUP_ONLY,
           },
           ToolCategory::ACTION);
 
@@ -433,6 +436,7 @@ namespace insoulforge {
                 co_return success ? fmt::format("已禁言用户 {} {}秒", userId, duration)
                                   : "禁言失败: 权限不足或用户不存在";
             },
+            .scope = ToolScope::GROUP_ONLY,
           },
           ToolCategory::ACTION);
 
@@ -467,8 +471,7 @@ namespace insoulforge {
                 if (userId == 0)
                     co_return std::string("拍一拍失败: 请提供有效的QQ号");
 
-                const bool success = co_await OneBotClient::sendPoke(sessionId, userId);
-                if (!success) {
+                if (const bool success = co_await OneBotClient::sendPoke(sessionId, userId); !success) {
                     co_return std::string("拍一拍失败: 权限不足或用户不存在");
                 }
 
@@ -486,6 +489,7 @@ namespace insoulforge {
                 WebSocketManager::instance().pushMessage(sessionId, "assistant", pokeText);
                 co_return fmt::format("已拍一拍用户 {}", userId);
             },
+            .scope = ToolScope::GROUP_ONLY,
           },
           ToolCategory::ACTION);
 

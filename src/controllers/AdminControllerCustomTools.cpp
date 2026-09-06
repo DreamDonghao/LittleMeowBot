@@ -3,7 +3,7 @@
 /// @author donghao
 /// @date 2026-09-01
 
-#include <agent/AgentToolManager.hpp>
+#include <agent/tools/ToolRuntime.hpp>
 #include <algorithm>
 #include <array>
 #include <config/Config.hpp>
@@ -169,7 +169,7 @@ Task<> AdminController::addCustomTool(HttpRequestPtr req, std::function<void(con
     const int id = ToolStore::addCustomTool(tool);
 
     // 立即注册到 ToolRegistry
-    AgentToolManager::registerCustomTools();
+    ToolRuntime::reloadCustomTools();
 
     json resp = AdminResponse::okJson("自定义工具已添加");
     resp["id"] = id;
@@ -199,7 +199,7 @@ Task<> AdminController::updateCustomTool(
     ToolStore::updateCustomTool(tool);
 
     // 重新注册工具
-    AgentToolManager::registerCustomTools();
+    ToolRuntime::reloadCustomTools();
 
     callback(jsonResponse(AdminResponse::okJson("自定义工具已更新")));
     co_return;
@@ -211,7 +211,7 @@ Task<> AdminController::deleteCustomTool(
     ToolStore::deleteCustomTool(toolId);
 
     // 重新注册工具（移除已删除的）
-    AgentToolManager::registerCustomTools();
+    ToolRuntime::reloadCustomTools();
 
     callback(jsonResponse(AdminResponse::okJson("自定义工具已删除")));
     co_return;
@@ -223,7 +223,7 @@ Task<> AdminController::toggleCustomTool(
     ToolStore::toggleCustomTool(toolId);
 
     // 重新注册工具
-    AgentToolManager::registerCustomTools();
+    ToolRuntime::reloadCustomTools();
 
     callback(jsonResponse(AdminResponse::okJson("工具状态已切换")));
     co_return;
@@ -231,7 +231,7 @@ Task<> AdminController::toggleCustomTool(
 
 Task<> AdminController::reloadCustomTools(
   HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
-    AgentToolManager::registerCustomTools();
+    ToolRuntime::reloadCustomTools();
 
     callback(jsonResponse(AdminResponse::okJson("自定义工具已重新加载")));
     co_return;
@@ -276,9 +276,9 @@ Task<> AdminController::testCustomTool(
 
     std::string result;
     if (executorType == "python") {
-        result = co_await AgentToolManager::executePythonTool(std::move(scriptContent), std::move(testArgs));
+        result = co_await ToolRuntime::executePythonTool(std::move(scriptContent), std::move(testArgs));
     } else if (executorType == "http") {
-        result = co_await AgentToolManager::executeHttpTool(std::move(executorConfig), std::move(testArgs), 0);
+        result = co_await ToolRuntime::executeHttpTool(std::move(executorConfig), std::move(testArgs), 0);
     } else {
         result = "未知的执行类型";
     }
@@ -405,7 +405,7 @@ Task<> AdminController::importCustomTool(
 
     // 添加到数据库
     int newId = ToolStore::addCustomTool(tool);
-    AgentToolManager::registerCustomTools();
+    ToolRuntime::reloadCustomTools();
 
     spdlog::info("导入自定义工具: {} (ID: {})", tool.name, newId);
 

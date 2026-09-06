@@ -1,28 +1,23 @@
-/// @file AgentToolManager.hpp
-/// @brief Agent 工具管理器 - 注册所有可用工具
+/// @file ToolRuntime.hpp
+/// @brief 工具运行时门面
 /// @author donghao
 /// @date 2026-04-02
-/// @details 负责注册和管理 Agent 可使用的工具：
-///          - 回复工具：no_reply, reply, reply_with_quote
-///          - 信息工具：list_stickers, recall_memory, deep_think, list_scheduled_tasks
-///          - 动作工具：send_face, send_image, send_sticker, save_sticker, rename_sticker, delete_sticker,
-///                    at_user, ban_user, send_poke, recall_message, create_scheduled_task, cancel_scheduled_task
-///          - 自定义工具：从数据库加载用户定义的工具（支持Python/HTTP）
+/// @details 聚合内置/自定义工具加载，以及自定义工具执行与 QQ 收藏表情支持。
 
 #pragma once
 #include <drogon/utils/coroutine.h>
 #include <optional>
-#include <service/LlmClient.hpp>
-#include <spdlog/spdlog.h>
 #include <string>
+#include <util/JsonUtil.hpp>
 
-/// @brief 工具管理器 - 注册所有可用工具
-namespace insoulforge::AgentToolManager {
-    /// @brief 注册所有工具
-    void registerAllTools();
+/// @brief 工具运行时服务
+namespace insoulforge::ToolRuntime {
+    /// @brief 注册全部编译期内置工具插件
+    void registerBuiltinTools();
 
-    /// @brief 注册自定义工具（从数据库加载）
-    void registerCustomTools();
+    /// @brief 从数据库重载启用的自定义工具
+    /// @details 仅替换 custom 插件，不影响内置工具插件。
+    void reloadCustomTools();
 
     /// @brief 执行 Python 脚本工具
     /// @param scriptContent Python脚本内容（直接存储在数据库中）
@@ -41,4 +36,4 @@ namespace insoulforge::AgentToolManager {
 
     /// @brief 使收藏表情缓存失效（修改/删除后调用）
     void invalidateFavoriteEmojiCache();
-} // namespace insoulforge::AgentToolManager
+} // namespace insoulforge::ToolRuntime

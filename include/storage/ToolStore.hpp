@@ -27,7 +27,7 @@ namespace insoulforge {
         /// @brief 获取所有自定义工具
         [[nodiscard]] std::vector<CustomTool> getCustomTools();
 
-        /// @brief 获取启用的自定义工具（供 AgentToolManager 使用）
+        /// @brief 获取启用的自定义工具（供 ToolRuntime 使用）
         [[nodiscard]] std::vector<CustomTool> getEnabledCustomTools();
 
         /// @brief 添加自定义工具

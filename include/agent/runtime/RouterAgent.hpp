@@ -6,7 +6,7 @@
 ///          决策结果包含是否回复 + 回复策略（语气、长度、是否启用思考等）
 
 #pragma once
-#include <agent/AgentTypes.hpp>
+#include <agent/runtime/AgentTypes.hpp>
 #include <drogon/utils/coroutine.h>
 #include <model/QQMessage.hpp>
 #include <service/ChatRecordManager.hpp>

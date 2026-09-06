@@ -3,9 +3,12 @@
 /// @author donghao
 /// @date 2026-03-28
 
+#include <algorithm>
+#include <exception>
 #include <ranges>
 #include <service/ToolRegistry.hpp>
 #include <spdlog/spdlog.h>
+#include <tuple>
 
 using insoulforge::json;
 
@@ -35,65 +38,124 @@ namespace insoulforge {
         return registry;
     }
 
-    void ToolRegistry::registerTool(const Tool &tool, const ToolCategory category) {
-        switch (category) {
-            case ToolCategory::REPLY:
-                m_replyTools[tool.name] = tool;
-                break;
-            case ToolCategory::INFORMATION:
-                m_infoTools[tool.name] = tool;
-                break;
-            case ToolCategory::ACTION:
-                m_actionTools[tool.name] = tool;
-                break;
+    bool ToolRegistry::registerPlugin(std::string pluginId, PluginRegistrar registrar) {
+        if (pluginId.empty() || !registrar || !m_activePluginId.empty()) {
+            spdlog::error("工具插件注册失败：插件 ID、注册函数无效或发生嵌套注册");
+            return false;
         }
-        spdlog::info("工具注册成功: {} (分类: {})", tool.name, categoryToString(category));
-    }
 
-    json ToolRegistry::getAllTools() const {
-        json tools = json::array();
-
-        // 分类顺序固定（回复 → 信息 → 动作），类内按名称有序，保证 tools 数组跨重启稳定
-        for (const auto *categoryTools: {&m_replyTools, &m_infoTools, &m_actionTools}) {
-            for (const auto &tool: *categoryTools | std::views::values) {
-                tools.push_back(buildToolDef(tool));
+        std::vector<RegisteredTool> previousTools;
+        if (const auto previous = m_pluginTools.find(pluginId); previous != m_pluginTools.end()) {
+            previousTools.reserve(previous->second.size());
+            for (const auto &name: previous->second) {
+                if (const auto tool = m_tools.find(name); tool != m_tools.end())
+                    previousTools.push_back(tool->second);
             }
         }
+
+        unregisterPlugin(pluginId);
+        m_activePluginId = std::move(pluginId);
+        m_pluginRegistrationFailed = false;
+        try {
+            registrar(*this);
+        } catch (const std::exception &e) {
+            spdlog::error("工具插件 '{}' 注册异常: {}", m_activePluginId, e.what());
+            m_pluginRegistrationFailed = true;
+        } catch (...) {
+            spdlog::error("工具插件 '{}' 注册发生未知异常", m_activePluginId);
+            m_pluginRegistrationFailed = true;
+        }
+
+        const std::string registeredPluginId = std::move(m_activePluginId);
+        if (m_pluginRegistrationFailed) {
+            unregisterPlugin(registeredPluginId);
+            for (const auto &tool: previousTools) {
+                m_tools.insert_or_assign(tool.tool.name, tool);
+                m_pluginTools[registeredPluginId].push_back(tool.tool.name);
+            }
+            spdlog::warn("工具插件 '{}' 注册失败，已恢复此前 {} 个工具", registeredPluginId, previousTools.size());
+            m_pluginRegistrationFailed = false;
+            return false;
+        }
+
+        const auto registered = m_pluginTools.find(registeredPluginId);
+        const size_t count = registered == m_pluginTools.end() ? 0 : registered->second.size();
+        spdlog::info("工具插件 '{}' 注册完成（{} 个工具）", registeredPluginId, count);
+        return true;
+    }
+
+    void ToolRegistry::unregisterPlugin(const std::string &pluginId) {
+        const auto it = m_pluginTools.find(pluginId);
+        if (it == m_pluginTools.end())
+            return;
+        for (const auto &name: it->second)
+            m_tools.erase(name);
+        m_pluginTools.erase(it);
+        spdlog::info("工具插件已卸载: {}", pluginId);
+    }
+
+    bool ToolRegistry::registerTool(const Tool &tool, const ToolCategory category) {
+        if (tool.name.empty() || !tool.handler) {
+            spdlog::error("工具注册失败：工具名称或处理器为空");
+            if (!m_activePluginId.empty())
+                m_pluginRegistrationFailed = true;
+            return false;
+        }
+
+        const std::string pluginId = m_activePluginId.empty() ? "application" : m_activePluginId;
+        if (const auto it = m_tools.find(tool.name); it != m_tools.end() && it->second.pluginId != pluginId) {
+            spdlog::error(
+              "工具注册冲突: '{}' 已由插件 '{}' 注册，插件 '{}' 不能覆盖", tool.name, it->second.pluginId, pluginId);
+            if (!m_activePluginId.empty())
+                m_pluginRegistrationFailed = true;
+            return false;
+        }
+
+        m_tools.insert_or_assign(tool.name, RegisteredTool{.tool = tool, .category = category, .pluginId = pluginId});
+        auto &names = m_pluginTools[pluginId];
+        if (!std::ranges::contains(names, tool.name))
+            names.push_back(tool.name);
+        spdlog::info("工具注册成功: {} (插件: {}, 分类: {})", tool.name, pluginId, categoryToString(category));
+        return true;
+    }
+
+    json ToolRegistry::getTools(const ToolQuery &query) const {
+        json tools = json::array();
+
+        std::vector<const RegisteredTool *> visibleTools;
+        visibleTools.reserve(m_tools.size());
+        for (const auto &[name, registered]: m_tools) {
+            if (query.isPrivateSession && registered.tool.scope == ToolScope::GROUP_ONLY)
+                continue;
+            visibleTools.push_back(&registered);
+        }
+
+        std::ranges::sort(visibleTools, [](const RegisteredTool *lhs, const RegisteredTool *rhs) {
+            return std::tuple{categoryOrder(lhs->category), lhs->tool.promptOrder, lhs->tool.name} <
+                   std::tuple{categoryOrder(rhs->category), rhs->tool.promptOrder, rhs->tool.name};
+        });
+        for (const auto *registered: visibleTools)
+            tools.push_back(buildToolDef(registered->tool));
 
         return tools;
     }
 
+    json ToolRegistry::getAllTools() const { return getTools({}); }
+
     drogon::Task<std::string> ToolRegistry::executeTool(const std::string name, json args, ToolCallContext ctx) const {
-        for (const auto *categoryTools: {&m_replyTools, &m_infoTools, &m_actionTools}) {
-            if (const auto it = categoryTools->find(name); it != categoryTools->end()) {
-                co_return co_await it->second.handler(std::move(args), std::move(ctx));
-            }
+        if (const auto it = m_tools.find(name); it != m_tools.end()) {
+            co_return co_await it->second.tool.handler(std::move(args), std::move(ctx));
         }
         co_return "工具未找到: " + name;
     }
 
-    bool ToolRegistry::hasTool(const std::string &name) const {
-        return m_replyTools.contains(name) || m_infoTools.contains(name) || m_actionTools.contains(name);
-    }
+    bool ToolRegistry::hasTool(const std::string &name) const { return m_tools.contains(name); }
 
     void ToolRegistry::unregisterTool(const std::string &name) {
-        m_replyTools.erase(name);
-        m_infoTools.erase(name);
-        m_actionTools.erase(name);
+        m_tools.erase(name);
+        for (auto &[pluginId, names]: m_pluginTools)
+            std::erase(names, name);
         spdlog::info("工具已注销: {}", name);
-    }
-
-    void ToolRegistry::clearAllCustomTools() {
-        for (const auto &name: m_customToolNames) {
-            unregisterTool(name);
-        }
-        m_customToolNames.clear();
-    }
-
-    void ToolRegistry::recordCustomTool(const std::string &name) {
-        if (!std::ranges::contains(m_customToolNames, name)) {
-            m_customToolNames.push_back(name);
-        }
     }
 
     std::string ToolRegistry::categoryToString(ToolCategory category) {
@@ -107,5 +169,17 @@ namespace insoulforge {
             default:
                 return "UNKNOWN";
         }
+    }
+
+    int ToolRegistry::categoryOrder(const ToolCategory category) {
+        switch (category) {
+            case ToolCategory::REPLY:
+                return 0;
+            case ToolCategory::INFORMATION:
+                return 1;
+            case ToolCategory::ACTION:
+                return 2;
+        }
+        return 3;
     }
 } // namespace insoulforge

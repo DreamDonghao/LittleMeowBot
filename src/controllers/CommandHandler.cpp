@@ -1,7 +1,7 @@
 /// @file CommandHandler.cpp
 /// @brief 命令处理器 - 实现
 
-#include <agent/AgentToolManager.hpp>
+#include <agent/tools/ToolRuntime.hpp>
 #include <controllers/CommandHandler.hpp>
 #include <fmt/core.h>
 #include <model/QQMessage.hpp>
@@ -163,7 +163,7 @@ namespace insoulforge {
             if (!(iss >> name)) {
                 co_return "用法: /delemoji <名称或序号>";
             }
-            json emoji = co_await AgentToolManager::findFavoriteEmoji(name);
+            json emoji = co_await ToolRuntime::findFavoriteEmoji(name);
             if (emoji.is_null()) {
                 co_return fmt::format("收藏表情中找不到'{}'", name);
             }
@@ -171,10 +171,10 @@ namespace insoulforge {
             if (!co_await OneBotClient::deleteCustomFace(getStr(emoji, "res_id"))) {
                 co_return fmt::format("删除失败: {}（QQ 客户端操作失败）", name);
             }
-            AgentToolManager::invalidateFavoriteEmojiCache();
+            ToolRuntime::invalidateFavoriteEmojiCache();
             response = fmt::format("已从收藏表情中删除: {}", getStr(emoji, "name"));
         } else if (cmd == "/listemoji" || cmd == "/表情列表") {
-            if (const json emojis = co_await AgentToolManager::fetchFavoriteEmojis(); emojis.empty()) {
+            if (const json emojis = co_await ToolRuntime::fetchFavoriteEmojis(); emojis.empty()) {
                 response = "QQ收藏表情为空或获取失败";
             } else {
                 response = "收藏表情列表:\n";

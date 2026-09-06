@@ -98,7 +98,9 @@ cd frontend && npm run type-check
 insoulforge/
 ├── CMakeLists.txt            # C++23 构建脚本（含前端自动构建）
 ├── include/                  # 头文件（按模块分目录）
-│   ├── agent/                # Agent 系统：AgentSystem / RouterAgent / ExecutorAgent / AgentToolManager / AgentTypes
+│   ├── agent/
+│   │   ├── runtime/          # Agent 编排：AgentSystem / RouterAgent / ExecutorAgent / AgentTypes
+│   │   └── tools/            # 工具运行时、插件契约与 plugins/ 具体工具插件
 │   ├── controllers/          # ProcessQQMessages / AdminController / AdminWebSocket / LogWebSocket / CommandHandler
 │   ├── config/               # Config：从数据库加载全部配置的单例
 │   ├── model/                # 数据模型：QQMessage
@@ -143,7 +145,7 @@ Layer 2: ExecutorAgent
 MessageService::sendGroupMsg → OneBot API
 ```
 
-关键数据结构见 `include/agent/AgentTypes.hpp`（`RouterDecision`、`ReplyDecision`）。
+关键数据结构见 `include/agent/runtime/AgentTypes.hpp`（`RouterDecision`、`ReplyDecision`）。
 
 消息处理的几个约束：
 
@@ -154,24 +156,31 @@ MessageService::sendGroupMsg → OneBot API
 
 ### 工具系统
 
-- `ToolRegistry` 按类别管理工具，LLM 调用时按类别分组注入 prompt：
+- `ToolRegistry` 以进程内插件管理工具，LLM 调用时按类别分组注入 prompt：
     - `REPLY`：回复工具（`reply` / `no_reply` / `reply_with_quote`），调用后结束本轮处理
     - `INFORMATION`：信息工具（`recall_memory` / `list_stickers` / `deep_think` / `list_scheduled_tasks`），获取数据
     - `ACTION`：动作工具（`send_face` / `send_image` / `send_sticker` / `save_sticker` / `rename_sticker` /
       `reply_and_continue` / `delete_sticker` / `at_user` / `ban_user` / `send_poke` / `recall_message` /
       `create_scheduled_task` / `cancel_scheduled_task`），执行操作
-- 内置工具共 20 个，注册代码按类别拆分在 `src/agent/AgentReplyTools.cpp` / `AgentInfoTools.cpp` /
-  `AgentActionTools.cpp`（由 `AgentToolManager::registerAllTools()` 调用）；全部工具的参数与行为详见
-  [TOOLS.md](./TOOLS.md)。自定义工具注册为 `INFORMATION` 类别
-- 自定义工具（Python 脚本 / HTTP 接口）存储于数据库，启动时加载；Python 工具通过 `sys.argv[1]` 传入参数 JSON 文件路径
+- 内置工具分为 `builtin.reply`、`builtin.info`、`builtin.action` 三个 `ToolPlugin` 实现，注册代码按类别拆分在
+  `src/agent/tools/plugins/ReplyToolsPlugin.cpp` / `InfoToolsPlugin.cpp` / `ActionToolsPlugin.cpp`。`ToolPluginCatalog`
+  显式组合并加载
+  插件，`ToolRuntime` 不感知具体插件；自定义工具归属 `custom` 插件。重载某个插件只影响该插件的工具，工具名在
+  全局唯一，冲突时拒绝注册，避免自定义工具覆盖内置工具后出现定义与执行不一致。
+- 工具定义按“类别 → `promptOrder` → 工具名”稳定排序，避免重启或自定义工具刷新后改变 provider 的 prompt cache
+  和模型偏好。私聊请求会在注入前排除 `GROUP_ONLY` 工具（当前为 `at_user`、`ban_user`、`send_poke`）。
+- 自定义工具（Python 脚本 / HTTP 接口）存储于数据库，启动及后台刷新时加载；Python 工具通过 `sys.argv[1]` 传入参数 JSON 文件路径
 - 拍一拍、撤回、引用回复、表情包收发、定时任务均由上述工具实现，由 Executor 根据上下文自动决策调用；天气、搜索、随机数、时间等能力来自
   `agentTools/` 目录的可导入自定义工具
 
 工具执行的几个约束：
 
-- `reply` / `reply_with_quote` / `no_reply` 是回复工具，调用后结束本轮处理；它们在 `ExecutorAgent::processToolCalls` 中被拦截，不走普通工具返回值路径。
-- `send_sticker` / `send_poke` / `reply_and_continue` 是中途动作，执行后本轮不结束，最终仍需用回复工具收尾；一次对话需要连续多条消息时，用 `reply_and_continue` 发送前置消息，再用 `reply` 或 `no_reply` 收尾。
-- `send_sticker` 与 `reply_and_continue` 通过 `MessageService` 直接发送，成功后自动写入聊天记录并推送 WebSocket；主流程只负责发送最终文字回复。
+- `reply` / `reply_with_quote` / `no_reply` 是回复工具，调用后结束本轮处理；它们在 `ExecutorAgent::processToolCalls`
+  中被拦截，不走普通工具返回值路径。
+- `send_sticker` / `send_poke` / `reply_and_continue` 是中途动作，执行后本轮不结束，最终仍需用回复工具收尾；一次对话需要连续多条消息时，用
+  `reply_and_continue` 发送前置消息，再用 `reply` 或 `no_reply` 收尾。
+- `send_sticker` 与 `reply_and_continue` 通过 `MessageService` 直接发送，成功后自动写入聊天记录并推送
+  WebSocket；主流程只负责发送最终文字回复。
 - `deep_think` 是信息工具，不是全局思考模式。Executor 只在复杂问题需要额外推理时调用，工具结果再回到 Executor 组织成聊天回复。
 
 ### 记忆系统
@@ -210,8 +219,9 @@ sqlite3 data/insoulforge.db ".tables"
 
 ### 添加 C++ 内置工具
 
-按类别编辑 `src/agent/AgentReplyTools.cpp` / `AgentInfoTools.cpp` / `AgentActionTools.cpp` 注册（共享的参数 Schema
-辅助函数在 `include/agent/BuiltinTools.hpp`）：
+小型工具可直接按类别编辑 `src/agent/tools/plugins/ReplyToolsPlugin.cpp` / `InfoToolsPlugin.cpp` /
+`ActionToolsPlugin.cpp` 注册（共享的参数 Schema 辅助函数在 `include/agent/tools/ToolArgument.hpp`）。内置文件由对应的
+`builtin.*` 插件加载，因此工具会自动归属到该插件：
 
 ```cpp
 registry.registerTool(
@@ -224,6 +234,28 @@ registry.registerTool(
         },
     }, ToolCategory::ACTION);
 ```
+
+新增独立能力域时，实现 `ToolPlugin` 并在 `src/agent/tools/ToolPluginCatalog.cpp` 的实例列表中增加该类；不需要修改
+`ToolRuntime`、`AgentSystem` 或 `ExecutorAgent`。插件 ID 应使用稳定、全小写的命名空间形式。插件重载只会先卸载
+自己此前的工具，跨插件同名工具会被拒绝：
+
+```cpp
+class WeatherToolsPlugin final : public ToolPlugin {
+public:
+    std::string_view id() const noexcept override { return "weather"; }
+
+    void registerTools(ToolRegistry &registry) const override {
+        registry.registerTool(myWeatherTool, ToolCategory::INFORMATION);
+    }
+};
+
+// ToolPluginCatalog.cpp
+const WeatherToolsPlugin weatherTools;
+// 将 &weatherTools 加入 plugins 指针列表
+```
+
+不要把“工具排在前面”当作调用策略。顺序对部分模型有弱影响，因此系统保证顺序稳定；更有效的做法是按会话能力筛选、合并重叠工具，并在名称、描述和参数
+Schema 中写清楚触发条件与边界。需要调整同类别展示位置时才设置 `Tool::promptOrder`，数值越小越靠前。
 
 ### 添加自定义工具（Python）
 

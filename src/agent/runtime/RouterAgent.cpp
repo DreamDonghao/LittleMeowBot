@@ -1,7 +1,7 @@
 /// @file RouterAgent.cpp
 /// @brief Router Agent - 实现（合并路由判断与规划）
 
-#include <agent/RouterAgent.hpp>
+#include <agent/runtime/RouterAgent.hpp>
 #include <algorithm>
 #include <cctype>
 #include <config/Config.hpp>

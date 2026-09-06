@@ -1,4 +1,4 @@
-#include <agent/AgentSystem.hpp>
+#include <agent/runtime/AgentSystem.hpp>
 #include <atomic>
 #include <config/Config.hpp>
 #include <controllers/CommandHandler.hpp>

@@ -1,15 +1,16 @@
-/// @file AgentReplyTools.cpp
-/// @brief 回复工具注册（REPLY，调用即结束回合）
+/// @file ReplyToolsPlugin.cpp
+/// @brief 回复工具插件实现（REPLY，调用即结束回合）
 /// @details handler 为占位实现：回复工具在 ExecutorAgent::processToolCalls 内拦截执行，
 ///          不经 ToolRegistry::executeTool（需要改写回复决策而非返回工具结果）
 
-#include <agent/BuiltinTools.hpp>
+#include <agent/tools/plugins/ReplyToolsPlugin.hpp>
 #include <service/ToolRegistry.hpp>
 
 namespace insoulforge {
+    std::string_view ReplyToolsPlugin::id() const noexcept { return "builtin.reply"; }
+
     /// @brief 注册回复工具（REPLY，调用即结束回合）
-    void registerReplyTools() {
-        auto &registry = ToolRegistry::instance();
+    void ReplyToolsPlugin::registerTools(ToolRegistry &registry) const {
 
         // no_reply
         registry.registerTool(

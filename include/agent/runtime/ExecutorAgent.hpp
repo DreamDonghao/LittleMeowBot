@@ -6,7 +6,7 @@
 ///          - 使用 Agent 模式让 LLM 生成最终回复
 
 #pragma once
-#include <agent/AgentTypes.hpp>
+#include <agent/runtime/AgentTypes.hpp>
 #include <drogon/utils/coroutine.h>
 #include <optional>
 #include <service/ChatRecordManager.hpp>

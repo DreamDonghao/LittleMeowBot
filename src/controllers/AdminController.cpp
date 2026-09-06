@@ -1,5 +1,5 @@
-#include <agent/AgentSystem.hpp>
-#include <agent/AgentToolManager.hpp>
+#include <agent/runtime/AgentSystem.hpp>
+#include <agent/tools/ToolRuntime.hpp>
 #include <algorithm>
 #include <charconv>
 #include <chrono>
@@ -203,7 +203,7 @@ Task<> AdminController::setBotStatus(HttpRequestPtr req, std::function<void(cons
 // ==================== 表情包库（QQ 收藏表情，以实际收藏为基准） ====================
 
 Task<> AdminController::getEmojis(HttpRequestPtr req, std::function<void(const HttpResponsePtr &)> callback) const {
-    callback(jsonResponse(co_await AgentToolManager::fetchFavoriteEmojis()));
+    callback(jsonResponse(co_await ToolRuntime::fetchFavoriteEmojis()));
     co_return;
 }
 
@@ -223,7 +223,7 @@ Task<> AdminController::updateEmojiDesc(
         co_return;
     }
 
-    AgentToolManager::invalidateFavoriteEmojiCache();
+    ToolRuntime::invalidateFavoriteEmojiCache();
     spdlog::info("[Admin] 已修改表情描述: res_id={} desc={}", resId, desc);
 
     callback(jsonResponse(AdminResponse::okJson("描述已修改")));
